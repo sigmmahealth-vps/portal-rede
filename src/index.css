@@ -1,0 +1,93 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* 
+  INSTRUÇÕES PARA AS FONTES (.woff2)
+  
+  1. No painel de arquivos (File Explorer), expanda a pasta "public".
+  2. Crie uma pasta chamada "fonts" dentro de "public".
+  3. Faça o upload dos seus arquivos de fonte para dentro dessa pasta.
+  4. Renomeie os arquivos para "Unimed-Regular.woff2" e "Unimed-Bold.woff2"
+     (ou altere os nomes abaixo para corresponderem aos seus arquivos).
+*/
+
+@font-face {
+  font-family: 'UnimedFont';
+  src: url('/fonts/Unimed-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'UnimedFont';
+  src: url('/fonts/Unimed-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  /* Configuração da Fonte Principal (Fallback para Inter enquanto a fonte oficial não é adicionada) */
+  --font-sans: "UnimedFont", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* 
+    PALETA DE CORES OFICIAL (Extraída do manual da marca)
+  */
+  
+  /* Verde Principal (Pantone 348c) - Mapeado para 'emerald' para atualizar todo o sistema automaticamente */
+  --color-emerald-50: #e6f5ef;
+  --color-emerald-100: #ccebe0;
+  --color-emerald-200: #99d6c1;
+  --color-emerald-300: #66c2a3;
+  --color-emerald-400: #33ad85;
+  --color-emerald-500: #00995d; /* HEX Oficial */
+  --color-emerald-600: #007a4a;
+  --color-emerald-700: #005c38;
+  --color-emerald-800: #003d25;
+  --color-emerald-900: #001f13;
+
+  /* Verde Escuro (Pantone 7722c) */
+  --color-secondary-50: #e6eeee;
+  --color-secondary-100: #ccdddd;
+  --color-secondary-200: #99bbbb;
+  --color-secondary-300: #669999;
+  --color-secondary-400: #337776;
+  --color-secondary-500: #004e4c; /* HEX Oficial */
+  --color-secondary-600: #003e3d;
+  --color-secondary-700: #002f2e;
+  --color-secondary-800: #001f1e;
+  --color-secondary-900: #00100f;
+
+  /* Verde Limão (Pantone 381c) */
+  --color-accent-50: #f7fbf0;
+  --color-accent-100: #eff7e1;
+  --color-accent-500: #b1d34b; /* HEX Oficial */
+  --color-accent-600: #8ea93c;
+
+  /* Laranja (Pantone 1585c) - Mapeado para 'orange' */
+  --color-orange-50: #fef2e9;
+  --color-orange-100: #fce4d2;
+  --color-orange-200: #f9c9a5;
+  --color-orange-300: #f7b082;
+  --color-orange-400: #f59451;
+  --color-orange-500: #f47920; /* HEX Oficial */
+  --color-orange-600: #c3611a;
+  --color-orange-700: #924913;
+  --color-orange-800: #62300d;
+  --color-orange-900: #311806;
+
+  /* Cores de Apoio / Pasteis */
+  --color-brand-brown: #d2a494;
+  --color-brand-pink: #f1cdcd;
+  --color-brand-beige: #ece3d9;
+  --color-brand-yellow: #ffe596;
+  --color-brand-palegreen: #cde3bb;
+  --color-brand-lightblue: #a4d8de;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f8fafc;
+  color: var(--color-secondary-900);
+}

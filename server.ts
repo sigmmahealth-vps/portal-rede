@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -1906,19 +1905,28 @@ async function startServer() {
   });
 
   console.log("=== ROUTES REGISTERED ===");
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Se existe build do cliente (dist/index.html), serve-o estaticamente — caminho de produção.
+  // Independe de NODE_ENV e nunca carrega o Vite em produção (import dinâmico só no dev).
+  const distIndex = path.join(process.cwd(), 'dist', 'index.html');
+  if (fs.existsSync(distIndex)) {
+    app.use(express.static('dist'));
+    app.get('*', (req, res) => {
+      res.sendFile('index.html', { root: 'dist' });
+    });
+    console.log("Servindo cliente a partir de dist/ (build de produção).");
+  } else {
+    // Desenvolvimento: sem build, sobe o Vite em middleware mode (carregado sob demanda).
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static('dist'));
-    app.get('*', (req, res) => {
-      res.sendFile('index.html', { root: 'dist' });
-    });
+    console.log("Servindo cliente via Vite dev middleware.");
   }
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Falha ao iniciar o servidor:', err);
+  process.exit(1);
+});

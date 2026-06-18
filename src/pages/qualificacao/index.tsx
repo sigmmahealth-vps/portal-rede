@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import GestorDashboard from './GestorDashboard';
 import PrestadorView from './PrestadorView';
+import CooperadoView from './CooperadoView';
 import AuditorView from './AuditorView';
 
 export default function QualificacaoModule() {
@@ -20,6 +21,8 @@ export default function QualificacaoModule() {
     return <GestorDashboard user={user} />;
   } else if (user.role === 'auditoria') {
     return <AuditorView user={user} />;
+  } else if (user.role === 'cooperado') {
+    return <CooperadoView user={user} />;
   } else {
     return <PrestadorView user={user} />;
   }

@@ -16,7 +16,7 @@ import Comunicados from './pages/Comunicados';
 import Auditorias from './pages/Auditorias';
 import Biblioteca from './pages/Biblioteca';
 import Contratos from './pages/Contratos';
-import Qualificacao from './pages/Qualificacao';
+import Qualificacao from './pages/qualificacao';
 import Tabelas from './pages/Tabelas';
 import Perfil from './pages/Perfil';
 import Ferramentas from './pages/Ferramentas';
@@ -24,6 +24,7 @@ import EmConstrucao from './pages/EmConstrucao';
 import Pesquisa from './pages/Pesquisa';
 import Admin from './pages/Admin';
 import Credenciamento from './pages/Credenciamento';
+import Equipe from './pages/Equipe';
 
 export default function App() {
   return (
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="pesquisa" element={<Pesquisa />} />
           <Route path="admin" element={<Admin />} />
           <Route path="credenciamento" element={<Credenciamento />} />
+          <Route path="equipe" element={<Equipe />} />
           <Route path="tabelas" element={<Tabelas />} />
           <Route path="perfil" element={<Perfil />} />
           <Route path="ferramentas" element={<Ferramentas />} />

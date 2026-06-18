@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Building, Mail, Phone, MapPin, Edit2, CheckCircle, Shield, FileText, AlertCircle } from 'lucide-react';
+import { User, Building, Mail, Phone, MapPin, Edit2, CheckCircle, Shield, FileText, AlertCircle, Clock } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 
 export default function Perfil() {
@@ -117,7 +117,21 @@ export default function Perfil() {
                     <p className="text-base text-gray-900">{user?.email}</p>
                   </div>
                 </div>
-                
+
+                <div className="flex items-start">
+                  <Clock className="h-5 w-5 text-gray-400 mt-0.5 mr-3" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Último acesso</p>
+                    <p className="text-base text-gray-900">
+                      {user?.last_login_at
+                        ? new Date(user.last_login_at).toLocaleString('pt-BR', {
+                            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                          })
+                        : 'Primeiro acesso'}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex items-start">
                   <Phone className="h-5 w-5 text-gray-400 mt-0.5 mr-3" />
                   <div className="w-full">

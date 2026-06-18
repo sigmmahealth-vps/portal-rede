@@ -20,7 +20,9 @@ import {
   X,
   CheckCircle,
   Trash2,
-  Mail
+  Mail,
+  ShieldCheck,
+  XCircle
 } from 'lucide-react';
 
 const TABS = [
@@ -31,6 +33,7 @@ const TABS = [
   { id: 'emails', label: 'Disparo de E-mails', icon: Mail },
   { id: 'banners', label: 'Banners', icon: ImageIcon },
   { id: 'pesquisas', label: 'Pesquisas', icon: ClipboardList },
+  { id: 'acessos', label: 'Trilha de Acesso', icon: ShieldCheck },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
 
@@ -66,6 +69,9 @@ export default function Admin() {
   const [trainings, setTrainings] = useState<any[]>([]);
   const [surveys, setSurveys] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({ current_competence: '', payment_date: '' });
+  const [accessLogs, setAccessLogs] = useState<any[]>([]);
+  const [accessTotal, setAccessTotal] = useState(0);
+  const [accessFilter, setAccessFilter] = useState<'all' | 'true' | 'false'>('all');
   const [loading, setLoading] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -97,7 +103,7 @@ export default function Admin() {
     if (user && (user.role === 'admin' || user.role === 'auditoria')) {
       loadData();
     }
-  }, [user, activeTab]);
+  }, [user, activeTab, accessFilter]);
 
   const loadData = async () => {
     setLoading(true);
@@ -117,6 +123,11 @@ export default function Admin() {
       } else if (activeTab === 'configuracoes') {
         const data = await fetchApi('/settings');
         setSettings(data);
+      } else if (activeTab === 'acessos') {
+        const qs = accessFilter === 'all' ? '' : `?success=${accessFilter}`;
+        const data = await fetchApi(`/access-logs${qs}`);
+        setAccessLogs(data.logs || []);
+        setAccessTotal(data.total || 0);
       }
     } catch (err) {
       console.error(err);
@@ -787,6 +798,86 @@ export default function Admin() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'acessos' && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Trilha de Acesso</h2>
+                <p className="text-sm text-gray-500">Registro de tentativas de login (RN ANS nº 630/2024).</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {([
+                  { id: 'all', label: 'Todos' },
+                  { id: 'true', label: 'Sucesso' },
+                  { id: 'false', label: 'Falha' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setAccessFilter(opt.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      accessFilter === opt.id
+                        ? 'bg-[#00995D] text-white'
+                        : 'text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-100 text-sm text-gray-500">
+                    <th className="pb-3 font-medium">Data/Hora</th>
+                    <th className="pb-3 font-medium">Usuário</th>
+                    <th className="pb-3 font-medium">E-mail</th>
+                    <th className="pb-3 font-medium">Perfil</th>
+                    <th className="pb-3 font-medium">IP</th>
+                    <th className="pb-3 font-medium">Resultado</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {accessLogs.map((log) => (
+                    <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="py-3 text-gray-600 whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleString('pt-BR', {
+                          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                        })}
+                      </td>
+                      <td className="py-3 font-medium text-gray-800">{log.user_name || <span className="text-gray-400 italic">—</span>}</td>
+                      <td className="py-3 text-gray-600">{log.email || '-'}</td>
+                      <td className="py-3 text-gray-600">{log.user_role || '-'}</td>
+                      <td className="py-3 text-gray-600 font-mono text-xs">{log.ip || '-'}</td>
+                      <td className="py-3">
+                        {log.success ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                            <CheckCircle className="w-3.5 h-3.5" /> Sucesso
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                            <XCircle className="w-3.5 h-3.5" /> Falha
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {accessLogs.length === 0 && !loading && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-gray-500">Nenhum acesso registrado.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between mt-2 text-sm text-gray-500">
+              <p>Mostrando {accessLogs.length} de {accessTotal} registro(s)</p>
+            </div>
           </div>
         )}
 

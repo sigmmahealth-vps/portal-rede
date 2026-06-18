@@ -17,6 +17,7 @@ import {
   Bell,
   Accessibility,
   User,
+  Users,
   HelpCircle,
   Shield
 } from 'lucide-react';
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Gestão Documental', href: '/documentos', icon: FileText },
   { name: 'Qualificação da Rede', href: '/qualificacao', icon: Award },
+  { name: 'Equipe / Profissionais', href: '/equipe', icon: Users },
   { name: 'Credenciamento', href: '/credenciamento', icon: ClipboardCheck },
   { name: 'Treinamentos', href: '/treinamentos', icon: GraduationCap },
   { name: 'Financeiro', href: '/em-construcao', icon: DollarSign, standby: true },
@@ -45,10 +47,15 @@ export default function Layout() {
   const [user, setUser] = useState<any>(null);
 
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
+  const isCooperado = user?.role === 'cooperado';
+
+  // Módulos de pessoa jurídica (prestador/PJ) que não se aplicam ao médico cooperado (PF).
+  const COOPERADO_HIDDEN = ['Gestão Documental', 'Contratos', 'Financeiro'];
 
   const filteredNavigation = navigation.filter(item => {
     if ((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin) return false;
-    
+    if (isCooperado && COOPERADO_HIDDEN.includes(item.name)) return false;
+
     return true;
   });
 

@@ -262,6 +262,121 @@ export default function Dashboard() {
     );
   }
 
+  if (isCooperado) {
+    const openTickets = adminData?.tickets?.filter((t: any) => t.status !== 'encerrado').length || 0;
+    const pendingTrainings = adminData?.trainings?.filter((t: any) => t.status !== 'concluido').length || 0;
+    return (
+      <div className="max-w-7xl mx-auto pb-10">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">Olá, {firstName}. {getRoleGreeting()}</h1>
+          <p className="text-sm text-gray-500">Último acesso: {lastAccess}</p>
+        </div>
+
+        {/* Top Cards (foco no médico cooperado — sem itens financeiros/PJ) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <Link to="/qualificacao" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center h-28 hover:border-[#00995D] hover:shadow-md transition-all">
+            <div className="w-12 h-12 rounded-full bg-[#FFD700]/20 flex items-center justify-center mr-4 flex-shrink-0">
+              <Award className="h-6 w-6 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500 font-medium">Minha Qualificação</p>
+              <p className="text-base font-bold text-gray-800">Responder roteiro</p>
+            </div>
+          </Link>
+          <Link to="/treinamentos" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all">
+            <p className="text-sm text-gray-500 font-medium">Treinamentos a concluir</p>
+            <div className="flex justify-between items-end">
+              <p className="text-2xl font-bold text-gray-800">{pendingTrainings}</p>
+              <span className="bg-[#ff4d4f] text-white text-[10px] font-bold px-2 py-1 rounded-full">Pendentes</span>
+            </div>
+          </Link>
+          <Link to="/chamados" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all">
+            <p className="text-sm text-gray-500 font-medium">Chamados Abertos</p>
+            <div className="flex justify-between items-end">
+              <p className="text-2xl font-bold text-gray-800">{openTickets}</p>
+              <span className="bg-[#c2d82e] text-gray-800 text-[10px] font-bold px-2 py-1 rounded-full">Em andamento</span>
+            </div>
+          </Link>
+        </div>
+
+        {/* Banner Pesquisa */}
+        {!hasAnsweredSurvey && (
+          <Link to="/pesquisa" className="relative rounded-xl overflow-hidden h-44 shadow-sm block hover:shadow-md transition-shadow group mb-6">
+            <img
+              src="https://images.pexels.com/photos/5215024/pexels-photo-5215024.jpeg?auto=compress&cs=tinysrgb&w=1200"
+              alt="Médica no consultório"
+              className="absolute inset-0 w-full h-full object-cover object-[center_40%] group-hover:scale-105 transition-transform duration-500"
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"></div>
+            <div className="absolute inset-0 p-6 flex flex-col justify-center w-2/3">
+              <h2 className="text-xl font-bold text-white mb-2">Participe da Pesquisa de Qualificação</h2>
+              <p className="text-white/80 text-sm mb-4">Sua opinião ajuda a aprimorar o relacionamento com a cooperativa.</p>
+              <div>
+                <span className="inline-block bg-[#00995D] group-hover:bg-[#007A4A] text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors">Responder Pesquisa</span>
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {/* Acesso Rápido (cooperado) */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-1">Acesso Rápido</h3>
+          <p className="text-sm text-gray-500 mb-4">Atalhos para o seu dia a dia como cooperado.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Link to="/qualificacao" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
+              <Award className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
+              <span className="text-xs font-medium text-gray-600 text-center">Minha Qualificação</span>
+            </Link>
+            <Link to="/chamados" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
+              <Monitor className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
+              <span className="text-xs font-medium text-gray-600 text-center">Abrir Chamado</span>
+            </Link>
+            <Link to="/treinamentos" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
+              <Video className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
+              <span className="text-xs font-medium text-gray-600 text-center">Treinamentos</span>
+            </Link>
+            <Link to="/biblioteca" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
+              <BookOpen className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
+              <span className="text-xs font-medium text-gray-600 text-center">Biblioteca Técnica</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Comunicados Importantes */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-1">Comunicados Importantes</h3>
+          <p className="text-sm text-gray-500 mb-4">Fique por dentro das últimas novidades e atualizações</p>
+          {announcements.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {announcements.slice(0, 3).map((announcement) => (
+                <div key={announcement.id} className="border border-gray-100 rounded-xl overflow-hidden flex flex-col">
+                  <div className="relative h-24 bg-gray-100">
+                    {announcement.image_url ? (
+                      <img src={announcement.image_url} alt={announcement.category} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400"><FileText className="w-8 h-8 opacity-50" /></div>
+                    )}
+                    <span className="absolute top-2 left-2 text-white text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500">{announcement.category}</span>
+                  </div>
+                  <div className="p-3 flex flex-col flex-1 justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-[#00995D] leading-tight mb-1">{announcement.title}</h4>
+                      <p className="text-xs text-gray-400 text-right">{new Date(announcement.date).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    <button className="mt-3 w-full py-1.5 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">Saiba Mais</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 text-sm">Nenhum comunicado no momento.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto pb-10">
       <div className="mb-6">

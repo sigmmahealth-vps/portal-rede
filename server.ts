@@ -1,12 +1,12 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
-import Database from 'better-sqlite3';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import { query, pool, withTransaction } from './db/db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-unimed-mvp';
 
@@ -28,516 +28,157 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// Initialize Database
-const db = new Database('unimed_mvp.db');
-db.pragma('journal_mode = WAL');
-
-// Setup Database Schema
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL, -- 'prestador', 'admin', 'auditoria'
-    provider_id INTEGER
-  );
-
-  CREATE TABLE IF NOT EXISTS providers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    cnpj TEXT UNIQUE NOT NULL,
-    code TEXT,
-    provider_group TEXT,
-    qualification_level TEXT,
-    status TEXT
-  );
-`);
-
-try {
-  db.exec('ALTER TABLE providers ADD COLUMN code TEXT');
-} catch (e) {
-  // Ignore error if column already exists
-}
-
-try {
-  db.exec('ALTER TABLE documents ADD COLUMN upload_date TEXT');
-  db.exec('ALTER TABLE documents ADD COLUMN uploaded_by INTEGER');
-} catch (e) {
-  // Ignore error if column already exists
-}
-
-try {
-  db.exec('ALTER TABLE documents ADD COLUMN rejection_reason TEXT');
-} catch (e) {
-  // Ignore error if column already exists
-}
-
-try {
-  db.exec('ALTER TABLE qualification_items ADD COLUMN type TEXT DEFAULT "file"');
-  db.exec('ALTER TABLE qualification_items ADD COLUMN na_allowed BOOLEAN DEFAULT 1');
-} catch (e) {
-  // Ignore error if column already exists
-}
-
-try {
-  db.exec('ALTER TABLE qualification_submission_items ADD COLUMN text_answer TEXT');
-  db.exec('ALTER TABLE qualification_submission_items ADD COLUMN justification TEXT');
-  db.exec('ALTER TABLE qualification_submission_items ADD COLUMN is_na BOOLEAN DEFAULT 0');
-} catch (e) {
-  // Ignore error if column already exists
-}
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS documents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    issue_date TEXT,
-    expiry_date TEXT,
-    status TEXT NOT NULL, -- 'valido', 'pendente', 'reprovado', 'vencido', 'historico'
-    file_url TEXT,
-    upload_date TEXT,
-    uploaded_by INTEGER,
-    rejection_reason TEXT,
-    FOREIGN KEY (provider_id) REFERENCES providers(id),
-    FOREIGN KEY (uploaded_by) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    priority TEXT NOT NULL,
-    status TEXT NOT NULL, -- 'aberto', 'em_analise', 'respondido', 'encerrado'
-    created_at TEXT NOT NULL,
-    response TEXT,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS ticket_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticket_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    user_name TEXT NOT NULL,
-    role TEXT NOT NULL,
-    message TEXT NOT NULL,
-    is_status_change BOOLEAN DEFAULT 0,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (ticket_id) REFERENCES tickets(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
-`);
-
-// Migrate existing responses to ticket_messages
-try {
-  const existingTicketsWithResponse = db.prepare('SELECT id, response FROM tickets WHERE response IS NOT NULL AND response != ""').all();
-  if (existingTicketsWithResponse.length > 0) {
-    const insertMsg = db.prepare('INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    const clearResponse = db.prepare('UPDATE tickets SET response = NULL WHERE id = ?');
-    
-    // Assuming user_id 1 is an admin for the migration
-    const adminUser = db.prepare('SELECT id, name, role FROM users WHERE role = "admin" LIMIT 1').get() as any;
-    
-    if (adminUser) {
-      for (const t of existingTicketsWithResponse) {
-        insertMsg.run(t.id, adminUser.id, adminUser.name, adminUser.role, t.response, 0, new Date().toISOString());
-        clearResponse.run(t.id);
-      }
+// =============================================================================
+// Seed inicial / dados de demonstração.
+// O schema vive nas migrations (db/migrations/*.sql). Aqui apenas semeamos
+// dados de exemplo de forma idempotente, somente quando as tabelas estão vazias.
+// =============================================================================
+async function initData() {
+  // Fix cooperado provider_id if missing
+  try {
+    const { rows: coopRows } = await query("SELECT id FROM users WHERE role = 'cooperado' AND provider_id IS NULL");
+    const cooperado = coopRows[0] as any;
+    if (cooperado) {
+      const { rows: provRows } = await query(
+        "INSERT INTO providers (name, cnpj, provider_group, qualification_level, status) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        ['Consultório Dra. Ana Souza', '98.765.432/0001-10', 'Cardiologia', 'A', 'Ativo']
+      );
+      await query("UPDATE users SET provider_id = $1 WHERE id = $2", [provRows[0].id, cooperado.id]);
     }
+  } catch (e) {
+    console.error("Error fixing cooperado:", e);
   }
-} catch (e) {
-  // Ignore migration errors
-}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS announcements (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    image_url TEXT,
-    date TEXT NOT NULL
-  );
+  try {
+    const { rows: settingsRows } = await query('SELECT COUNT(*) as count FROM settings');
+    if (Number(settingsRows[0].count) === 0) {
+      await query('INSERT INTO settings (key, value) VALUES ($1, $2)', ['current_competence', '2025-10']);
 
-  CREATE TABLE IF NOT EXISTS trainings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    video_url TEXT,
-    pdf_url TEXT,
-    validity_days INTEGER,
-    created_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS provider_trainings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    training_id INTEGER NOT NULL,
-    status TEXT NOT NULL, -- 'pendente', 'em_andamento', 'concluido'
-    completed_at TEXT,
-    FOREIGN KEY (provider_id) REFERENCES providers(id),
-    FOREIGN KEY (training_id) REFERENCES trainings(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS financials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    competence TEXT NOT NULL,
-    gross_value REAL NOT NULL,
-    glosa_value REAL NOT NULL,
-    net_value REAL NOT NULL,
-    status TEXT,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS audits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    scheduled_date TEXT NOT NULL,
-    status TEXT NOT NULL, -- 'programada', 'realizada'
-    evaluation TEXT,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS contracts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    file_url TEXT NOT NULL,
-    status TEXT NOT NULL, -- 'pendente', 'ativo', 'vencido'
-    signed_at TEXT,
-    expires_at TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-  CREATE TABLE IF NOT EXISTS qualifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    cycle TEXT NOT NULL,
-    score INTEGER,
-    status TEXT NOT NULL, -- 'pendente', 'em_andamento', 'concluida'
-    seal TEXT, -- 'Ouro', 'Prata', 'Bronze', null
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS qualification_cycles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    active BOOLEAN DEFAULT 1,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS qualification_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    cycle_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT,
-    is_required BOOLEAN DEFAULT 1,
-    FOREIGN KEY (cycle_id) REFERENCES qualification_cycles(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS qualification_submissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    cycle_id INTEGER NOT NULL,
-    status TEXT NOT NULL, -- 'rascunho', 'enviado', 'em_analise', 'aprovado', 'reprovado', 'parcial'
-    submitted_at TEXT,
-    evaluated_at TEXT,
-    evaluated_by INTEGER,
-    final_observations TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (provider_id) REFERENCES providers(id),
-    FOREIGN KEY (cycle_id) REFERENCES qualification_cycles(id),
-    FOREIGN KEY (evaluated_by) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS qualification_submission_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    submission_id INTEGER NOT NULL,
-    item_id INTEGER NOT NULL,
-    is_compliant BOOLEAN,
-    evidence_url TEXT,
-    auditor_status TEXT, -- 'aprovado', 'reprovado', 'pendente'
-    auditor_observation TEXT,
-    FOREIGN KEY (submission_id) REFERENCES qualification_submissions(id),
-    FOREIGN KEY (item_id) REFERENCES qualification_items(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS action_plans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    deadline TEXT NOT NULL,
-    status TEXT NOT NULL, -- 'pendente', 'em_andamento', 'concluido'
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS price_tables (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER, -- null if general
-    title TEXT NOT NULL,
-    code TEXT NOT NULL,
-    version TEXT NOT NULL,
-    status TEXT NOT NULL, -- 'vigente', 'futura', 'historico'
-    effective_date TEXT NOT NULL,
-    file_url TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS credentialing_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    specialty TEXT NOT NULL,
-    file_url TEXT,
-    status TEXT NOT NULL DEFAULT 'pendente',
-    created_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS qualification_scripts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    items TEXT NOT NULL,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS survey_responses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id INTEGER NOT NULL,
-    atendimento TEXT NOT NULL,
-    comunicacao TEXT NOT NULL,
-    sugestoes TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(provider_id) REFERENCES providers(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-
-  -- NOVO MOTOR DE ROTEIROS DE QUALIFICACAO (RN 630)
-  CREATE TABLE IF NOT EXISTS eval_scripts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    version TEXT,
-    created_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS eval_sections (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    script_id INTEGER NOT NULL,
-    parent_section_id INTEGER,
-    name TEXT NOT NULL,
-    order_index INTEGER NOT NULL,
-    FOREIGN KEY(script_id) REFERENCES eval_scripts(id),
-    FOREIGN KEY(parent_section_id) REFERENCES eval_sections(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS eval_questions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    section_id INTEGER NOT NULL,
-    code TEXT,
-    text TEXT NOT NULL,
-    legislation TEXT,
-    type TEXT NOT NULL, -- 'sim_nao', 'multipla_escolha', 'texto', 'numerico', 'data', 'upload', 'checklist'
-    options TEXT, -- JSON array of options if multiple choice or checklist
-    weight INTEGER DEFAULT 1,
-    max_score INTEGER DEFAULT 0,
-    evidence_required BOOLEAN DEFAULT 0,
-    is_eliminatory BOOLEAN DEFAULT 0,
-    order_index INTEGER NOT NULL,
-    FOREIGN KEY(section_id) REFERENCES eval_sections(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS eval_instances (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    script_id INTEGER NOT NULL,
-    provider_id INTEGER NOT NULL,
-    auditor_id INTEGER,
-    status TEXT NOT NULL, -- 'em_andamento', 'pendente', 'em_analise', 'aguardando_evidencia', 'reprovado', 'aprovado', 'finalizado'
-    score INTEGER DEFAULT 0,
-    max_possible_score INTEGER DEFAULT 0,
-    percentual REAL DEFAULT 0,
-    seal TEXT, -- 'Bronze', 'Prata', 'Ouro', null
-    started_at TEXT NOT NULL,
-    completed_at TEXT,
-    FOREIGN KEY(script_id) REFERENCES eval_scripts(id),
-    FOREIGN KEY(provider_id) REFERENCES providers(id),
-    FOREIGN KEY(auditor_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS eval_answers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    instance_id INTEGER NOT NULL,
-    question_id INTEGER NOT NULL,
-    answer_value TEXT, -- The selected option or value or 'NA'
-    score_obtained INTEGER,
-    evidence_url TEXT,
-    provider_observation TEXT,
-    auditor_observation TEXT,
-    is_non_compliant BOOLEAN DEFAULT 0,
-    evidence_status TEXT, -- 'pendente', 'aprovado', 'reprovado'
-    FOREIGN KEY(instance_id) REFERENCES eval_instances(id),
-    FOREIGN KEY(question_id) REFERENCES eval_questions(id)
-  );
-`);
-
-// Seed initial data if empty
-try {
-  // Try to add response column if it doesn't exist (for existing DBs)
-  db.exec('ALTER TABLE tickets ADD COLUMN response TEXT;');
-} catch (e) {
-  // Column might already exist, ignore
-}
-
-try {
-  db.exec('ALTER TABLE trainings ADD COLUMN created_at TEXT;');
-} catch (e) {
-  // Column might already exist, ignore
-}
-
-try {
-  db.exec('ALTER TABLE providers ADD COLUMN provider_group TEXT;');
-} catch (e) {
-  // Column might already exist, ignore
-}
-
-try {
-  db.exec('ALTER TABLE announcements ADD COLUMN image_url TEXT;');
-} catch (e) {
-  // Column might already exist, ignore
-}
-
-try {
-  db.exec('ALTER TABLE announcements ADD COLUMN target_type TEXT DEFAULT "geral";');
-  db.exec('ALTER TABLE announcements ADD COLUMN target_group TEXT;');
-  db.exec('ALTER TABLE announcements ADD COLUMN target_provider_id INTEGER;');
-} catch (e) {
-  // Columns might already exist, ignore
-}
-
-try {
-  db.exec('ALTER TABLE trainings ADD COLUMN target_type TEXT DEFAULT "geral";');
-  db.exec('ALTER TABLE trainings ADD COLUMN target_group TEXT;');
-  db.exec('ALTER TABLE trainings ADD COLUMN target_provider_id INTEGER;');
-} catch (e) {
-  // Columns might already exist, ignore
-}
-
-// Fix cooperado provider_id if missing
-try {
-  const cooperado = db.prepare("SELECT id FROM users WHERE role = 'cooperado' AND provider_id IS NULL").get() as { id: number };
-  if (cooperado) {
-    const insertProvider = db.prepare("INSERT INTO providers (name, cnpj, code, provider_group, qualification_level, status) VALUES (?, ?, ?, ?, ?, ?)");
-    const providerResult = insertProvider.run('Consultório Dra. Ana Souza', '98.765.432/0001-10', '12345', 'Cardiologia', 'A', 'Ativo');
-    db.prepare("UPDATE users SET provider_id = ? WHERE id = ?").run(providerResult.lastInsertRowid, cooperado.id);
+      // Calculate a default payment date (e.g., 15th of next month)
+      const today = new Date();
+      const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 15);
+      await query('INSERT INTO settings (key, value) VALUES ($1, $2)', ['payment_date', nextMonth.toISOString().split('T')[0]]);
+    }
+  } catch (e) {
+    console.error("Error seeding settings:", e);
   }
-} catch (e) {
-  console.error("Error fixing cooperado:", e);
-}
 
-try {
-  const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };
-  if (settingsCount.count === 0) {
-    const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
-    insertSetting.run('current_competence', '2025-10');
-    
-    // Calculate a default payment date (e.g., 15th of next month)
-    const today = new Date();
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 15);
-    insertSetting.run('payment_date', nextMonth.toISOString().split('T')[0]);
+  const { rows: userCountRows } = await query('SELECT COUNT(*) as count FROM users');
+  if (Number(userCountRows[0].count) === 0) {
+    const hash = bcrypt.hashSync('senha123', 10);
+
+    // Insert Provider
+    const { rows: providerRows } = await query(
+      'INSERT INTO providers (name, cnpj, qualification_level, status) VALUES ($1, $2, $3, $4) RETURNING id',
+      ['Clínica Saúde Total', '12.345.678/0001-90', 'A', 'Ativo']
+    );
+    const providerId = providerRows[0].id;
+
+    // Insert Users
+    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Dr. João Silva', 'prestador@unimed.com', hash, 'prestador', providerId]);
+    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Admin Unimed', 'admin@unimed.com', hash, 'admin', null]);
+    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Auditor Carlos', 'auditoria@unimed.com', hash, 'auditoria', null]);
+    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Dra. Ana Souza', 'cooperado@unimed.com', hash, 'cooperado', null]);
+
+    // Insert Documents
+    const insertDocSql = 'INSERT INTO documents (provider_id, type, issue_date, expiry_date, status, file_url) VALUES ($1, $2, $3, $4, $5, $6)';
+    await query(insertDocSql, [providerId, 'Alvará Sanitário', '2023-01-10', '2024-01-10', 'vencido', '/docs/alvara.pdf']);
+    await query(insertDocSql, [providerId, 'CNES', '2023-05-20', '2024-05-20', 'valido', '/docs/cnes.pdf']);
+    await query(insertDocSql, [providerId, 'Contrato Social', '2020-01-01', '2030-01-01', 'valido', '/docs/contrato.pdf']);
+
+    // Insert Tickets
+    const insertTicketSql = 'INSERT INTO tickets (provider_id, title, description, category, priority, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)';
+    await query(insertTicketSql, [providerId, 'Dúvida sobre Glosa', 'Gostaria de entender o motivo da glosa na fatura 123.', 'Financeiro', 'Média', 'aberto', new Date().toISOString()]);
+    await query(insertTicketSql, [providerId, 'Atualização de Endereço', 'Mudamos de endereço, segue comprovante.', 'Cadastro', 'Baixa', 'encerrado', new Date(Date.now() - 86400000 * 5).toISOString()]);
+
+    // Insert Announcements
+    const insertAnnouncementSql = 'INSERT INTO announcements (title, description, category, date) VALUES ($1, $2, $3, $4)';
+    await query(insertAnnouncementSql, ['Nova Tabela de Honorários', 'A tabela de honorários foi atualizada para 2024.', 'Financeiro', new Date().toISOString()]);
+    await query(insertAnnouncementSql, ['Campanha de Vacinação', 'Participem da campanha de vacinação contra a gripe.', 'Geral', new Date(Date.now() - 86400000 * 2).toISOString()]);
+
+    // Insert Trainings
+    const insertTrainingSql = 'INSERT INTO trainings (title, description, video_url, pdf_url, validity_days) VALUES ($1, $2, $3, $4, $5) RETURNING id';
+    const { rows: t1Rows } = await query(insertTrainingSql, ['Boas Práticas de Faturamento', 'Aprenda a evitar glosas.', 'https://example.com/video1', 'https://example.com/pdf1', 365]);
+    const { rows: t2Rows } = await query(insertTrainingSql, ['LGPD na Saúde', 'Treinamento obrigatório sobre proteção de dados.', 'https://example.com/video2', 'https://example.com/pdf2', 365]);
+
+    // Insert Provider Trainings
+    const insertProvTrainingSql = 'INSERT INTO provider_trainings (provider_id, training_id, status, completed_at) VALUES ($1, $2, $3, $4)';
+    await query(insertProvTrainingSql, [providerId, t1Rows[0].id, 'pendente', null]);
+    await query(insertProvTrainingSql, [providerId, t2Rows[0].id, 'concluido', new Date().toISOString()]);
+
+    // Insert Financials
+    const insertFinancialSql = 'INSERT INTO financials (provider_id, competence, gross_value, glosa_value, net_value, status) VALUES ($1, $2, $3, $4, $5, $6)';
+    await query(insertFinancialSql, [providerId, '01/2024', 50000.00, 2500.00, 47500.00, 'Pago']);
+    await query(insertFinancialSql, [providerId, '02/2024', 45000.00, 1000.00, 44000.00, 'Pago']);
+    await query(insertFinancialSql, [providerId, '03/2024', 55000.00, 5000.00, 50000.00, 'Aberto']);
+
+    // Insert Audits
+    const insertAuditSql = 'INSERT INTO audits (provider_id, scheduled_date, status, evaluation) VALUES ($1, $2, $3, $4)';
+    await query(insertAuditSql, [providerId, new Date(Date.now() + 86400000 * 15).toISOString(), 'programada', null]);
+    await query(insertAuditSql, [providerId, new Date(Date.now() - 86400000 * 60).toISOString(), 'realizada', 'Aprovado com ressalvas']);
+
+    // Insert Qualifications
+    await query('INSERT INTO qualifications (provider_id, cycle, score, status, seal, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [providerId, '2024-2025', 92, 'concluida', 'Ouro', new Date().toISOString()]);
+
+    // Insert Action Plans
+    await query('INSERT INTO action_plans (provider_id, title, description, deadline, status, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [providerId, 'Melhoria no tempo de espera', 'Reduzir o tempo de espera na recepção para menos de 15 minutos.', new Date(Date.now() + 86400000 * 30).toISOString(), 'em_andamento', new Date().toISOString()]);
+
+    // Insert Price Tables
+    const insertPriceTableSql = 'INSERT INTO price_tables (provider_id, title, code, version, status, effective_date, file_url, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)';
+    await query(insertPriceTableSql, [providerId, 'Tabela de Honorários Médicos', 'THM-2024', 'v1.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/thm-2024.pdf', new Date().toISOString()]);
+    await query(insertPriceTableSql, [providerId, 'Tabela de Materiais e Medicamentos', 'TMM-2024', 'v1.2', 'vigente', new Date('2024-03-01').toISOString(), '/docs/tmm-2024.pdf', new Date().toISOString()]);
+    await query(insertPriceTableSql, [null, 'Tabela TUSS Padrão', 'TUSS-2024', 'v2.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/tuss-2024.pdf', new Date().toISOString()]);
   }
-} catch (e) {
-  console.error("Error seeding settings:", e);
-}
 
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-if (userCount.count === 0) {
-  const hash = bcrypt.hashSync('senha123', 10);
-  
-  // Insert Provider
-  const insertProvider = db.prepare('INSERT INTO providers (name, cnpj, qualification_level, status) VALUES (?, ?, ?, ?)');
-  const providerResult = insertProvider.run('Clínica Saúde Total', '12.345.678/0001-90', 'A', 'Ativo');
-  const providerId = providerResult.lastInsertRowid;
+  // Seed qualification cycle + items if empty
+  const { rows: cycleCountRows } = await query('SELECT COUNT(*) as count FROM qualification_cycles');
+  if (Number(cycleCountRows[0].count) === 0) {
+    const { rows: cycleRows } = await query(
+      'INSERT INTO qualification_cycles (title, description, active, created_at) VALUES ($1, $2, $3, $4) RETURNING id',
+      ['Qualificação Anual 2026', 'Ciclo de qualificação obrigatório para todos os prestadores da rede.', true, new Date().toISOString()]
+    );
+    const cycleId = cycleRows[0].id;
 
-  // Insert Users
-  const insertUser = db.prepare('INSERT INTO users (name, email, password, role, provider_id) VALUES (?, ?, ?, ?, ?)');
-  insertUser.run('Dr. João Silva', 'prestador@unimed.com', hash, 'prestador', providerId);
-  insertUser.run('Admin Unimed', 'admin@unimed.com', hash, 'admin', null);
-  insertUser.run('Auditor Carlos', 'auditoria@unimed.com', hash, 'auditoria', null);
-  insertUser.run('Dra. Ana Souza', 'cooperado@unimed.com', hash, 'cooperado', null);
+    const insertItemSql = 'INSERT INTO qualification_items (cycle_id, title, description, is_required) VALUES ($1, $2, $3, $4)';
+    await query(insertItemSql, [cycleId, 'Alvará (Localização, Sanitário ou Bombeiros)', 'Cópia do alvará vigente.', true]);
+    await query(insertItemSql, [cycleId, 'CNES Ativo', 'Comprovante de inscrição no Cadastro Nacional de Estabelecimentos de Saúde.', true]);
+    await query(insertItemSql, [cycleId, 'Relação do Corpo Clínico', 'Lista atualizada dos profissionais com seus respectivos registros (CRM, COREN, etc).', true]);
+    await query(insertItemSql, [cycleId, 'PGRSS', 'Plano de Gerenciamento de Resíduos de Serviços de Saúde.', true]);
+    await query(insertItemSql, [cycleId, 'Certificado de Regularidade Técnica', 'Certificado emitido pelo conselho de classe.', true]);
+    await query(insertItemSql, [cycleId, 'ART - Anotação de Responsabilidade Técnica', 'Documento de Anotação de Responsabilidade Técnica (ART).', true]);
+    await query(insertItemSql, [cycleId, 'RQE', 'Registro de Qualificação de Especialista.', false]);
+    await query(insertItemSql, [cycleId, 'Certificados/diplomas', 'Cópias dos certificados ou diplomas.', false]);
+    await query(insertItemSql, [cycleId, 'Optante pelo Simples Nacional', 'Comprovante de opção pelo Simples Nacional (se aplicável).', false]);
+  }
 
-  // Insert Documents
-  const insertDoc = db.prepare('INSERT INTO documents (provider_id, type, issue_date, expiry_date, status, file_url) VALUES (?, ?, ?, ?, ?, ?)');
-  insertDoc.run(providerId, 'Alvará Sanitário', '2023-01-10', '2024-01-10', 'vencido', '/docs/alvara.pdf');
-  insertDoc.run(providerId, 'CNES', '2023-05-20', '2024-05-20', 'valido', '/docs/cnes.pdf');
-  insertDoc.run(providerId, 'Contrato Social', '2020-01-01', '2030-01-01', 'valido', '/docs/contrato.pdf');
-
-  // Insert Tickets
-  const insertTicket = db.prepare('INSERT INTO tickets (provider_id, title, description, category, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-  insertTicket.run(providerId, 'Dúvida sobre Glosa', 'Gostaria de entender o motivo da glosa na fatura 123.', 'Financeiro', 'Média', 'aberto', new Date().toISOString());
-  insertTicket.run(providerId, 'Atualização de Endereço', 'Mudamos de endereço, segue comprovante.', 'Cadastro', 'Baixa', 'encerrado', new Date(Date.now() - 86400000 * 5).toISOString());
-
-  // Insert Announcements
-  const insertAnnouncement = db.prepare('INSERT INTO announcements (title, description, category, date) VALUES (?, ?, ?, ?)');
-  insertAnnouncement.run('Nova Tabela de Honorários', 'A tabela de honorários foi atualizada para 2024.', 'Financeiro', new Date().toISOString());
-  insertAnnouncement.run('Campanha de Vacinação', 'Participem da campanha de vacinação contra a gripe.', 'Geral', new Date(Date.now() - 86400000 * 2).toISOString());
-
-  // Insert Trainings
-  const insertTraining = db.prepare('INSERT INTO trainings (title, description, video_url, pdf_url, validity_days) VALUES (?, ?, ?, ?, ?)');
-  const t1 = insertTraining.run('Boas Práticas de Faturamento', 'Aprenda a evitar glosas.', 'https://example.com/video1', 'https://example.com/pdf1', 365);
-  const t2 = insertTraining.run('LGPD na Saúde', 'Treinamento obrigatório sobre proteção de dados.', 'https://example.com/video2', 'https://example.com/pdf2', 365);
-
-  // Insert Provider Trainings
-  const insertProvTraining = db.prepare('INSERT INTO provider_trainings (provider_id, training_id, status, completed_at) VALUES (?, ?, ?, ?)');
-  insertProvTraining.run(providerId, t1.lastInsertRowid, 'pendente', null);
-  insertProvTraining.run(providerId, t2.lastInsertRowid, 'concluido', new Date().toISOString());
-
-  // Insert Financials
-  const insertFinancial = db.prepare('INSERT INTO financials (provider_id, competence, gross_value, glosa_value, net_value, status) VALUES (?, ?, ?, ?, ?, ?)');
-  insertFinancial.run(providerId, '01/2024', 50000.00, 2500.00, 47500.00, 'Pago');
-  insertFinancial.run(providerId, '02/2024', 45000.00, 1000.00, 44000.00, 'Pago');
-  insertFinancial.run(providerId, '03/2024', 55000.00, 5000.00, 50000.00, 'Aberto');
-
-  // Insert Audits
-  const insertAudit = db.prepare('INSERT INTO audits (provider_id, scheduled_date, status, evaluation) VALUES (?, ?, ?, ?)');
-  insertAudit.run(providerId, new Date(Date.now() + 86400000 * 15).toISOString(), 'programada', null);
-  insertAudit.run(providerId, new Date(Date.now() - 86400000 * 60).toISOString(), 'realizada', 'Aprovado com ressalvas');
-
-  // Insert Qualifications
-  const insertQual = db.prepare('INSERT INTO qualifications (provider_id, cycle, score, status, seal, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-  insertQual.run(providerId, '2024-2025', 92, 'concluida', 'Ouro', new Date().toISOString());
-
-  // Insert Action Plans
-  const insertActionPlan = db.prepare('INSERT INTO action_plans (provider_id, title, description, deadline, status, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-  insertActionPlan.run(providerId, 'Melhoria no tempo de espera', 'Reduzir o tempo de espera na recepção para menos de 15 minutos.', new Date(Date.now() + 86400000 * 30).toISOString(), 'em_andamento', new Date().toISOString());
-
-  // Insert Price Tables
-  const insertPriceTable = db.prepare('INSERT INTO price_tables (provider_id, title, code, version, status, effective_date, file_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  insertPriceTable.run(providerId, 'Tabela de Honorários Médicos', 'THM-2024', 'v1.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/thm-2024.pdf', new Date().toISOString());
-  insertPriceTable.run(providerId, 'Tabela de Materiais e Medicamentos', 'TMM-2024', 'v1.2', 'vigente', new Date('2024-03-01').toISOString(), '/docs/tmm-2024.pdf', new Date().toISOString());
-  insertPriceTable.run(null, 'Tabela TUSS Padrão', 'TUSS-2024', 'v2.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/tuss-2024.pdf', new Date().toISOString());
+  // Ensure cooperado user exists (idempotent)
+  try {
+    const hash = bcrypt.hashSync('senha123', 10);
+    await query(
+      `INSERT INTO users (name, email, password, role, provider_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (email) DO NOTHING`,
+      ['Dra. Ana Souza', 'cooperado@unimed.com', hash, 'cooperado', null]
+    );
+  } catch (e) {
+    console.error('Error ensuring users:', e);
+  }
 }
 
 async function startServer() {
   console.log("=== STARTING THE SERVER ===");
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
+
+  // Atrás do proxy do Railway: confia no X-Forwarded-For para obter o IP real do cliente (RN 630 — trilha de acesso).
+  app.set('trust proxy', true);
 
   app.use(cors());
   app.use(express.json());
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+  // Seed/init data BEFORE routes are registered.
+  await initData();
 
   // --- API Routes ---
 
@@ -545,7 +186,7 @@ async function startServer() {
   const authenticate = (req: any, res: any, next: any) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No token provided' });
-    
+
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -556,1259 +197,1714 @@ async function startServer() {
     }
   };
 
-  const cycleCount = db.prepare('SELECT COUNT(*) as count FROM qualification_cycles').get() as { count: number };
-  if (cycleCount.count === 0) {
-    const insertCycle = db.prepare('INSERT INTO qualification_cycles (title, description, active, created_at) VALUES (?, ?, ?, ?)');
-    const cycleResult = insertCycle.run('Qualificação Anual 2026', 'Ciclo de qualificação obrigatório para todos os prestadores da rede.', 1, new Date().toISOString());
-    const cycleId = cycleResult.lastInsertRowid;
+  // Metadados do cliente para a trilha de acesso (RN 630 — §5.2.2).
+  const clientMeta = (req: any) => ({
+    ip: (req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '') || null,
+    userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) || null,
+  });
 
-    const insertItem = db.prepare('INSERT INTO qualification_items (cycle_id, title, description, is_required) VALUES (?, ?, ?, ?)');
-    insertItem.run(cycleId, 'Alvará (Localização, Sanitário ou Bombeiros)', 'Cópia do alvará vigente.', 1);
-    insertItem.run(cycleId, 'CNES Ativo', 'Comprovante de inscrição no Cadastro Nacional de Estabelecimentos de Saúde.', 1);
-    insertItem.run(cycleId, 'Relação do Corpo Clínico', 'Lista atualizada dos profissionais com seus respectivos registros (CRM, COREN, etc).', 1);
-    insertItem.run(cycleId, 'PGRSS', 'Plano de Gerenciamento de Resíduos de Serviços de Saúde.', 1);
-    insertItem.run(cycleId, 'Certificado de Regularidade Técnica', 'Certificado emitido pelo conselho de classe.', 1);
-    insertItem.run(cycleId, 'ART - Anotação de Responsabilidade Técnica', 'Documento de Anotação de Responsabilidade Técnica (ART).', 1);
-    insertItem.run(cycleId, 'RQE', 'Registro de Qualificação de Especialista.', 0);
-    insertItem.run(cycleId, 'Certificados/diplomas', 'Cópias dos certificados ou diplomas.', 0);
-    insertItem.run(cycleId, 'Optante pelo Simples Nacional', 'Comprovante de opção pelo Simples Nacional (se aplicável).', 0);
-  }
+  // Registra uma tentativa de login na trilha de acesso. Nunca lança — auditoria não pode quebrar o login.
+  const recordAccess = async (userId: number | null, email: string | null, success: boolean, req: any) => {
+    try {
+      const { ip, userAgent } = clientMeta(req);
+      await query(
+        'INSERT INTO access_logs (user_id, email, ip, user_agent, success) VALUES ($1, $2, $3, $4, $5)',
+        [userId, email, ip, userAgent, success]
+      );
+    } catch (err) {
+      console.error('Falha ao registrar access_log:', err);
+    }
+  };
 
   // Login
-  app.post('/api/auth/login', (req, res) => {
-    const { email, password } = req.body;
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
-    
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      const { rows } = await query('SELECT * FROM users WHERE email = $1', [email]);
+      const user = rows[0] as any;
 
-    const token = jwt.sign({ id: user.id, name: user.name, role: user.role, provider_id: user.provider_id }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, provider_id: user.provider_id } });
+      if (!user || !bcrypt.compareSync(password, user.password)) {
+        await recordAccess(user?.id ?? null, email ?? null, false, req);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+
+      if (user.is_active === false) {
+        await recordAccess(user.id, user.email, false, req);
+        return res.status(403).json({ error: 'Usuário inativo' });
+      }
+
+      // Captura o acesso ANTERIOR antes de sobrescrever (§5.2.2 Tela 4 — "seu último acesso foi...").
+      const previousLoginAt = user.last_login_at ?? null;
+
+      // Sucesso: atualiza último acesso e grava a trilha.
+      const { ip } = clientMeta(req);
+      await query('UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2', [ip, user.id]);
+      await recordAccess(user.id, user.email, true, req);
+
+      const token = jwt.sign({ id: user.id, name: user.name, role: user.role, provider_id: user.provider_id }, JWT_SECRET, { expiresIn: '24h' });
+      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, provider_id: user.provider_id, last_login_at: previousLoginAt } });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Trilha de acesso — leitura (RN 630). Restrito a admin/auditoria.
+  app.get('/api/access-logs', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Acesso restrito a administradores e auditoria' });
+      }
+
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+      // Filtros opcionais.
+      const where: string[] = [];
+      const params: any[] = [];
+      if (req.query.email) { params.push(`%${req.query.email}%`); where.push(`al.email ILIKE $${params.length}`); }
+      if (req.query.success === 'true' || req.query.success === 'false') {
+        params.push(req.query.success === 'true'); where.push(`al.success = $${params.length}`);
+      }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+      const { rows: countRows } = await query(`SELECT COUNT(*)::int AS total FROM access_logs al ${whereSql}`, params);
+      const total = countRows[0]?.total ?? 0;
+
+      params.push(limit, offset);
+      const { rows } = await query(
+        `SELECT al.id, al.user_id, al.email, al.ip, al.user_agent, al.success, al.created_at,
+                u.name AS user_name, u.role AS user_role
+         FROM access_logs al
+         LEFT JOIN users u ON u.id = al.user_id
+         ${whereSql}
+         ORDER BY al.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+      );
+
+      res.json({ logs: rows, total, limit, offset });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // === WS5: Equipe do prestador (provider_contacts) — §5.2.3 Tela 3. Contatos informativos, sem login. ===
+
+  // Resolve o provider_id do usuário logado (JWT já traz; faz fallback no banco por segurança).
+  const resolveProviderId = async (req: any): Promise<number | null> => {
+    let { provider_id, role, id: user_id } = req.user;
+    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+      const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+      provider_id = (rows[0] as any)?.provider_id ?? null;
+    }
+    return provider_id ?? null;
+  };
+
+  app.get('/api/provider-contacts', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        if (req.query.provider_id) {
+          const { rows } = await query('SELECT * FROM provider_contacts WHERE provider_id = $1 ORDER BY created_at DESC', [req.query.provider_id]);
+          return res.json(rows);
+        }
+        const { rows } = await query(
+          'SELECT pc.*, p.name as provider_name FROM provider_contacts pc JOIN providers p ON pc.provider_id = p.id ORDER BY pc.created_at DESC'
+        );
+        return res.json(rows);
+      }
+      const providerId = await resolveProviderId(req);
+      if (!providerId) return res.json([]);
+      const { rows } = await query('SELECT * FROM provider_contacts WHERE provider_id = $1 ORDER BY created_at DESC', [providerId]);
+      res.json(rows);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/provider-contacts', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      const { name, position, email, phone, cpf, council_registry } = req.body;
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ error: 'Nome é obrigatório' });
+      }
+      // Prestador/cooperado só cadastra na própria equipe; admin/auditoria informam o provider_id.
+      const providerId = (role === 'admin' || role === 'auditoria') ? req.body.provider_id : await resolveProviderId(req);
+      if (!providerId) {
+        return res.status(400).json({ error: 'Prestador não identificado para este contato' });
+      }
+      const { rows } = await query(
+        `INSERT INTO provider_contacts (provider_id, name, position, email, phone, cpf, council_registry)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [providerId, String(name).trim(), position || null, email || null, phone || null, cpf || null, council_registry || null]
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/provider-contacts/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      const { rows } = await query('SELECT provider_id FROM provider_contacts WHERE id = $1', [req.params.id]);
+      const contact = rows[0] as any;
+      if (!contact) return res.status(404).json({ error: 'Contato não encontrado' });
+
+      if (role !== 'admin' && role !== 'auditoria') {
+        const providerId = await resolveProviderId(req);
+        if (String(contact.provider_id) !== String(providerId)) {
+          return res.status(403).json({ error: 'Você não tem permissão para remover este contato' });
+        }
+      }
+      await query('DELETE FROM provider_contacts WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Dashboard Data
-  app.get('/api/dashboard', authenticate, (req: any, res) => {
-    let { provider_id, role, id: user_id } = req.user;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
+  app.get('/api/dashboard', authenticate, async (req: any, res) => {
+    try {
+      let { provider_id, role, id: user_id } = req.user;
+
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
       }
-    }
-    
-    if (role === 'admin' || role === 'auditoria') {
-      // Admin/Auditor dashboard data
-      const providersCount = db.prepare('SELECT COUNT(*) as count FROM providers').get();
-      const openTicketsCount = db.prepare('SELECT COUNT(*) as count FROM tickets WHERE status = ?').get('aberto');
-      const pendingDocsCount = db.prepare('SELECT COUNT(*) as count FROM documents WHERE status = ?').get('pendente');
-      const pendingCredentialingCount = db.prepare('SELECT COUNT(*) as count FROM credentialing_requests WHERE status = ?').get('pendente');
-      
-      const recentPendingDocs = db.prepare('SELECT d.*, p.name as provider_name FROM documents d JOIN providers p ON d.provider_id = p.id WHERE d.status = ? ORDER BY d.id DESC LIMIT 5').all('pendente');
-      const recentOpenTickets = db.prepare('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id WHERE t.status = ? ORDER BY t.created_at DESC LIMIT 5').all('aberto');
 
-      res.json({
-        providersCount,
-        openTicketsCount,
-        pendingDocsCount,
-        pendingCredentialingCount,
-        recentPendingDocs,
-        recentOpenTickets
-      });
-    } else if (provider_id) {
-      const provider = db.prepare('SELECT * FROM providers WHERE id = ?').get(provider_id);
-      const docs = db.prepare('SELECT * FROM documents WHERE provider_id = ?').all(provider_id);
-      const tickets = db.prepare('SELECT * FROM tickets WHERE provider_id = ?').all(provider_id);
-      const trainings = db.prepare('SELECT pt.*, t.title FROM provider_trainings pt JOIN trainings t ON pt.training_id = t.id WHERE pt.provider_id = ?').all(provider_id);
-      const audits = db.prepare('SELECT * FROM audits WHERE provider_id = ?').all(provider_id);
-      const financials = db.prepare('SELECT * FROM financials WHERE provider_id = ? ORDER BY competence DESC LIMIT 3').all(provider_id);
-      const announcements = db.prepare('SELECT * FROM announcements ORDER BY date DESC LIMIT 5').all();
+      if (role === 'admin' || role === 'auditoria') {
+        // Admin/Auditor dashboard data
+        const { rows: providersCountRows } = await query('SELECT COUNT(*) as count FROM providers');
+        const { rows: openTicketsCountRows } = await query('SELECT COUNT(*) as count FROM tickets WHERE status = $1', ['aberto']);
+        const { rows: pendingDocsCountRows } = await query('SELECT COUNT(*) as count FROM documents WHERE status = $1', ['pendente']);
+        const { rows: pendingCredentialingCountRows } = await query('SELECT COUNT(*) as count FROM credentialing_requests WHERE status = $1', ['pendente']);
 
-      res.json({
-        provider,
-        documents: docs,
-        tickets: tickets,
-        trainings: trainings,
-        audits: audits,
-        financials: financials,
-        announcements: announcements
-      });
-    } else {
-      res.json({
-        provider: null,
-        documents: [],
-        tickets: [],
-        trainings: [],
-        audits: [],
-        financials: [],
-        announcements: []
-      });
+        const { rows: recentPendingDocs } = await query('SELECT d.*, p.name as provider_name FROM documents d JOIN providers p ON d.provider_id = p.id WHERE d.status = $1 ORDER BY d.id DESC LIMIT 5', ['pendente']);
+        const { rows: recentOpenTickets } = await query('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 5', ['aberto']);
+
+        res.json({
+          providersCount: providersCountRows[0],
+          openTicketsCount: openTicketsCountRows[0],
+          pendingDocsCount: pendingDocsCountRows[0],
+          pendingCredentialingCount: pendingCredentialingCountRows[0],
+          recentPendingDocs,
+          recentOpenTickets
+        });
+      } else if (provider_id) {
+        const { rows: providerRows } = await query('SELECT * FROM providers WHERE id = $1', [provider_id]);
+        const { rows: docs } = await query('SELECT * FROM documents WHERE provider_id = $1', [provider_id]);
+        const { rows: tickets } = await query('SELECT * FROM tickets WHERE provider_id = $1', [provider_id]);
+        const { rows: trainings } = await query('SELECT pt.*, t.title FROM provider_trainings pt JOIN trainings t ON pt.training_id = t.id WHERE pt.provider_id = $1', [provider_id]);
+        const { rows: audits } = await query('SELECT * FROM audits WHERE provider_id = $1', [provider_id]);
+        const { rows: financials } = await query('SELECT * FROM financials WHERE provider_id = $1 ORDER BY competence DESC LIMIT 3', [provider_id]);
+        const { rows: announcements } = await query('SELECT * FROM announcements ORDER BY date DESC LIMIT 5');
+
+        res.json({
+          provider: providerRows[0],
+          documents: docs,
+          tickets: tickets,
+          trainings: trainings,
+          audits: audits,
+          financials: financials,
+          announcements: announcements
+        });
+      } else {
+        res.json({
+          provider: null,
+          documents: [],
+          tickets: [],
+          trainings: [],
+          audits: [],
+          financials: [],
+          announcements: []
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Settings
-  app.get('/api/settings', authenticate, (req: any, res) => {
-    const settings = db.prepare('SELECT * FROM settings').all();
-    const result = settings.reduce((acc: any, curr: any) => {
-      acc[curr.key] = curr.value;
-      return acc;
-    }, {});
-    res.json(result);
+  app.get('/api/settings', authenticate, async (req: any, res) => {
+    try {
+      const { rows: settings } = await query('SELECT * FROM settings');
+      const result = settings.reduce((acc: any, curr: any) => {
+        acc[curr.key] = curr.value;
+        return acc;
+      }, {});
+      res.json(result);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
-  app.post('/api/settings', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { current_competence, payment_date } = req.body;
+  app.post('/api/settings', authenticate, async (req: any, res) => {
     try {
-      const update = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
-      if (current_competence) update.run(current_competence, 'current_competence');
-      if (payment_date) update.run(payment_date, 'payment_date');
-      res.json({ success: true });
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { current_competence, payment_date } = req.body;
+      try {
+        if (current_competence) await query('UPDATE settings SET value = $1 WHERE key = $2', [current_competence, 'current_competence']);
+        if (payment_date) await query('UPDATE settings SET value = $1 WHERE key = $2', [payment_date, 'payment_date']);
+        res.json({ success: true });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Providers
-  app.get('/api/providers', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const providers = db.prepare('SELECT id, name, cnpj, code, provider_group, qualification_level, status FROM providers ORDER BY name ASC').all();
-      res.json(providers);
-    } else {
-      res.status(403).json({ error: 'Unauthorized' });
+  app.get('/api/providers', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: providers } = await query('SELECT id, name, cnpj, sgu_code AS code, provider_group, qualification_level, status FROM providers ORDER BY name ASC');
+        res.json(providers);
+      } else {
+        res.status(403).json({ error: 'Unauthorized' });
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/providers', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { name, cnpj, code, provider_group, qualification_level, status } = req.body;
-    if (!name || !cnpj) {
-      return res.status(400).json({ error: 'Name and CNPJ are required' });
-    }
+  app.post('/api/providers', authenticate, async (req: any, res) => {
     try {
-      const insert = db.prepare('INSERT INTO providers (name, cnpj, code, provider_group, qualification_level, status) VALUES (?, ?, ?, ?, ?, ?)');
-      const info = insert.run(name, cnpj, code || null, provider_group || null, qualification_level || null, status || 'Ativo');
-      res.json({ id: info.lastInsertRowid, name, cnpj, code, provider_group, qualification_level, status });
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { name, cnpj, code, provider_group, qualification_level, status } = req.body;
+      if (!name || !cnpj) {
+        return res.status(400).json({ error: 'Name and CNPJ are required' });
+      }
+      try {
+        const { rows } = await query(
+          'INSERT INTO providers (name, cnpj, sgu_code, provider_group, qualification_level, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [name, cnpj, code || null, provider_group || null, qualification_level || null, status || 'Ativo']
+        );
+        res.json({ id: rows[0].id, name, cnpj, code, provider_group, qualification_level, status });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Qualification Scripts
-  app.get('/api/qualification-scripts', authenticate, (req: any, res) => {
-    const scripts = db.prepare('SELECT * FROM qualification_scripts ORDER BY created_at DESC').all();
-    res.json(scripts.map(s => ({ ...s, items: JSON.parse(s.items) })));
-  });
-
-  app.post('/api/qualification-scripts', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { title, items } = req.body;
-    if (!title || !items || !Array.isArray(items)) {
-      return res.status(400).json({ error: 'Title and items array are required' });
-    }
+  app.get('/api/qualification-scripts', authenticate, async (req: any, res) => {
     try {
-      const insert = db.prepare('INSERT INTO qualification_scripts (title, items, created_at) VALUES (?, ?, ?)');
-      const info = insert.run(title, JSON.stringify(items), new Date().toISOString());
-      res.json({ id: info.lastInsertRowid, title, items });
+      const { rows: scripts } = await query('SELECT * FROM qualification_scripts ORDER BY created_at DESC');
+      res.json(scripts);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.delete('/api/qualification-scripts/:id', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+  app.post('/api/qualification-scripts', authenticate, async (req: any, res) => {
     try {
-      db.prepare('DELETE FROM qualification_scripts WHERE id = ?').run(req.params.id);
-      res.json({ success: true });
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { title, items } = req.body;
+      if (!title || !items || !Array.isArray(items)) {
+        return res.status(400).json({ error: 'Title and items array are required' });
+      }
+      try {
+        const { rows } = await query(
+          'INSERT INTO qualification_scripts (title, items, created_at) VALUES ($1, $2, $3) RETURNING id',
+          [title, JSON.stringify(items), new Date().toISOString()]
+        );
+        res.json({ id: rows[0].id, title, items });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/qualification-scripts/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      try {
+        await query('DELETE FROM qualification_scripts WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Documents
-  app.get('/api/documents', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const docs = db.prepare('SELECT d.*, p.name as provider_name, u.name as uploaded_by_name FROM documents d JOIN providers p ON d.provider_id = p.id LEFT JOIN users u ON d.uploaded_by = u.id ORDER BY d.id DESC').all();
-      res.json(docs);
-    } else if (provider_id) {
-      const docs = db.prepare('SELECT d.*, u.name as uploaded_by_name FROM documents d LEFT JOIN users u ON d.uploaded_by = u.id WHERE d.provider_id = ? ORDER BY d.id DESC').all(provider_id);
-      res.json(docs);
-    } else {
-      res.json([]);
+  app.get('/api/documents', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: docs } = await query('SELECT d.*, p.name as provider_name, u.name as uploaded_by_name FROM documents d JOIN providers p ON d.provider_id = p.id LEFT JOIN users u ON d.uploaded_by = u.id ORDER BY d.id DESC');
+        res.json(docs);
+      } else if (provider_id) {
+        const { rows: docs } = await query('SELECT d.*, u.name as uploaded_by_name FROM documents d LEFT JOIN users u ON d.uploaded_by = u.id WHERE d.provider_id = $1 ORDER BY d.id DESC', [provider_id]);
+        res.json(docs);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/documents', authenticate, upload.single('file'), (req: any, res) => {
-    const { provider_id, role, id: user_id } = req.user;
-    const { type, issue_date, expiry_date } = req.body;
-    
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+  app.post('/api/documents', authenticate, upload.single('file'), async (req: any, res) => {
+    try {
+      const { provider_id, role, id: user_id } = req.user;
+      const { type, issue_date, expiry_date } = req.body;
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      // Determine the provider ID to use (admins might upload for a provider, but for now let's assume provider uploads their own)
+      const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
+
+      if (!targetProviderId) {
+        return res.status(400).json({ error: 'Provider ID is required' });
+      }
+
+      const file_url = '/uploads/' + req.file.filename;
+      const status = 'pendente'; // New documents are pending approval
+      const upload_date = new Date().toISOString();
+
+      // Mark previous documents of the same type as 'historico'
+      await query("UPDATE documents SET status = 'historico' WHERE provider_id = $1 AND type = $2 AND status != 'historico'", [targetProviderId, type]);
+
+      const { rows } = await query(
+        'INSERT INTO documents (provider_id, type, issue_date, expiry_date, status, file_url, upload_date, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+        [targetProviderId, type, issue_date || null, expiry_date || null, status, file_url, upload_date, user_id]
+      );
+
+      const { rows: newDocRows } = await query('SELECT * FROM documents WHERE id = $1', [rows[0].id]);
+      res.json(newDocRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    // Determine the provider ID to use (admins might upload for a provider, but for now let's assume provider uploads their own)
-    const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
-
-    if (!targetProviderId) {
-      return res.status(400).json({ error: 'Provider ID is required' });
-    }
-
-    const file_url = '/uploads/' + req.file.filename;
-    const status = 'pendente'; // New documents are pending approval
-    const upload_date = new Date().toISOString();
-
-    // Mark previous documents of the same type as 'historico'
-    db.prepare("UPDATE documents SET status = 'historico' WHERE provider_id = ? AND type = ? AND status != 'historico'").run(targetProviderId, type);
-
-    const insertDoc = db.prepare('INSERT INTO documents (provider_id, type, issue_date, expiry_date, status, file_url, upload_date, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    const info = insertDoc.run(targetProviderId, type, issue_date || null, expiry_date || null, status, file_url, upload_date, user_id);
-    
-    const newDoc = db.prepare('SELECT * FROM documents WHERE id = ?').get(info.lastInsertRowid);
-    res.json(newDoc);
   });
 
-  app.put('/api/documents/:id', authenticate, upload.single('file'), (req: any, res) => {
-    const { role, provider_id } = req.user;
-    const { id } = req.params;
-    const { type, issue_date, expiry_date } = req.body;
+  app.put('/api/documents/:id', authenticate, upload.single('file'), async (req: any, res) => {
+    try {
+      const { role, provider_id } = req.user;
+      const { id } = req.params;
+      const { type, issue_date, expiry_date } = req.body;
 
-    const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-    if (!doc) return res.status(404).json({ error: 'Document not found' });
+      const { rows: docRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+      const doc = docRows[0] as any;
+      if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-    if (role === 'prestador' && doc.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      if (role === 'prestador' && doc.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      if (doc.status !== 'pendente') {
+        return res.status(400).json({ error: 'Only pending documents can be edited' });
+      }
+
+      let file_url = doc.file_url;
+      if (req.file) {
+        file_url = '/uploads/' + req.file.filename;
+      }
+
+      await query('UPDATE documents SET type = $1, issue_date = $2, expiry_date = $3, file_url = $4 WHERE id = $5', [type, issue_date || null, expiry_date || null, file_url, id]);
+
+      const { rows: updatedDocRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+      res.json(updatedDocRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    if (doc.status !== 'pendente') {
-      return res.status(400).json({ error: 'Only pending documents can be edited' });
-    }
-
-    let file_url = doc.file_url;
-    if (req.file) {
-      file_url = '/uploads/' + req.file.filename;
-    }
-
-    const updateDoc = db.prepare('UPDATE documents SET type = ?, issue_date = ?, expiry_date = ?, file_url = ? WHERE id = ?');
-    updateDoc.run(type, issue_date || null, expiry_date || null, file_url, id);
-
-    const updatedDoc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-    res.json(updatedDoc);
   });
 
-  app.delete('/api/documents/:id', authenticate, (req: any, res) => {
-    const { role, provider_id } = req.user;
-    const { id } = req.params;
+  app.delete('/api/documents/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role, provider_id } = req.user;
+      const { id } = req.params;
 
-    const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-    if (!doc) return res.status(404).json({ error: 'Document not found' });
+      const { rows: docRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+      const doc = docRows[0] as any;
+      if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-    if (role === 'prestador' && doc.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
+      if (role === 'prestador' && doc.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      if (doc.status !== 'pendente') {
+        return res.status(400).json({ error: 'Only pending documents can be deleted' });
+      }
+
+      await query('DELETE FROM documents WHERE id = $1', [id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    if (doc.status !== 'pendente') {
-      return res.status(400).json({ error: 'Only pending documents can be deleted' });
-    }
-
-    db.prepare('DELETE FROM documents WHERE id = ?').run(id);
-    res.json({ success: true });
   });
 
-  app.put('/api/documents/:id/status', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    const { id } = req.params;
-    const { status, issue_date, expiry_date, rejection_reason } = req.body; // 'valido', 'reprovado'
+  app.put('/api/documents/:id/status', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      const { id } = req.params;
+      const { status, issue_date, expiry_date, rejection_reason } = req.body; // 'valido', 'reprovado'
 
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized to change document status' });
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized to change document status' });
+      }
+
+      if (!['valido', 'reprovado', 'pendente', 'vencido'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+
+      if (issue_date !== undefined || expiry_date !== undefined || rejection_reason !== undefined) {
+        await query('UPDATE documents SET status = $1, issue_date = $2, expiry_date = $3, rejection_reason = $4 WHERE id = $5', [status, issue_date || null, expiry_date || null, rejection_reason || null, id]);
+      } else {
+        await query('UPDATE documents SET status = $1 WHERE id = $2', [status, id]);
+      }
+
+      const { rows: updatedDocRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+      res.json(updatedDocRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    if (!['valido', 'reprovado', 'pendente', 'vencido'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
-    }
-
-    if (issue_date !== undefined || expiry_date !== undefined || rejection_reason !== undefined) {
-      const updateDoc = db.prepare('UPDATE documents SET status = ?, issue_date = ?, expiry_date = ?, rejection_reason = ? WHERE id = ?');
-      updateDoc.run(status, issue_date || null, expiry_date || null, rejection_reason || null, id);
-    } else {
-      const updateDoc = db.prepare('UPDATE documents SET status = ? WHERE id = ?');
-      updateDoc.run(status, id);
-    }
-
-    const updatedDoc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
-    res.json(updatedDoc);
   });
 
   // Tickets
-  app.get('/api/tickets', authenticate, (req: any, res) => {
-    let { provider_id, role, id: user_id } = req.user;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
-      }
-    }
+  app.get('/api/tickets', authenticate, async (req: any, res) => {
+    try {
+      let { provider_id, role, id: user_id } = req.user;
 
-    if (role === 'admin' || role === 'auditoria') {
-      const tickets = db.prepare('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id ORDER BY created_at DESC').all();
-      res.json(tickets);
-    } else if (provider_id) {
-      const tickets = db.prepare('SELECT * FROM tickets WHERE provider_id = ? ORDER BY created_at DESC').all(provider_id);
-      res.json(tickets);
-    } else {
-      res.json([]);
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
+      }
+
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: tickets } = await query('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id ORDER BY created_at DESC');
+        res.json(tickets);
+      } else if (provider_id) {
+        const { rows: tickets } = await query('SELECT * FROM tickets WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
+        res.json(tickets);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/tickets', authenticate, (req: any, res) => {
-    let { provider_id, id: user_id, name: user_name, role } = req.user;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
-      }
-    }
+  app.post('/api/tickets', authenticate, async (req: any, res) => {
+    try {
+      let { provider_id, id: user_id, name: user_name, role } = req.user;
 
-    if (!user_name) {
-      const user = db.prepare('SELECT name FROM users WHERE id = ?').get(user_id) as any;
-      user_name = user?.name || 'Usuário';
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
+      }
+
+      if (!user_name) {
+        const { rows } = await query('SELECT name FROM users WHERE id = $1', [user_id]);
+        const user = rows[0] as any;
+        user_name = user?.name || 'Usuário';
+      }
+      const { title, description, category, priority } = req.body;
+      const created_at = new Date().toISOString();
+
+      if (!provider_id) {
+        return res.status(400).json({ error: 'Prestador não encontrado para este usuário.' });
+      }
+
+      const { rows } = await query(
+        'INSERT INTO tickets (provider_id, title, description, category, priority, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+        [provider_id, title, description, category, priority, 'aberto', created_at]
+      );
+
+      const { rows: ticketRows } = await query('SELECT * FROM tickets WHERE id = $1', [rows[0].id]);
+      res.json(ticketRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    const { title, description, category, priority } = req.body;
-    const created_at = new Date().toISOString();
-    
-    if (!provider_id) {
-      return res.status(400).json({ error: 'Prestador não encontrado para este usuário.' });
-    }
-    
-    const insert = db.prepare('INSERT INTO tickets (provider_id, title, description, category, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    const info = insert.run(provider_id, title, description, category, priority, 'aberto', created_at);
-    
-    const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(info.lastInsertRowid);
-    res.json(ticket);
   });
 
-  app.get('/api/tickets/:id/messages', authenticate, (req: any, res) => {
-    let { role, provider_id, id: user_id } = req.user;
-    const { id } = req.params;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
+  app.get('/api/tickets/:id/messages', authenticate, async (req: any, res) => {
+    try {
+      let { role, provider_id, id: user_id } = req.user;
+      const { id } = req.params;
+
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
       }
+
+      const { rows: ticketRows } = await query('SELECT * FROM tickets WHERE id = $1', [id]);
+      const ticket = ticketRows[0] as any;
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+      if (role !== 'admin' && role !== 'auditoria' && ticket.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { rows: messages } = await query('SELECT * FROM ticket_messages WHERE ticket_id = $1 ORDER BY created_at ASC', [id]);
+      res.json(messages);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    
-    const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as any;
-    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
-    if (role !== 'admin' && role !== 'auditoria' && ticket.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
-    const messages = db.prepare('SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC').all(id);
-    res.json(messages);
   });
 
-  app.post('/api/tickets/:id/messages', authenticate, (req: any, res) => {
-    let { role, provider_id, id: user_id, name: user_name } = req.user;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
-      }
-    }
+  app.post('/api/tickets/:id/messages', authenticate, async (req: any, res) => {
+    try {
+      let { role, provider_id, id: user_id, name: user_name } = req.user;
 
-    if (!user_name) {
-      const user = db.prepare('SELECT name FROM users WHERE id = ?').get(user_id) as any;
-      user_name = user?.name || 'Usuário';
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
+      }
+
+      if (!user_name) {
+        const { rows } = await query('SELECT name FROM users WHERE id = $1', [user_id]);
+        const user = rows[0] as any;
+        user_name = user?.name || 'Usuário';
+      }
+      const { id } = req.params;
+      const { message } = req.body;
+
+      const { rows: ticketRows } = await query('SELECT * FROM tickets WHERE id = $1', [id]);
+      const ticket = ticketRows[0] as any;
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+      if (role !== 'admin' && role !== 'auditoria' && ticket.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const created_at = new Date().toISOString();
+      const { rows: msgRows } = await query(
+        'INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+        [id, user_id, user_name, role, message, false, created_at]
+      );
+
+      // Auto-reopen if provider sends a message and ticket is not 'aberto'
+      if (role !== 'admin' && role !== 'auditoria' && ticket.status !== 'aberto') {
+        await query('UPDATE tickets SET status = $1 WHERE id = $2', ['aberto', id]);
+        await query(
+          'INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [id, user_id, user_name, role, 'Status alterado para: Aberto', true, new Date(Date.now() + 1000).toISOString()]
+        );
+      }
+
+      const { rows: newMsgRows } = await query('SELECT * FROM ticket_messages WHERE id = $1', [msgRows[0].id]);
+      res.json(newMsgRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    const { id } = req.params;
-    const { message } = req.body;
-    
-    const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as any;
-    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
-    if (role !== 'admin' && role !== 'auditoria' && ticket.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
-    const created_at = new Date().toISOString();
-    const insertMsg = db.prepare('INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    const info = insertMsg.run(id, user_id, user_name, role, message, 0, created_at);
-    
-    // Auto-reopen if provider sends a message and ticket is not 'aberto'
-    if (role !== 'admin' && role !== 'auditoria' && ticket.status !== 'aberto') {
-      db.prepare('UPDATE tickets SET status = ? WHERE id = ?').run('aberto', id);
-      const insertStatusMsg = db.prepare('INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-      insertStatusMsg.run(id, user_id, user_name, role, 'Status alterado para: Aberto', 1, new Date(Date.now() + 1000).toISOString());
-    }
-    
-    const newMsg = db.prepare('SELECT * FROM ticket_messages WHERE id = ?').get(info.lastInsertRowid);
-    res.json(newMsg);
   });
 
-  app.put('/api/tickets/:id', authenticate, (req: any, res) => {
-    let { role, provider_id, id: user_id, name: user_name } = req.user;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
+  app.put('/api/tickets/:id', authenticate, async (req: any, res) => {
+    try {
+      let { role, provider_id, id: user_id, name: user_name } = req.user;
+
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
       }
-    }
 
-    if (!user_name) {
-      const user = db.prepare('SELECT name FROM users WHERE id = ?').get(user_id) as any;
-      user_name = user?.name || 'Usuário';
-    }
-    const { id } = req.params;
-    const { status, response } = req.body;
-
-    const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as any;
-    if (!ticket) {
-      return res.status(404).json({ error: 'Ticket not found' });
-    }
-
-    const created_at = new Date().toISOString();
-
-    if (role !== 'admin' && role !== 'auditoria') {
-      // Allow provider to reopen their own ticket
-      if (ticket.provider_id !== provider_id || status !== 'aberto') {
-        return res.status(403).json({ error: 'Unauthorized to update tickets' });
+      if (!user_name) {
+        const { rows } = await query('SELECT name FROM users WHERE id = $1', [user_id]);
+        const user = rows[0] as any;
+        user_name = user?.name || 'Usuário';
       }
-      // Reopening keeps the existing response
-      const updateTicket = db.prepare('UPDATE tickets SET status = ? WHERE id = ?');
-      updateTicket.run(status, id);
-      
-      if (ticket.status !== status) {
-        const insertMsg = db.prepare('INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        insertMsg.run(id, user_id, user_name, role, `Status alterado para: Aberto`, 1, created_at);
-      }
-    } else {
-      const updateTicket = db.prepare('UPDATE tickets SET status = ? WHERE id = ?');
-      updateTicket.run(status, id);
-      
-      if (ticket.status !== status) {
-        const insertMsg = db.prepare('INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        insertMsg.run(id, user_id, user_name, role, `Status alterado para: ${status}`, 1, created_at);
-      }
-    }
+      const { id } = req.params;
+      const { status, response } = req.body;
 
-    const updatedTicket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id);
-    res.json(updatedTicket);
+      const { rows: ticketRows } = await query('SELECT * FROM tickets WHERE id = $1', [id]);
+      const ticket = ticketRows[0] as any;
+      if (!ticket) {
+        return res.status(404).json({ error: 'Ticket not found' });
+      }
+
+      const created_at = new Date().toISOString();
+
+      if (role !== 'admin' && role !== 'auditoria') {
+        // Allow provider to reopen their own ticket
+        if (ticket.provider_id !== provider_id || status !== 'aberto') {
+          return res.status(403).json({ error: 'Unauthorized to update tickets' });
+        }
+        // Reopening keeps the existing response
+        await query('UPDATE tickets SET status = $1 WHERE id = $2', [status, id]);
+
+        if (ticket.status !== status) {
+          await query(
+            'INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [id, user_id, user_name, role, `Status alterado para: Aberto`, true, created_at]
+          );
+        }
+      } else {
+        await query('UPDATE tickets SET status = $1 WHERE id = $2', [status, id]);
+
+        if (ticket.status !== status) {
+          await query(
+            'INSERT INTO ticket_messages (ticket_id, user_id, user_name, role, message, is_status_change, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [id, user_id, user_name, role, `Status alterado para: ${status}`, true, created_at]
+          );
+        }
+      }
+
+      const { rows: updatedTicketRows } = await query('SELECT * FROM tickets WHERE id = $1', [id]);
+      res.json(updatedTicketRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Trainings
-  app.get('/api/trainings', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const trainings = db.prepare('SELECT * FROM trainings ORDER BY created_at DESC').all();
-      res.json(trainings);
-    } else if (provider_id) {
-      const provider = db.prepare('SELECT provider_group FROM providers WHERE id = ?').get(provider_id) as any;
-      const providerGroup = provider?.provider_group || null;
+  app.get('/api/trainings', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: trainings } = await query('SELECT * FROM trainings ORDER BY created_at DESC');
+        res.json(trainings);
+      } else if (provider_id) {
+        const { rows: provRows } = await query('SELECT provider_group FROM providers WHERE id = $1', [provider_id]);
+        const provider = provRows[0] as any;
+        const providerGroup = provider?.provider_group || null;
 
-      const trainings = db.prepare(`
-        SELECT t.*, pt.status, pt.completed_at 
-        FROM trainings t 
-        LEFT JOIN provider_trainings pt ON t.id = pt.training_id AND pt.provider_id = ?
-        WHERE t.target_type = 'geral'
-           OR t.target_type IS NULL
-           OR (t.target_type = 'grupo' AND t.target_group = ?)
-           OR (t.target_type = 'especifico' AND t.target_provider_id = ?)
-        ORDER BY t.created_at DESC
-      `).all(provider_id, providerGroup, provider_id);
-      res.json(trainings);
-    } else {
-      res.json([]);
+        const { rows: trainings } = await query(`
+          SELECT t.*, pt.status, pt.completed_at
+          FROM trainings t
+          LEFT JOIN provider_trainings pt ON t.id = pt.training_id AND pt.provider_id = $1
+          WHERE t.target_type = 'geral'
+             OR t.target_type IS NULL
+             OR (t.target_type = 'grupo' AND t.target_group = $2)
+             OR (t.target_type = 'especifico' AND t.target_provider_id = $3)
+          ORDER BY t.created_at DESC
+        `, [provider_id, providerGroup, provider_id]);
+        res.json(trainings);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/trainings', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { title, description, video_url, pdf_url, target_type, target_group, target_provider_id } = req.body;
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
-    }
+  app.post('/api/trainings', authenticate, async (req: any, res) => {
     try {
-      const insert = db.prepare('INSERT INTO trainings (title, description, video_url, pdf_url, created_at, target_type, target_group, target_provider_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = insert.run(title, description || null, video_url || null, pdf_url || null, new Date().toISOString(), target_type || 'geral', target_group || null, target_provider_id || null);
-      res.json({ id: info.lastInsertRowid, title, description, video_url, pdf_url, target_type: target_type || 'geral', target_group, target_provider_id });
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { title, description, video_url, pdf_url, target_type, target_group, target_provider_id } = req.body;
+      if (!title) {
+        return res.status(400).json({ error: 'Title is required' });
+      }
+      try {
+        const { rows } = await query(
+          'INSERT INTO trainings (title, description, video_url, pdf_url, created_at, target_type, target_group, target_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+          [title, description || null, video_url || null, pdf_url || null, new Date().toISOString(), target_type || 'geral', target_group || null, target_provider_id || null]
+        );
+        res.json({ id: rows[0].id, title, description, video_url, pdf_url, target_type: target_type || 'geral', target_group, target_provider_id });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.delete('/api/trainings/:id', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+  app.delete('/api/trainings/:id', authenticate, async (req: any, res) => {
     try {
-      db.prepare('DELETE FROM trainings WHERE id = ?').run(req.params.id);
-      res.json({ success: true });
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      try {
+        await query('DELETE FROM trainings WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Financials
-  app.get('/api/financials', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const financials = db.prepare('SELECT f.*, p.name as provider_name FROM financials f JOIN providers p ON f.provider_id = p.id ORDER BY competence DESC').all();
-      res.json(financials);
-    } else if (provider_id) {
-      const financials = db.prepare('SELECT * FROM financials WHERE provider_id = ? ORDER BY competence DESC').all(provider_id);
-      res.json(financials);
-    } else {
-      res.json([]);
+  app.get('/api/financials', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: financials } = await query('SELECT f.*, p.name as provider_name FROM financials f JOIN providers p ON f.provider_id = p.id ORDER BY competence DESC');
+        res.json(financials);
+      } else if (provider_id) {
+        const { rows: financials } = await query('SELECT * FROM financials WHERE provider_id = $1 ORDER BY competence DESC', [provider_id]);
+        res.json(financials);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Surveys
-  app.get('/api/surveys', authenticate, (req: any, res) => {
-    let { role, provider_id, id: user_id } = req.user;
-    
-    // Fallback to check DB if token is stale
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
-      }
-    }
+  app.get('/api/surveys', authenticate, async (req: any, res) => {
+    try {
+      let { role, provider_id, id: user_id } = req.user;
 
-    if (role === 'admin' || role === 'auditoria') {
-      const surveys = db.prepare(`
-        SELECT s.*, p.name as provider_name, p.cnpj as provider_cnpj 
-        FROM survey_responses s 
-        JOIN providers p ON s.provider_id = p.id 
-        ORDER BY s.created_at DESC
-      `).all();
-      res.json(surveys);
-    } else if (provider_id) {
-      const surveys = db.prepare('SELECT * FROM survey_responses WHERE provider_id = ? ORDER BY created_at DESC').all(provider_id);
-      res.json(surveys);
-    } else {
-      res.json([]);
+      // Fallback to check DB if token is stale
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
+      }
+
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: surveys } = await query(`
+          SELECT s.*, p.name as provider_name, p.cnpj as provider_cnpj
+          FROM survey_responses s
+          JOIN providers p ON s.provider_id = p.id
+          ORDER BY s.created_at DESC
+        `);
+        res.json(surveys);
+      } else if (provider_id) {
+        const { rows: surveys } = await query('SELECT * FROM survey_responses WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
+        res.json(surveys);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/surveys', authenticate, (req: any, res) => {
-    let { provider_id, id: user_id } = req.user;
-    
-    // Fallback to check DB if token is stale
-    if (!provider_id) {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
-      }
-    }
-
-    if (!provider_id) {
-      return res.status(403).json({ error: 'Apenas prestadores podem responder pesquisas' });
-    }
-    const { atendimento, comunicacao, sugestoes } = req.body;
-    if (!atendimento || !comunicacao) {
-      return res.status(400).json({ error: 'Campos obrigatórios faltando' });
-    }
+  app.post('/api/surveys', authenticate, async (req: any, res) => {
     try {
-      const insert = db.prepare('INSERT INTO survey_responses (provider_id, atendimento, comunicacao, sugestoes, created_at) VALUES (?, ?, ?, ?, ?)');
-      const info = insert.run(provider_id, atendimento, comunicacao, sugestoes || null, new Date().toISOString());
-      res.json({ id: info.lastInsertRowid, success: true });
+      let { provider_id, id: user_id } = req.user;
+
+      // Fallback to check DB if token is stale
+      if (!provider_id) {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
+      }
+
+      if (!provider_id) {
+        return res.status(403).json({ error: 'Apenas prestadores podem responder pesquisas' });
+      }
+      const { atendimento, comunicacao, sugestoes } = req.body;
+      if (!atendimento || !comunicacao) {
+        return res.status(400).json({ error: 'Campos obrigatórios faltando' });
+      }
+      try {
+        const { rows } = await query(
+          'INSERT INTO survey_responses (provider_id, atendimento, comunicacao, sugestoes, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+          [provider_id, atendimento, comunicacao, sugestoes || null, new Date().toISOString()]
+        );
+        res.json({ id: rows[0].id, success: true });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Announcements
-  app.get('/api/announcements', authenticate, (req: any, res) => {
-    const { role, provider_id } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const announcements = db.prepare('SELECT * FROM announcements ORDER BY date DESC').all();
-      res.json(announcements);
-    } else if (provider_id) {
-      const provider = db.prepare('SELECT provider_group FROM providers WHERE id = ?').get(provider_id) as any;
-      const providerGroup = provider?.provider_group || null;
-      
-      const announcements = db.prepare(`
-        SELECT * FROM announcements 
-        WHERE target_type = 'geral' 
-           OR target_type IS NULL
-           OR (target_type = 'grupo' AND target_group = ?)
-           OR (target_type = 'especifico' AND target_provider_id = ?)
-        ORDER BY date DESC
-      `).all(providerGroup, provider_id);
-      res.json(announcements);
-    } else {
-      res.json([]);
+  app.get('/api/announcements', authenticate, async (req: any, res) => {
+    try {
+      const { role, provider_id } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: announcements } = await query('SELECT * FROM announcements ORDER BY date DESC');
+        res.json(announcements);
+      } else if (provider_id) {
+        const { rows: provRows } = await query('SELECT provider_group FROM providers WHERE id = $1', [provider_id]);
+        const provider = provRows[0] as any;
+        const providerGroup = provider?.provider_group || null;
+
+        const { rows: announcements } = await query(`
+          SELECT * FROM announcements
+          WHERE target_type = 'geral'
+             OR target_type IS NULL
+             OR (target_type = 'grupo' AND target_group = $1)
+             OR (target_type = 'especifico' AND target_provider_id = $2)
+          ORDER BY date DESC
+        `, [providerGroup, provider_id]);
+        res.json(announcements);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/announcements', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { title, description, category, image_url, date, target_type, target_group, target_provider_id } = req.body;
-    if (!title || !description || !category || !date) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+  app.post('/api/announcements', authenticate, async (req: any, res) => {
     try {
-      const insert = db.prepare('INSERT INTO announcements (title, description, category, image_url, date, target_type, target_group, target_provider_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      const info = insert.run(title, description, category, image_url || null, date, target_type || 'geral', target_group || null, target_provider_id || null);
-      res.json({ id: info.lastInsertRowid, title, description, category, image_url, date, target_type: target_type || 'geral', target_group, target_provider_id });
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { title, description, category, image_url, date, target_type, target_group, target_provider_id } = req.body;
+      if (!title || !description || !category || !date) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+      try {
+        const { rows } = await query(
+          'INSERT INTO announcements (title, description, category, image_url, date, target_type, target_group, target_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+          [title, description, category, image_url || null, date, target_type || 'geral', target_group || null, target_provider_id || null]
+        );
+        res.json({ id: rows[0].id, title, description, category, image_url, date, target_type: target_type || 'geral', target_group, target_provider_id });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Audits
-  app.get('/api/audits', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const audits = db.prepare('SELECT a.*, p.name as provider_name FROM audits a JOIN providers p ON a.provider_id = p.id ORDER BY scheduled_date DESC').all();
-      res.json(audits);
-    } else if (provider_id) {
-      const audits = db.prepare('SELECT * FROM audits WHERE provider_id = ? ORDER BY scheduled_date DESC').all(provider_id);
-      res.json(audits);
-    } else {
-      res.json([]);
+  app.get('/api/audits', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: audits } = await query('SELECT a.*, p.name as provider_name FROM audits a JOIN providers p ON a.provider_id = p.id ORDER BY scheduled_date DESC');
+        res.json(audits);
+      } else if (provider_id) {
+        const { rows: audits } = await query('SELECT * FROM audits WHERE provider_id = $1 ORDER BY scheduled_date DESC', [provider_id]);
+        res.json(audits);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
   // Contracts
-  app.get('/api/contracts', authenticate, (req: any, res) => {
-    let { provider_id, role, id: user_id } = req.user;
-    
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
+  app.get('/api/contracts', authenticate, async (req: any, res) => {
+    try {
+      let { provider_id, role, id: user_id } = req.user;
+
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
       }
-    }
 
-    if (role === 'admin' || role === 'auditoria') {
-      const contracts = db.prepare('SELECT c.*, p.name as provider_name FROM contracts c JOIN providers p ON c.provider_id = p.id ORDER BY created_at DESC').all();
-      res.json(contracts);
-    } else if (provider_id) {
-      const contracts = db.prepare('SELECT * FROM contracts WHERE provider_id = ? ORDER BY created_at DESC').all(provider_id);
-      res.json(contracts);
-    } else {
-      res.json([]);
-    }
-  });
-
-  app.post('/api/contracts', authenticate, upload.single('file'), (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    const { provider_id, title, expires_at } = req.body;
-    const file = req.file;
-
-    if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    const file_url = `/uploads/${file.filename}`;
-    const insert = db.prepare('INSERT INTO contracts (provider_id, title, file_url, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-    const info = insert.run(provider_id, title, file_url, 'pendente', expires_at || null, new Date().toISOString());
-    
-    const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(info.lastInsertRowid);
-    res.json(contract);
-  });
-
-  app.put('/api/contracts/:id/sign', authenticate, (req: any, res) => {
-    let { provider_id, role, id: user_id } = req.user;
-    const { id } = req.params;
-
-    if (!provider_id && role !== 'admin' && role !== 'auditoria') {
-      const dbUser = db.prepare('SELECT provider_id FROM users WHERE id = ?').get(user_id) as any;
-      if (dbUser && dbUser.provider_id) {
-        provider_id = dbUser.provider_id;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: contracts } = await query('SELECT c.*, p.name as provider_name FROM contracts c JOIN providers p ON c.provider_id = p.id ORDER BY created_at DESC');
+        res.json(contracts);
+      } else if (provider_id) {
+        const { rows: contracts } = await query('SELECT * FROM contracts WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
+        res.json(contracts);
+      } else {
+        res.json([]);
       }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id) as any;
-    
-    if (!contract) {
-      return res.status(404).json({ error: 'Contract not found' });
-    }
-
-    if (role !== 'admin' && role !== 'auditoria' && contract.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    if (contract.status !== 'pendente') {
-      return res.status(400).json({ error: 'Contract already signed or expired' });
-    }
-
-    const update = db.prepare('UPDATE contracts SET status = ?, signed_at = ? WHERE id = ?');
-    update.run('ativo', new Date().toISOString(), id);
-
-    const updatedContract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id);
-    res.json(updatedContract);
   });
 
-  app.get('/api/contracts/:id/download', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    const { id } = req.params;
+  app.post('/api/contracts', authenticate, upload.single('file'), async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
 
-    const contract = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id) as any;
-    
-    if (!contract) {
-      return res.status(404).json({ error: 'Contract not found' });
-    }
+      const { provider_id, title, expires_at } = req.body;
+      const file = req.file;
 
-    if (role !== 'admin' && role !== 'auditoria' && contract.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+      if (!file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
 
-    const filePath = path.join(__dirname, contract.file_url);
-    res.download(filePath);
-  });
-
-  // Qualifications
-  // Qualifications
-  app.get('/api/qualifications/cycles', authenticate, (req: any, res) => {
-    const cycles = db.prepare('SELECT * FROM qualification_cycles ORDER BY id DESC').all();
-    const items = db.prepare('SELECT * FROM qualification_items').all();
-    
-    const cyclesWithItems = cycles.map((c: any) => ({
-      ...c,
-      items: items.filter((i: any) => i.cycle_id === c.id)
-    }));
-    
-    res.json(cyclesWithItems);
-  });
-
-  app.get('/api/qualifications/submissions', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    let submissions;
-    
-    if (role === 'admin' || role === 'auditoria') {
-      submissions = db.prepare(`
-        SELECT s.*, p.name as provider_name, c.title as cycle_title 
-        FROM qualification_submissions s 
-        JOIN providers p ON s.provider_id = p.id 
-        JOIN qualification_cycles c ON s.cycle_id = c.id
-        ORDER BY s.created_at DESC
-      `).all();
-    } else if (provider_id) {
-      submissions = db.prepare(`
-        SELECT s.*, c.title as cycle_title 
-        FROM qualification_submissions s 
-        JOIN qualification_cycles c ON s.cycle_id = c.id
-        WHERE s.provider_id = ? 
-        ORDER BY s.created_at DESC
-      `).all(provider_id);
-    } else {
-      return res.json([]);
-    }
-    
-    res.json(submissions);
-  });
-
-  app.get('/api/qualifications/submissions/:id', authenticate, (req: any, res) => {
-    const { id } = req.params;
-    const { provider_id, role } = req.user;
-    
-    const submission = db.prepare(`
-      SELECT s.*, p.name as provider_name, c.title as cycle_title 
-      FROM qualification_submissions s 
-      JOIN providers p ON s.provider_id = p.id 
-      JOIN qualification_cycles c ON s.cycle_id = c.id
-      WHERE s.id = ?
-    `).get(id) as any;
-    
-    if (!submission) return res.status(404).json({ error: 'Submission not found' });
-    
-    if (role === 'prestador' && submission.provider_id !== provider_id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
-    const items = db.prepare(`
-      SELECT si.*, i.title, i.description, i.is_required 
-      FROM qualification_submission_items si 
-      JOIN qualification_items i ON si.item_id = i.id 
-      WHERE si.submission_id = ?
-    `).all(id);
-    
-    submission.items = items;
-    res.json(submission);
-  });
-
-  app.post('/api/qualifications/submissions', authenticate, upload.any(), (req: any, res) => {
-    const { provider_id, role } = req.user;
-    const { cycle_id, items } = req.body; // items is a JSON string mapping item_id to details
-    
-    const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
-    
-    if (!targetProviderId) return res.status(400).json({ error: 'Provider ID required' });
-    
-    const parsedItems = JSON.parse(items || '{}');
-    
-    const insertSub = db.prepare('INSERT INTO qualification_submissions (provider_id, cycle_id, status, submitted_at, created_at) VALUES (?, ?, ?, ?, ?)');
-    const subInfo = insertSub.run(targetProviderId, cycle_id, 'em_analise', new Date().toISOString(), new Date().toISOString());
-    const submissionId = subInfo.lastInsertRowid;
-    
-    const insertItem = db.prepare('INSERT INTO qualification_submission_items (submission_id, item_id, is_compliant, evidence_url, auditor_status, text_answer, justification, is_na) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    
-    // req.files contains the uploaded files. Field name is like `evidence_${itemId}`
-    const files = req.files as Express.Multer.File[];
-    
-    for (const [itemIdStr, details] of Object.entries(parsedItems)) {
-      const itemId = parseInt(itemIdStr);
-      const itemDetails: any = details;
-      const file = files?.find(f => f.fieldname === `evidence_${itemId}`);
-      const fileUrl = file ? `/uploads/${file.filename}` : null;
-      
-      insertItem.run(
-        submissionId, 
-        itemId, 
-        itemDetails.is_compliant ? 1 : 0, 
-        fileUrl, 
-        'pendente',
-        itemDetails.text_answer || null,
-        itemDetails.justification || null,
-        itemDetails.is_na ? 1 : 0
+      const file_url = `/uploads/${file.filename}`;
+      const { rows } = await query(
+        'INSERT INTO contracts (provider_id, title, file_url, status, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [provider_id, title, file_url, 'pendente', expires_at || null, new Date().toISOString()]
       );
+
+      const { rows: contractRows } = await query('SELECT * FROM contracts WHERE id = $1', [rows[0].id]);
+      res.json(contractRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    
-    res.json({ id: submissionId, message: 'Submission created successfully' });
   });
 
-  app.put('/api/qualifications/submissions/:id/evaluate', authenticate, (req: any, res) => {
-    const { role, id: user_id } = req.user;
-    const { id } = req.params;
-    const { final_status, final_observations, item_evaluations } = req.body;
-    
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
-    const updateSub = db.prepare('UPDATE qualification_submissions SET status = ?, evaluated_at = ?, evaluated_by = ?, final_observations = ? WHERE id = ?');
-    updateSub.run(final_status, new Date().toISOString(), user_id, final_observations || null, id);
-    
-    const updateItem = db.prepare('UPDATE qualification_submission_items SET auditor_status = ?, auditor_observation = ? WHERE submission_id = ? AND item_id = ?');
-    
-    if (item_evaluations) {
-      for (const [itemIdStr, evalData] of Object.entries(item_evaluations as Record<string, any>)) {
-        updateItem.run(evalData.status, evalData.observation || null, id, parseInt(itemIdStr));
+  app.put('/api/contracts/:id/sign', authenticate, async (req: any, res) => {
+    try {
+      let { provider_id, role, id: user_id } = req.user;
+      const { id } = req.params;
+
+      if (!provider_id && role !== 'admin' && role !== 'auditoria') {
+        const { rows } = await query('SELECT provider_id FROM users WHERE id = $1', [user_id]);
+        const dbUser = rows[0] as any;
+        if (dbUser && dbUser.provider_id) {
+          provider_id = dbUser.provider_id;
+        }
       }
+
+      const { rows: contractRows } = await query('SELECT * FROM contracts WHERE id = $1', [id]);
+      const contract = contractRows[0] as any;
+
+      if (!contract) {
+        return res.status(404).json({ error: 'Contract not found' });
+      }
+
+      if (role !== 'admin' && role !== 'auditoria' && contract.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      if (contract.status !== 'pendente') {
+        return res.status(400).json({ error: 'Contract already signed or expired' });
+      }
+
+      await query('UPDATE contracts SET status = $1, signed_at = $2 WHERE id = $3', ['ativo', new Date().toISOString(), id]);
+
+      const { rows: updatedContractRows } = await query('SELECT * FROM contracts WHERE id = $1', [id]);
+      res.json(updatedContractRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    
-    res.json({ message: 'Evaluation saved successfully' });
+  });
+
+  app.get('/api/contracts/:id/download', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      const { id } = req.params;
+
+      const { rows: contractRows } = await query('SELECT * FROM contracts WHERE id = $1', [id]);
+      const contract = contractRows[0] as any;
+
+      if (!contract) {
+        return res.status(404).json({ error: 'Contract not found' });
+      }
+
+      if (role !== 'admin' && role !== 'auditoria' && contract.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const filePath = path.join(process.cwd(), contract.file_url);
+      res.download(filePath);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Qualifications
+  app.get('/api/qualifications/cycles', authenticate, async (req: any, res) => {
+    try {
+      const { rows: cycles } = await query('SELECT * FROM qualification_cycles ORDER BY id DESC');
+      const { rows: items } = await query('SELECT * FROM qualification_items');
+
+      const cyclesWithItems = cycles.map((c: any) => ({
+        ...c,
+        items: items.filter((i: any) => i.cycle_id === c.id)
+      }));
+
+      res.json(cyclesWithItems);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/qualifications/submissions', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      let submissions;
+
+      if (role === 'admin' || role === 'auditoria') {
+        const result = await query(`
+          SELECT s.*, p.name as provider_name, c.title as cycle_title
+          FROM qualification_submissions s
+          JOIN providers p ON s.provider_id = p.id
+          JOIN qualification_cycles c ON s.cycle_id = c.id
+          ORDER BY s.created_at DESC
+        `);
+        submissions = result.rows;
+      } else if (provider_id) {
+        const result = await query(`
+          SELECT s.*, c.title as cycle_title
+          FROM qualification_submissions s
+          JOIN qualification_cycles c ON s.cycle_id = c.id
+          WHERE s.provider_id = $1
+          ORDER BY s.created_at DESC
+        `, [provider_id]);
+        submissions = result.rows;
+      } else {
+        return res.json([]);
+      }
+
+      res.json(submissions);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/qualifications/submissions/:id', authenticate, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { provider_id, role } = req.user;
+
+      const { rows: subRows } = await query(`
+        SELECT s.*, p.name as provider_name, c.title as cycle_title
+        FROM qualification_submissions s
+        JOIN providers p ON s.provider_id = p.id
+        JOIN qualification_cycles c ON s.cycle_id = c.id
+        WHERE s.id = $1
+      `, [id]);
+      const submission = subRows[0] as any;
+
+      if (!submission) return res.status(404).json({ error: 'Submission not found' });
+
+      if (role === 'prestador' && submission.provider_id !== provider_id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { rows: items } = await query(`
+        SELECT si.*, i.title, i.description, i.is_required
+        FROM qualification_submission_items si
+        JOIN qualification_items i ON si.item_id = i.id
+        WHERE si.submission_id = $1
+      `, [id]);
+
+      submission.items = items;
+      res.json(submission);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/qualifications/submissions', authenticate, upload.any(), async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      const { cycle_id, items } = req.body; // items is a JSON string mapping item_id to details
+
+      const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
+
+      if (!targetProviderId) return res.status(400).json({ error: 'Provider ID required' });
+
+      const parsedItems = JSON.parse(items || '{}');
+      const files = req.files as Express.Multer.File[];
+
+      const submissionId = await withTransaction(async (client) => {
+        const { rows: subRows } = await client.query(
+          'INSERT INTO qualification_submissions (provider_id, cycle_id, status, submitted_at, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+          [targetProviderId, cycle_id, 'em_analise', new Date().toISOString(), new Date().toISOString()]
+        );
+        const subId = subRows[0].id;
+
+        for (const [itemIdStr, details] of Object.entries(parsedItems)) {
+          const itemId = parseInt(itemIdStr);
+          const itemDetails: any = details;
+          const file = files?.find(f => f.fieldname === `evidence_${itemId}`);
+          const fileUrl = file ? `/uploads/${file.filename}` : null;
+
+          await client.query(
+            'INSERT INTO qualification_submission_items (submission_id, item_id, is_compliant, evidence_url, auditor_status, text_answer, justification, is_na) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+            [
+              subId,
+              itemId,
+              itemDetails.is_compliant ? true : false,
+              fileUrl,
+              'pendente',
+              itemDetails.text_answer || null,
+              itemDetails.justification || null,
+              itemDetails.is_na ? true : false
+            ]
+          );
+        }
+
+        return subId;
+      });
+
+      res.json({ id: submissionId, message: 'Submission created successfully' });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/qualifications/submissions/:id/evaluate', authenticate, async (req: any, res) => {
+    try {
+      const { role, id: user_id } = req.user;
+      const { id } = req.params;
+      const { final_status, final_observations, item_evaluations } = req.body;
+
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      await withTransaction(async (client) => {
+        await client.query(
+          'UPDATE qualification_submissions SET status = $1, evaluated_at = $2, evaluated_by = $3, final_observations = $4 WHERE id = $5',
+          [final_status, new Date().toISOString(), user_id, final_observations || null, id]
+        );
+
+        if (item_evaluations) {
+          for (const [itemIdStr, evalData] of Object.entries(item_evaluations as Record<string, any>)) {
+            await client.query(
+              'UPDATE qualification_submission_items SET auditor_status = $1, auditor_observation = $2 WHERE submission_id = $3 AND item_id = $4',
+              [evalData.status, evalData.observation || null, id, parseInt(itemIdStr)]
+            );
+          }
+        }
+      });
+
+      res.json({ message: 'Evaluation saved successfully' });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Credentialing Requests
-  app.post('/api/credentialing-requests', upload.single('file'), (req: any, res) => {
-    const { name, email, phone, specialty } = req.body;
-    const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
-    
+  app.post('/api/credentialing-requests', upload.single('file'), async (req: any, res) => {
     try {
-      const insert = db.prepare('INSERT INTO credentialing_requests (name, email, phone, specialty, file_url, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-      const info = insert.run(name, email, phone, specialty, fileUrl, new Date().toISOString());
-      
-      const request = db.prepare('SELECT * FROM credentialing_requests WHERE id = ?').get(info.lastInsertRowid);
-      res.json(request);
-    } catch (error) {
+      const { name, email, phone, specialty } = req.body;
+      const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
+
+      const { rows } = await query(
+        'INSERT INTO credentialing_requests (name, email, phone, specialty, file_url, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [name, email, phone, specialty, fileUrl, new Date().toISOString()]
+      );
+
+      const { rows: requestRows } = await query('SELECT * FROM credentialing_requests WHERE id = $1', [rows[0].id]);
+      res.json(requestRows[0]);
+    } catch (error: any) {
       console.error('Error creating credentialing request:', error);
       res.status(500).json({ error: 'Failed to create credentialing request' });
     }
   });
 
-  app.get('/api/credentialing-requests', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
+  app.get('/api/credentialing-requests', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { rows: requests } = await query('SELECT * FROM credentialing_requests ORDER BY created_at DESC');
+      res.json(requests);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    
-    const requests = db.prepare('SELECT * FROM credentialing_requests ORDER BY created_at DESC').all();
-    res.json(requests);
   });
 
-  app.put('/api/credentialing-requests/:id/status', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    const { id } = req.params;
-    const { status } = req.body;
-    
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
+  app.put('/api/credentialing-requests/:id/status', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      await query('UPDATE credentialing_requests SET status = $1 WHERE id = $2', [status, id]);
+
+      res.json({ message: 'Status updated successfully' });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-    
-    const update = db.prepare('UPDATE credentialing_requests SET status = ? WHERE id = ?');
-    update.run(status, id);
-    
-    res.json({ message: 'Status updated successfully' });
   });
 
   // Action Plans
-  app.get('/api/action-plans', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const plans = db.prepare('SELECT a.*, p.name as provider_name FROM action_plans a JOIN providers p ON a.provider_id = p.id ORDER BY created_at DESC').all();
-      res.json(plans);
-    } else if (provider_id) {
-      const plans = db.prepare('SELECT * FROM action_plans WHERE provider_id = ? ORDER BY created_at DESC').all(provider_id);
-      res.json(plans);
-    } else {
-      res.json([]);
+  app.get('/api/action-plans', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: plans } = await query('SELECT a.*, p.name as provider_name FROM action_plans a JOIN providers p ON a.provider_id = p.id ORDER BY created_at DESC');
+        res.json(plans);
+      } else if (provider_id) {
+        const { rows: plans } = await query('SELECT * FROM action_plans WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
+        res.json(plans);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/action-plans', authenticate, (req: any, res) => {
-    const { provider_id } = req.user;
-    const { title, description, deadline } = req.body;
-    
-    const insert = db.prepare('INSERT INTO action_plans (provider_id, title, description, deadline, status, created_at) VALUES (?, ?, ?, ?, ?, ?)');
-    const info = insert.run(provider_id, title, description, deadline, 'pendente', new Date().toISOString());
-    
-    const plan = db.prepare('SELECT * FROM action_plans WHERE id = ?').get(info.lastInsertRowid);
-    res.json(plan);
+  app.post('/api/action-plans', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id } = req.user;
+      const { title, description, deadline } = req.body;
+
+      const { rows } = await query(
+        'INSERT INTO action_plans (provider_id, title, description, deadline, status, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [provider_id, title, description, deadline, 'pendente', new Date().toISOString()]
+      );
+
+      const { rows: planRows } = await query('SELECT * FROM action_plans WHERE id = $1', [rows[0].id]);
+      res.json(planRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
-  app.put('/api/action-plans/:id/status', authenticate, (req: any, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-    
-    const update = db.prepare('UPDATE action_plans SET status = ? WHERE id = ?');
-    update.run(status, id);
-    
-    const plan = db.prepare('SELECT * FROM action_plans WHERE id = ?').get(id);
-    res.json(plan);
+  app.put('/api/action-plans/:id/status', authenticate, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      await query('UPDATE action_plans SET status = $1 WHERE id = $2', [status, id]);
+
+      const { rows: planRows } = await query('SELECT * FROM action_plans WHERE id = $1', [id]);
+      res.json(planRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Price Tables
-  app.get('/api/price-tables', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    if (role === 'admin' || role === 'auditoria') {
-      const tables = db.prepare('SELECT pt.*, p.name as provider_name FROM price_tables pt LEFT JOIN providers p ON pt.provider_id = p.id ORDER BY effective_date DESC').all();
-      res.json(tables);
-    } else if (provider_id) {
-      // Get provider specific tables and general tables
-      const tables = db.prepare('SELECT * FROM price_tables WHERE provider_id = ? OR provider_id IS NULL ORDER BY effective_date DESC').all(provider_id);
-      res.json(tables);
-    } else {
-      res.json([]);
+  app.get('/api/price-tables', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows: tables } = await query('SELECT pt.*, p.name as provider_name FROM price_tables pt LEFT JOIN providers p ON pt.provider_id = p.id ORDER BY effective_date DESC');
+        res.json(tables);
+      } else if (provider_id) {
+        // Get provider specific tables and general tables
+        const { rows: tables } = await query('SELECT * FROM price_tables WHERE provider_id = $1 OR provider_id IS NULL ORDER BY effective_date DESC', [provider_id]);
+        res.json(tables);
+      } else {
+        res.json([]);
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 
-  app.get('/api/price-tables/:id/download', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
-    const { id } = req.params;
+  app.get('/api/price-tables/:id/download', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id, role } = req.user;
+      const { id } = req.params;
 
-    const table = db.prepare('SELECT * FROM price_tables WHERE id = ?').get(id) as any;
-    
-    if (!table) {
-      return res.status(404).json({ error: 'Table not found' });
+      const { rows: tableRows } = await query('SELECT * FROM price_tables WHERE id = $1', [id]);
+      const table = tableRows[0] as any;
+
+      if (!table) {
+        return res.status(404).json({ error: 'Table not found' });
+      }
+
+      if (role !== 'admin' && role !== 'auditoria' && table.provider_id !== provider_id && table.provider_id !== null) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      // In a real app, this would send the actual file. For now, we'll just send a dummy response or the path.
+      res.json({ message: 'Download initiated', url: table.file_url });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
-
-    if (role !== 'admin' && role !== 'auditoria' && table.provider_id !== provider_id && table.provider_id !== null) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    // In a real app, this would send the actual file. For now, we'll just send a dummy response or the path.
-    // res.download(path.join(__dirname, table.file_url));
-    res.json({ message: 'Download initiated', url: table.file_url });
   });
 
   // ---------------------------------------------------------
   // NEW EVAL (QUALIFICATION) ENGINE APIs
   // ---------------------------------------------------------
 
-  app.post('/api/eval/scripts', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { title, description, items } = req.body;
-    if (!title || !items || !Array.isArray(items)) {
-      return res.status(400).json({ error: 'Title and items array are required' });
-    }
+  app.post('/api/eval/scripts', authenticate, async (req: any, res) => {
     try {
-      db.exec('BEGIN TRANSACTION');
-      const insertScript = db.prepare('INSERT INTO eval_scripts (title, description, version, created_at) VALUES (?, ?, ?, ?)');
-      const scriptInfo = insertScript.run(title, description || '', '1.0', new Date().toISOString());
-      const scriptId = scriptInfo.lastInsertRowid;
-
-      const insertSection = db.prepare('INSERT INTO eval_sections (script_id, name, order_index) VALUES (?, ?, ?)');
-      const secInfo = insertSection.run(scriptId, 'Geral', 1);
-      const sectionId = secInfo.lastInsertRowid;
-
-      const insertQuestion = db.prepare(`INSERT INTO eval_questions (section_id, text, type, weight, max_score, evidence_required, is_eliminatory, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-      
-      items.forEach((item: any, index: number) => {
-        insertQuestion.run(sectionId, item.title, 'sim_nao', 10, 10, 1, 0, index + 1);
-      });
-
-      db.exec('COMMIT');
-      res.json({ id: scriptId, title, items });
-    } catch (err: any) {
-      db.exec('ROLLBACK');
-      res.status(400).json({ error: err.message });
-    }
-  });
-
-  app.delete('/api/eval/scripts/:id', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    try {
-      db.exec('BEGIN TRANSACTION');
-      const scriptId = req.params.id;
-      // get sections
-      const sections = db.prepare('SELECT id FROM eval_sections WHERE script_id = ?').all(scriptId) as any[];
-      for (const sec of sections) {
-        db.prepare('DELETE FROM eval_questions WHERE section_id = ?').run(sec.id);
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
       }
-      db.prepare('DELETE FROM eval_sections WHERE script_id = ?').run(scriptId);
-      db.prepare('DELETE FROM eval_scripts WHERE id = ?').run(scriptId);
-      db.exec('COMMIT');
-      res.json({ success: true });
-    } catch (err: any) {
-      db.exec('ROLLBACK');
-      res.status(400).json({ error: err.message });
-    }
-  });
+      const { title, description, items } = req.body;
+      if (!title || !items || !Array.isArray(items)) {
+        return res.status(400).json({ error: 'Title and items array are required' });
+      }
+      try {
+        const scriptId = await withTransaction(async (client) => {
+          const { rows: scriptRows } = await client.query(
+            'INSERT INTO eval_scripts (title, description, version, created_at) VALUES ($1, $2, $3, $4) RETURNING id',
+            [title, description || '', '1.0', new Date().toISOString()]
+          );
+          const sId = scriptRows[0].id;
 
-  app.get('/api/eval/scripts', authenticate, (req: any, res) => {
-    try {
-      const scripts = db.prepare('SELECT * FROM eval_scripts ORDER BY created_at DESC').all() as any[];
-      const scriptsWithItems = scripts.map((script) => {
-        const questions = db.prepare(`
-          SELECT eq.id, eq.text as title FROM eval_questions eq
-          JOIN eval_sections es ON eq.section_id = es.id
-          WHERE es.script_id = ?
-          ORDER BY eq.order_index ASC
-        `).all(script.id);
-        return { ...script, items: questions };
-      });
-      res.json(scriptsWithItems);
+          const { rows: secRows } = await client.query(
+            'INSERT INTO eval_sections (script_id, name, order_index) VALUES ($1, $2, $3) RETURNING id',
+            [sId, 'Geral', 1]
+          );
+          const sectionId = secRows[0].id;
+
+          for (let index = 0; index < items.length; index++) {
+            const item: any = items[index];
+            await client.query(
+              `INSERT INTO eval_questions (section_id, text, type, weight, max_score, evidence_required, is_eliminatory, order_index) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [sectionId, item.title, 'sim_nao', 10, 10, true, false, index + 1]
+            );
+          }
+
+          return sId;
+        });
+
+        res.json({ id: scriptId, title, items });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get('/api/eval/scripts/:id', authenticate, (req: any, res) => {
+  app.delete('/api/eval/scripts/:id', authenticate, async (req: any, res) => {
     try {
-      const script = db.prepare('SELECT * FROM eval_scripts WHERE id = ?').get(req.params.id);
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      try {
+        await withTransaction(async (client) => {
+          const scriptId = req.params.id;
+          const { rows: sections } = await client.query('SELECT id FROM eval_sections WHERE script_id = $1', [scriptId]);
+          for (const sec of sections as any[]) {
+            await client.query('DELETE FROM eval_questions WHERE section_id = $1', [sec.id]);
+          }
+          await client.query('DELETE FROM eval_sections WHERE script_id = $1', [scriptId]);
+          await client.query('DELETE FROM eval_scripts WHERE id = $1', [scriptId]);
+        });
+        res.json({ success: true });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message });
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/eval/scripts', authenticate, async (req: any, res) => {
+    try {
+      const { rows: scripts } = await query('SELECT * FROM eval_scripts ORDER BY created_at DESC');
+      const scriptsWithItems = [];
+      for (const script of scripts as any[]) {
+        const { rows: questions } = await query(`
+          SELECT eq.id, eq.text as title FROM eval_questions eq
+          JOIN eval_sections es ON eq.section_id = es.id
+          WHERE es.script_id = $1
+          ORDER BY eq.order_index ASC
+        `, [script.id]);
+        scriptsWithItems.push({ ...script, items: questions });
+      }
+      res.json(scriptsWithItems);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/eval/scripts/:id', authenticate, async (req: any, res) => {
+    try {
+      const { rows: scriptRows } = await query('SELECT * FROM eval_scripts WHERE id = $1', [req.params.id]);
+      const script = scriptRows[0] as any;
       if (!script) return res.status(404).json({ error: 'Script not found' });
-      
-      const sections = db.prepare('SELECT * FROM eval_sections WHERE script_id = ? ORDER BY order_index ASC').all(req.params.id);
-      
-      const questionsSql = `
+
+      const { rows: sections } = await query('SELECT * FROM eval_sections WHERE script_id = $1 ORDER BY order_index ASC', [req.params.id]);
+
+      const { rows: questions } = await query(`
         SELECT eq.* FROM eval_questions eq
         JOIN eval_sections es ON eq.section_id = es.id
-        WHERE es.script_id = ?
+        WHERE es.script_id = $1
         ORDER BY eq.order_index ASC
-      `;
-      const questions = db.prepare(questionsSql).all(req.params.id);
+      `, [req.params.id]);
 
       res.json({ ...script, sections, questions });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/eval/instances', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const { script_id, provider_id } = req.body;
+  app.post('/api/eval/instances', authenticate, async (req: any, res) => {
     try {
-      const dbInsert = db.prepare(`
-        INSERT INTO eval_instances (script_id, provider_id, status, started_at) 
-        VALUES (?, ?, 'em_andamento', ?)
-      `);
-      const info = dbInsert.run(script_id, provider_id, new Date().toISOString());
-      res.json({ success: true, id: info.lastInsertRowid });
+      const { role, provider_id: userProviderId } = req.user;
+      const { script_id } = req.body;
+      // O prestador inicia a própria avaliação: provider_id vem do token (nunca do body,
+      // p/ evitar IDOR). Admin/auditoria podem indicar o provider explicitamente.
+      const providerId = (role === 'admin' || role === 'auditoria')
+        ? req.body.provider_id
+        : userProviderId;
+      if (!script_id || !providerId) {
+        return res.status(400).json({ error: 'script_id e provider_id são obrigatórios' });
+      }
+      const { rows } = await query(`
+        INSERT INTO eval_instances (script_id, provider_id, status, started_at)
+        VALUES ($1, $2, 'em_andamento', $3) RETURNING id
+      `, [script_id, providerId, new Date().toISOString()]);
+      res.json({ success: true, id: rows[0].id });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get('/api/eval/instances', authenticate, (req: any, res) => {
-    const { provider_id, role } = req.user;
+  app.get('/api/eval/instances', authenticate, async (req: any, res) => {
     try {
-      let query = `
-        SELECT ei.*, s.title as script_title, p.name as provider_name 
+      const { provider_id, role } = req.user;
+      const baseQuery = `
+        SELECT ei.*, s.title as script_title, p.name as provider_name
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id
       `;
       let instances;
       if (role === 'admin' || role === 'auditoria') {
-        instances = db.prepare(query + ' ORDER BY ei.started_at DESC').all();
+        const result = await query(baseQuery + ' ORDER BY ei.started_at DESC');
+        instances = result.rows;
       } else {
-        instances = db.prepare(query + ' WHERE ei.provider_id = ? ORDER BY ei.started_at DESC').all(provider_id);
+        const result = await query(baseQuery + ' WHERE ei.provider_id = $1 ORDER BY ei.started_at DESC', [provider_id]);
+        instances = result.rows;
       }
       res.json(instances);
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get('/api/eval/instances/:id', authenticate, (req: any, res) => {
+  app.get('/api/eval/instances/:id', authenticate, async (req: any, res) => {
     try {
-      const instance = db.prepare(`
-        SELECT ei.*, s.title as script_title, p.name as provider_name 
+      const { rows: instanceRows } = await query(`
+        SELECT ei.*, s.title as script_title, p.name as provider_name
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id
-        WHERE ei.id = ?
-      `).get(req.params.id);
-      
+        WHERE ei.id = $1
+      `, [req.params.id]);
+      const instance = instanceRows[0] as any;
+
       if (!instance) return res.status(404).json({ error: 'Instance not found' });
-      
-      const answers = db.prepare('SELECT * FROM eval_answers WHERE instance_id = ?').all(req.params.id);
-      
-      // Need to add reference_id gracefully if it doesn't exist
-      try { db.exec('ALTER TABLE documents ADD COLUMN reference_id INTEGER;'); } catch(e){}
-      
-      const evidences = db.prepare('SELECT * FROM documents WHERE type = ? AND reference_id = ?').all('qualificacao_evidencia', req.params.id);
+
+      const { rows: answers } = await query('SELECT * FROM eval_answers WHERE instance_id = $1', [req.params.id]);
+
+      const { rows: evidences } = await query('SELECT * FROM documents WHERE type = $1 AND reference_id = $2', ['qualificacao_evidencia', req.params.id]);
 
       res.json({ ...instance, answers, evidences });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.put('/api/eval/instances/:id/answers', authenticate, (req: any, res) => {
-    const instanceId = req.params.id;
-    const { answers } = req.body; 
-    
+  // Carrega a instância garantindo posse (anti-IDOR). Prestador só acessa a própria;
+  // admin/auditoria acessam qualquer uma. Responde 404/403 e retorna null se negado.
+  const loadInstanceForWrite = async (req: any, res: any): Promise<any | null> => {
+    const { rows } = await query('SELECT id, provider_id, status FROM eval_instances WHERE id = $1', [req.params.id]);
+    const instance = rows[0] as any;
+    if (!instance) {
+      res.status(404).json({ error: 'Avaliação não encontrada' });
+      return null;
+    }
+    const { role, provider_id } = req.user;
+    const isStaff = role === 'admin' || role === 'auditoria';
+    if (!isStaff && String(instance.provider_id) !== String(provider_id)) {
+      res.status(403).json({ error: 'Você não tem permissão para alterar esta avaliação' });
+      return null;
+    }
+    return instance;
+  };
+
+  app.put('/api/eval/instances/:id/answers', authenticate, async (req: any, res) => {
     try {
-      // Create unique index safely
-      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_eval_answers_unique ON eval_answers(instance_id, question_id)');
-      
-      const upsert = db.prepare(`
-        INSERT INTO eval_answers (instance_id, question_id, answer_value, score_obtained, provider_observation, is_non_compliant)
-        VALUES (@instance_id, @question_id, @answer_value, @score_obtained, @provider_observation, @is_non_compliant)
-        ON CONFLICT(instance_id, question_id) DO UPDATE SET 
-          answer_value = excluded.answer_value,
-          score_obtained = excluded.score_obtained,
-          provider_observation = excluded.provider_observation,
-          is_non_compliant = excluded.is_non_compliant
-      `);
-      
-      const transaction = db.transaction((ansList: any[]) => {
-        for (const ans of ansList) {
-          upsert.run({
-            instance_id: instanceId,
-            question_id: ans.question_id,
-            answer_value: ans.answer_value || null,
-            score_obtained: ans.score_obtained || 0,
-            provider_observation: ans.provider_observation || null,
-            is_non_compliant: ans.is_non_compliant || 0
-          });
+      const instance = await loadInstanceForWrite(req, res);
+      if (!instance) return;
+
+      const instanceId = req.params.id;
+      const { answers } = req.body;
+
+      await withTransaction(async (client) => {
+        for (const ans of answers as any[]) {
+          await client.query(`
+            INSERT INTO eval_answers (instance_id, question_id, answer_value, score_obtained, provider_observation, is_non_compliant)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT(instance_id, question_id) DO UPDATE SET
+              answer_value = excluded.answer_value,
+              score_obtained = excluded.score_obtained,
+              provider_observation = excluded.provider_observation,
+              is_non_compliant = excluded.is_non_compliant
+          `, [
+            instanceId,
+            ans.question_id,
+            ans.answer_value || null,
+            ans.score_obtained || 0,
+            ans.provider_observation || null,
+            ans.is_non_compliant || false
+          ]);
         }
       });
-      transaction(answers);
-      
+
       res.json({ success: true });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.put('/api/eval/instances/:id/status', authenticate, (req: any, res) => {
-    const { status, score, percentual, max_possible_score, seal } = req.body;
+  app.put('/api/eval/instances/:id/status', authenticate, async (req: any, res) => {
     try {
-      const update = db.prepare(`
-        UPDATE eval_instances 
-        SET status = ?, score = ?, max_possible_score = ?, percentual = ?, seal = ?, completed_at = CASE WHEN ? = 'finalizado' THEN ? ELSE completed_at END
-        WHERE id = ?
-      `);
-      
+      const instance = await loadInstanceForWrite(req, res);
+      if (!instance) return;
+
+      const { status, score, percentual, max_possible_score, seal } = req.body;
       const now = new Date().toISOString();
-      update.run(status, score || 0, max_possible_score || 0, percentual || 0, seal || null, status, now, req.params.id);
-      
+      await query(`
+        UPDATE eval_instances
+        SET status = $1, score = $2, max_possible_score = $3, percentual = $4, seal = $5, completed_at = CASE WHEN $6 = 'finalizado' THEN $7 ELSE completed_at END
+        WHERE id = $8
+      `, [status, score || 0, max_possible_score || 0, percentual || 0, seal || null, status, now, req.params.id]);
+
       res.json({ success: true });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/eval/instances/:id/evidence', authenticate, upload.single('file'), (req: any, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    
-    // Add reference column if not exist
-    try { db.exec('ALTER TABLE documents ADD COLUMN reference_id INTEGER;'); } catch(e){}
-    
-    const instanceId = req.params.id;
-    const providerId = req.user.provider_id || (req.body.provider_id ? parseInt(req.body.provider_id) : 1);
-    const fileUrl = '/uploads/' + req.file.filename;
-
+  app.post('/api/eval/instances/:id/evidence', authenticate, upload.single('file'), async (req: any, res) => {
     try {
-      const insertDoc = db.prepare(`
-        INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      insertDoc.run(providerId, 'qualificacao_evidencia', new Date().toISOString(), 'valido', fileUrl, req.user.id, instanceId);
-      
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const instance = await loadInstanceForWrite(req, res);
+      if (!instance) return;
+
+      const instanceId = req.params.id;
+      // A evidência pertence ao prestador da própria instância (evita gravar no prestador errado).
+      const providerId = instance.provider_id;
+      const fileUrl = '/uploads/' + req.file.filename;
+
+      await query(`
+        INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [providerId, 'qualificacao_evidencia', new Date().toISOString(), 'valido', fileUrl, req.user.id, instanceId]);
+
       res.json({ success: true, url: fileUrl });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
-  
-  app.get('/api/eval/dashboard', authenticate, (req: any, res) => {
-    const { role } = req.user;
-    if (role !== 'admin' && role !== 'auditoria') {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
+
+  app.get('/api/eval/dashboard', authenticate, async (req: any, res) => {
     try {
-      const totalInstances = db.prepare('SELECT COUNT(*) as count FROM eval_instances').get() as any;
-      const approvedInstances = db.prepare("SELECT COUNT(*) as count FROM eval_instances WHERE status = 'finalizado' AND seal IS NOT NULL").get() as any;
-      const avgPercentual = db.prepare("SELECT AVG(percentual) as avg FROM eval_instances WHERE status = 'finalizado'").get() as any;
-      
-      const instancesByStatus = db.prepare("SELECT status, COUNT(*) as count FROM eval_instances GROUP BY status").all();
-      
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const { rows: totalRows } = await query('SELECT COUNT(*) as count FROM eval_instances');
+      const { rows: approvedRows } = await query("SELECT COUNT(*) as count FROM eval_instances WHERE status = 'finalizado' AND seal IS NOT NULL");
+      const { rows: avgRows } = await query("SELECT AVG(percentual) as avg FROM eval_instances WHERE status = 'finalizado'");
+
+      const { rows: instancesByStatus } = await query("SELECT status, COUNT(*) as count FROM eval_instances GROUP BY status");
+
       res.json({
-        total: totalInstances.count,
-        approved: approvedInstances.count,
-        avg_score: avgPercentual.avg || 0,
+        total: (totalRows[0] as any).count,
+        approved: (approvedRows[0] as any).count,
+        avg_score: (avgRows[0] as any).avg || 0,
         by_status: instancesByStatus
       });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
-
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
-  
+
   console.log("=== ROUTES REGISTERED ===");
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
@@ -1823,16 +1919,6 @@ async function startServer() {
       res.sendFile('index.html', { root: 'dist' });
     });
   }
-
-  // Ensure all required roles exist
-  try {
-    const hash = bcrypt.hashSync('senha123', 10);
-    const insertUserIfNotExists = db.prepare('INSERT OR IGNORE INTO users (name, email, password, role, provider_id) VALUES (?, ?, ?, ?, ?)');
-    insertUserIfNotExists.run('Dra. Ana Souza', 'cooperado@unimed.com', hash, 'cooperado', null);
-  } catch (e) {
-    console.error('Error ensuring users:', e);
-  }
-
 }
 
 startServer();

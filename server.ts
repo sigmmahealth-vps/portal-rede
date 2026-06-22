@@ -1777,9 +1777,9 @@ async function startServer() {
         const nextVersion = String(maxv + 1);
 
         const { rows: sr } = await client.query(
-          `INSERT INTO eval_scripts (title, description, version, source_file, created_at)
-           VALUES ($1, $2, $3, $4, now()) RETURNING id`,
-          [parsed.title, parsed.description, nextVersion, parsed.sourceFile],
+          `INSERT INTO eval_scripts (title, description, version, source_file, revisao, revisao_date, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
+          [parsed.title, parsed.description, nextVersion, parsed.sourceFile, parsed.version, parsed.revisaoDate],
         );
         const scriptId = sr[0].id as number;
 
@@ -1890,14 +1890,21 @@ async function startServer() {
       const scriptsWithItems = [];
       for (const script of scripts as any[]) {
         const { rows: questions } = await query(`
-          SELECT eq.id, eq.text as title FROM eval_questions eq
+          SELECT eq.id, eq.text as title, eq.code, eq.evidence_required, eq.max_score
+          FROM eval_questions eq
           JOIN eval_sections es ON eq.section_id = es.id
           WHERE es.script_id = $1
           ORDER BY eq.order_index ASC
         `, [script.id]);
+        const semEvidencia = (questions as any[])
+          .filter((q) => !q.evidence_required && !isEvidenceExempt(q.title))
+          .map((q) => ({ code: q.code, text: q.title }));
+        const semPeso = (questions as any[])
+          .filter((q) => !Number(q.max_score)) // numeric chega como string; "0"/null/NaN → sem peso
+          .map((q) => ({ code: q.code, text: q.title }));
         const isCurrent = !script.source_file
           || scriptVersionNum(script.version) === maxBySource.get(script.source_file);
-        scriptsWithItems.push({ ...script, items: questions, is_current: isCurrent });
+        scriptsWithItems.push({ ...script, items: questions, is_current: isCurrent, alerts: { semEvidencia, semPeso } });
       }
       res.json(scriptsWithItems);
     } catch (err: any) {

@@ -42,9 +42,9 @@ async function commitScript(parsed: ParsedScript): Promise<number> {
     // idempotência: recarrega substituindo a versão anterior do mesmo arquivo
     await client.query('DELETE FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
     const { rows } = await client.query(
-      `INSERT INTO eval_scripts (title, description, version, source_file, created_at)
-       VALUES ($1, $2, $3, $4, now()) RETURNING id`,
-      [parsed.title, parsed.description, parsed.version, parsed.sourceFile],
+      `INSERT INTO eval_scripts (title, description, version, source_file, revisao, revisao_date, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
+      [parsed.title, parsed.description, parsed.version, parsed.sourceFile, parsed.version, parsed.revisaoDate],
     );
     const scriptId = rows[0].id as number;
 

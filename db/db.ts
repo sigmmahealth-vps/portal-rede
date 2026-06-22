@@ -1,8 +1,15 @@
 // Conexão Postgres (substitui o better-sqlite3 do server.ts).
 // A connection string vem SEMPRE de DATABASE_URL (Railway injeta em produção;
 // em local, use um arquivo .env — nunca comite credenciais).
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import 'dotenv/config';
+
+// Colunas `date` (OID 1082) chegam por padrão como Date em meia-noite LOCAL, e
+// ao serializar em JSON viram UTC — o que desloca a data em 1 dia conforme o
+// fuso do servidor. Devolvemos a string crua 'YYYY-MM-DD' para a data ficar
+// estável independente de fuso (ex.: eval_scripts.revisao_date no chip de revisão).
+// timestamptz (created_at, OID 1184) NÃO é afetado.
+types.setTypeParser(1082, (value) => value);
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {

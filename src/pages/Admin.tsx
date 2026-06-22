@@ -595,12 +595,12 @@ export default function Admin() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-gray-100 text-sm text-gray-500">
-                      <th className="pb-3 pr-4 font-medium">Roteiro</th>
-                      <th className="pb-3 pr-4 font-medium w-44 whitespace-nowrap">Versão</th>
+                      <th className="pb-3 pr-4 font-medium text-center">Roteiro</th>
+                      <th className="pb-3 pr-4 font-medium w-44 text-center whitespace-nowrap">Versão</th>
                       <th className="pb-3 pr-4 font-medium w-20 text-center whitespace-nowrap">Critérios</th>
-                      <th className="pb-3 pr-4 font-medium w-40 whitespace-nowrap">Alertas</th>
-                      <th className="pb-3 pr-4 font-medium w-36 whitespace-nowrap">Status</th>
-                      <th className="pb-3 font-medium text-right w-16 whitespace-nowrap">Ações</th>
+                      <th className="pb-3 pr-4 font-medium w-40 text-center whitespace-nowrap">Alertas</th>
+                      <th className="pb-3 pr-4 font-medium w-36 text-center whitespace-nowrap">Status</th>
+                      <th className="pb-3 font-medium text-center w-16 whitespace-nowrap">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">

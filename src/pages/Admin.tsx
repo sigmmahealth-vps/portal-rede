@@ -88,6 +88,7 @@ export default function Admin() {
     () => (localStorage.getItem('roteirosViewMode') as 'cards' | 'lista') || 'cards',
   );
   const [showTrainingModal, setShowTrainingModal] = useState(false);
+  const [revisoesAbertas, setRevisoesAbertas] = useState<Record<string, boolean>>({});
 
   // Provider Form
   const [providerForm, setProviderForm] = useState({ name: '', cnpj: '', code: '', provider_group: '', provider_type: '', area_atuacao: '', qualification_level: '', status: 'Ativo' });
@@ -485,39 +486,69 @@ export default function Admin() {
 
             {viewMode === 'cards' && scripts.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {scripts.map((script) => (
-                  <div key={script.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                {agruparPorRoteiro(scripts).map(({ key, vigente, anteriores }) => (
+                  <div key={key} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                     <div className="flex justify-between items-start mb-3">
-                      <h3 className="text-lg font-bold text-gray-900">{script.title}</h3>
+                      <h3 className="text-lg font-bold text-gray-900">{vigente.title}</h3>
                       <button
-                        onClick={() => handleDeleteScript(script)}
+                        onClick={() => handleDeleteScript(vigente)}
                         className="text-red-500 hover:text-red-700 p-1"
                         title="Excluir roteiro"
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 mb-4">
-                      <VersionBadge script={script} />
-                      <RevisaoChip script={script} />
+                    <div className="flex flex-col gap-1 items-start mb-4">
+                      <RevisaoBadge script={vigente} />
+                      <RoteiroDatas script={vigente} />
                     </div>
                     <div className="mb-4">
-                      <RoteiroAlerts alerts={script.alerts} />
+                      <RoteiroAlerts alerts={vigente.alerts} />
                     </div>
                     <div className="space-y-3">
-                      <p className="text-sm font-medium text-gray-700">Itens do Checklist ({script.items.length}):</p>
+                      <p className="text-sm font-medium text-gray-700">Itens do Checklist ({vigente.items.length}):</p>
                       <ul className="space-y-2">
-                        {script.items.slice(0, 3).map((item: any) => (
+                        {vigente.items.slice(0, 3).map((item: any) => (
                           <li key={item.id} className="text-sm text-gray-600 flex items-start gap-2">
                             <CheckCircle className="w-4 h-4 text-[#00995D] mt-0.5 flex-shrink-0" />
                             <span>{item.title}</span>
                           </li>
                         ))}
-                        {script.items.length > 3 && (
-                          <li className="text-sm text-gray-500 italic">+ {script.items.length - 3} outros itens...</li>
+                        {vigente.items.length > 3 && (
+                          <li className="text-sm text-gray-500 italic">+ {vigente.items.length - 3} outros itens...</li>
                         )}
                       </ul>
                     </div>
+                    {anteriores.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => setRevisoesAbertas((m) => ({ ...m, [key]: !m[key] }))}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          {revisoesAbertas[key] ? '▾ ocultar' : '▸ ver'} revisões anteriores ({anteriores.length})
+                        </button>
+                        {revisoesAbertas[key] && (
+                          <ul className="mt-3 space-y-2">
+                            {anteriores.map((ant: any) => (
+                              <li key={ant.id} className="flex items-center justify-between gap-2 text-xs text-gray-500">
+                                <span>
+                                  Revisão {ant.version ?? '?'}
+                                  {formatBRDate(ant.revisao_date) ? ` — rev. ${formatBRDate(ant.revisao_date)}` : ''}
+                                </span>
+                                <button
+                                  onClick={() => handleDeleteScript(ant)}
+                                  className="text-red-500 hover:text-red-700 p-1 flex-shrink-0"
+                                  title="Excluir revisão"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -529,36 +560,64 @@ export default function Admin() {
                   <thead>
                     <tr className="border-b border-gray-100 text-sm text-gray-500">
                       <th className="pb-3 pr-4 font-medium text-center">Roteiro</th>
-                      <th className="pb-3 pr-4 font-medium w-44 text-center whitespace-nowrap">Versão</th>
+                      <th className="pb-3 pr-4 font-medium w-48 text-center whitespace-nowrap">Revisão</th>
+                      <th className="pb-3 pr-4 font-medium w-28 text-center whitespace-nowrap">Implantação</th>
                       <th className="pb-3 pr-4 font-medium w-20 text-center whitespace-nowrap">Critérios</th>
                       <th className="pb-3 pr-4 font-medium w-40 text-center whitespace-nowrap">Alertas</th>
                       <th className="pb-3 font-medium text-center w-16 whitespace-nowrap">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
-                    {scripts.map((script) => (
-                      <tr key={script.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                        <td className="py-4 pr-4 align-top font-medium text-gray-800">{script.title}</td>
-                        <td className="py-4 pr-4 align-top">
-                          <div className="flex flex-col gap-1 items-start">
-                            <VersionBadge script={script} />
-                            <RevisaoChip script={script} />
-                          </div>
-                        </td>
-                        <td className="py-4 pr-4 align-top text-center text-gray-600">{script.items.length}</td>
-                        <td className="py-4 pr-4 align-top">
-                          <RoteiroAlerts alerts={script.alerts} />
-                        </td>
-                        <td className="py-4 align-top text-right">
-                          <button
-                            onClick={() => handleDeleteScript(script)}
-                            className="text-red-500 hover:text-red-700 p-1"
-                            title="Excluir roteiro"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </td>
-                      </tr>
+                    {agruparPorRoteiro(scripts).map(({ key, vigente, anteriores }) => (
+                      <React.Fragment key={key}>
+                        <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                          <td className="py-4 pr-4 align-top font-medium text-gray-800">
+                            {vigente.title}
+                            {anteriores.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setRevisoesAbertas((m) => ({ ...m, [key]: !m[key] }))}
+                                className="block mt-1 text-xs text-blue-600 hover:underline"
+                              >
+                                {revisoesAbertas[key] ? '▾ ocultar' : '▸ ver'} revisões anteriores ({anteriores.length})
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-4 pr-4 align-top">
+                            <div className="flex flex-col gap-1 items-start">
+                              <RevisaoBadge script={vigente} />
+                              <RoteiroDatas script={vigente} />
+                            </div>
+                          </td>
+                          <td className="py-4 pr-4 align-top text-center text-gray-600">{formatBRDate(vigente.implantacao_date) ?? '—'}</td>
+                          <td className="py-4 pr-4 align-top text-center text-gray-600">{vigente.items.length}</td>
+                          <td className="py-4 pr-4 align-top"><RoteiroAlerts alerts={vigente.alerts} /></td>
+                          <td className="py-4 align-top text-center">
+                            <button onClick={() => handleDeleteScript(vigente)} className="text-red-500 hover:text-red-700 p-1" title="Excluir roteiro">
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </td>
+                        </tr>
+                        {revisoesAbertas[key] && anteriores.map((ant: any) => (
+                          <tr key={ant.id} className="border-b border-gray-50 bg-gray-50/40 text-gray-500">
+                            <td className="py-3 pr-4 pl-6 align-top text-sm">{ant.title}</td>
+                            <td className="py-3 pr-4 align-top">
+                              <div className="flex flex-col gap-1 items-start">
+                                <RevisaoBadge script={ant} />
+                                <RoteiroDatas script={ant} />
+                              </div>
+                            </td>
+                            <td className="py-3 pr-4 align-top text-center">{formatBRDate(ant.implantacao_date) ?? '—'}</td>
+                            <td className="py-3 pr-4 align-top text-center">{ant.items.length}</td>
+                            <td className="py-3 pr-4 align-top"><RoteiroAlerts alerts={ant.alerts} /></td>
+                            <td className="py-3 align-top text-center">
+                              <button onClick={() => handleDeleteScript(ant)} className="text-red-500 hover:text-red-700 p-1" title="Excluir revisão">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -1241,8 +1300,13 @@ export default function Admin() {
   );
 }
 
-function VersionBadge({ script }: { script: any }) {
-  if (!script.version && !script.source_file) return null;
+function formatBRDate(iso?: string | null): string | null {
+  if (!iso) return null;
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : null;
+}
+
+function RevisaoBadge({ script }: { script: any }) {
   const vigente = script.is_current !== false;
   return (
     <span
@@ -1250,23 +1314,33 @@ function VersionBadge({ script }: { script: any }) {
         vigente ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
       }`}
     >
-      v{script.version ?? '?'} · {vigente ? 'vigente' : 'substituído'}
+      Revisão {script.version ?? '?'} · {vigente ? 'vigente' : 'substituída'}
     </span>
   );
 }
 
-function formatRevisaoDate(iso?: string | null): string | null {
-  if (!iso) return null;
-  const [y, m, d] = String(iso).slice(0, 10).split('-');
-  return y && m && d ? `${d}/${m}/${y}` : null;
-}
-
-function RevisaoChip({ script }: { script: any }) {
-  if (!script.revisao) return null;
-  const data = formatRevisaoDate(script.revisao_date);
+function RoteiroDatas({ script }: { script: any }) {
+  const rev = formatBRDate(script.revisao_date);
+  const impl = formatBRDate(script.implantacao_date);
   return (
-    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-      Revisão {script.revisao}{data ? ` · ${data}` : ''}
-    </span>
+    <div className="text-xs text-gray-500 leading-tight">
+      {rev && <div>rev. {rev}</div>}
+      {impl && <div>implantação: {impl}</div>}
+    </div>
   );
+}
+
+// Agrupa revisões por roteiro (source_file): vigente + anteriores (desc por revisão).
+function agruparPorRoteiro(scripts: any[]): { key: string; vigente: any; anteriores: any[] }[] {
+  const grupos = new Map<string, any[]>();
+  for (const s of scripts) {
+    const key = s.source_file ?? `__${s.id}`;
+    if (!grupos.has(key)) grupos.set(key, []);
+    grupos.get(key)!.push(s);
+  }
+  const num = (v: any) => parseInt(String(v ?? '').replace(/[^0-9]/g, ''), 10) || 0;
+  return Array.from(grupos.entries()).map(([key, lista]) => {
+    const ordenada = [...lista].sort((a, b) => num(b.version) - num(a.version));
+    return { key, vigente: ordenada[0], anteriores: ordenada.slice(1) };
+  });
 }

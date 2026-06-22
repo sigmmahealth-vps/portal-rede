@@ -62,6 +62,13 @@ const scriptVersionNum = (v: unknown): number => {
   return digits ? parseInt(digits, 10) : 0;
 };
 
+// Critérios que, por definição, NÃO têm evidência e portanto não devem disparar
+// o aviso "sem evidência" no preview. Hoje só existe um: a participação na
+// pesquisa de satisfação da qualificação da rede (coletada automaticamente
+// alguns dias após a visita — não é um documento que o prestador apresenta).
+const isEvidenceExempt = (text: string): boolean =>
+  /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(text || '');
+
 // =============================================================================
 // Seed inicial / dados de demonstração.
 // O schema vive nas migrations (db/migrations/*.sql). Aqui apenas semeamos
@@ -1734,7 +1741,7 @@ async function startServer() {
         warnings: {
           orphans: parsed.orphans,
           noWeight: parsed.questions.filter((q) => !q.maxScore).length,
-          noEvidence: parsed.questions.filter((q) => !q.guidance).length,
+          noEvidence: parsed.questions.filter((q) => !q.guidance && !isEvidenceExempt(q.text)).length,
           noHeader,
         },
         existing,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { fetchApi } from '../lib/api';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
@@ -27,8 +27,7 @@ import {
   ShieldCheck,
   XCircle,
   LayoutGrid,
-  List,
-  UploadCloud
+  List
 } from 'lucide-react';
 
 const TABS = [
@@ -83,8 +82,6 @@ export default function Admin() {
 
   // Modals
   const [showProviderModal, setShowProviderModal] = useState(false);
-  const [showScriptModal, setShowScriptModal] = useState(false);
-  const [showScriptChooser, setShowScriptChooser] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'lista'>(
@@ -92,13 +89,8 @@ export default function Admin() {
   );
   const [showTrainingModal, setShowTrainingModal] = useState(false);
 
-  const scriptChooserRef = useRef<HTMLDivElement>(null);
-
   // Provider Form
   const [providerForm, setProviderForm] = useState({ name: '', cnpj: '', code: '', provider_group: '', provider_type: '', area_atuacao: '', qualification_level: '', status: 'Ativo' });
-
-  // Script Form
-  const [scriptForm, setScriptForm] = useState({ title: '', items: [{ id: 1, title: '', description: '' }] });
 
   // Training Form
   const [trainingForm, setTrainingForm] = useState({ title: '', description: '', video_url: '', pdf_url: '', target_audience: 'geral', target_provider_id: '' });
@@ -122,17 +114,6 @@ export default function Admin() {
   useEffect(() => {
     localStorage.setItem('roteirosViewMode', viewMode);
   }, [viewMode]);
-
-  useEffect(() => {
-    if (!showScriptChooser) return;
-    const handler = (e: MouseEvent) => {
-      if (scriptChooserRef.current && !scriptChooserRef.current.contains(e.target as Node)) {
-        setShowScriptChooser(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showScriptChooser]);
 
   const loadData = async () => {
     setLoading(true);
@@ -196,21 +177,6 @@ export default function Admin() {
     }
   };
 
-  const handleCreateScript = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await fetchApi('/eval/scripts', {
-        method: 'POST',
-        body: JSON.stringify(scriptForm)
-      });
-      setShowScriptModal(false);
-      setScriptForm({ title: '', items: [{ id: 1, title: '', description: '' }] });
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Erro ao criar roteiro');
-    }
-  };
-
   const handleDeleteScript = async (script: any) => {
     // Roteiro já usado em avaliações: exige confirmação forte (modal).
     if (Number(script?.usage_count ?? 0) > 0) {
@@ -237,18 +203,6 @@ export default function Admin() {
       loadData();
     } catch (err: any) {
       alert(err.message || 'Erro ao excluir roteiro');
-    }
-  };
-
-  const handleUpdateScriptStatus = async (id: number, status: string) => {
-    try {
-      await fetchApi(`/eval/scripts/${id}/status`, {
-        method: 'PUT',
-        body: JSON.stringify({ status }),
-      });
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Erro ao atualizar status');
     }
   };
 
@@ -355,33 +309,13 @@ export default function Admin() {
           </button>
         )}
         {activeTab === 'roteiros' && (
-          <div className="relative" ref={scriptChooserRef}>
-            <button
-              onClick={() => setShowScriptChooser((v) => !v)}
-              className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Novo Roteiro</span>
-            </button>
-            {showScriptChooser && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
-                <button
-                  onClick={() => { setShowScriptChooser(false); setShowImportModal(true); }}
-                  className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 text-left"
-                >
-                  <UploadCloud className="w-4 h-4 text-[#00995D]" />
-                  Subir planilha (.xlsx)
-                </button>
-                <button
-                  onClick={() => { setShowScriptChooser(false); setShowScriptModal(true); }}
-                  className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 text-left border-t border-gray-100"
-                >
-                  <Plus className="w-4 h-4 text-gray-400" />
-                  Montar manualmente
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Novo Roteiro</span>
+          </button>
         )}
         {activeTab === 'treinamentos' && (
           <button 
@@ -545,7 +479,7 @@ export default function Admin() {
               <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-100">
                 <ClipboardList className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-1">Nenhum roteiro cadastrado</h3>
-                <p className="text-gray-500">Clique em "Novo Roteiro" para subir uma planilha ou montar manualmente.</p>
+                <p className="text-gray-500">Clique em "Novo Roteiro" para subir uma planilha (.xlsx).</p>
               </div>
             )}
 
@@ -566,7 +500,6 @@ export default function Admin() {
                     <div className="flex flex-wrap items-center gap-2 mb-4">
                       <VersionBadge script={script} />
                       <RevisaoChip script={script} />
-                      <StatusControl script={script} onChange={handleUpdateScriptStatus} />
                     </div>
                     <div className="mb-4">
                       <RoteiroAlerts alerts={script.alerts} />
@@ -599,7 +532,6 @@ export default function Admin() {
                       <th className="pb-3 pr-4 font-medium w-44 text-center whitespace-nowrap">Versão</th>
                       <th className="pb-3 pr-4 font-medium w-20 text-center whitespace-nowrap">Critérios</th>
                       <th className="pb-3 pr-4 font-medium w-40 text-center whitespace-nowrap">Alertas</th>
-                      <th className="pb-3 pr-4 font-medium w-36 text-center whitespace-nowrap">Status</th>
                       <th className="pb-3 font-medium text-center w-16 whitespace-nowrap">Ações</th>
                     </tr>
                   </thead>
@@ -616,9 +548,6 @@ export default function Admin() {
                         <td className="py-4 pr-4 align-top text-center text-gray-600">{script.items.length}</td>
                         <td className="py-4 pr-4 align-top">
                           <RoteiroAlerts alerts={script.alerts} />
-                        </td>
-                        <td className="py-4 pr-4 align-top">
-                          <StatusControl script={script} onChange={handleUpdateScriptStatus} />
                         </td>
                         <td className="py-4 align-top text-right">
                           <button
@@ -1209,113 +1138,6 @@ export default function Admin() {
         />
       )}
 
-      {showScriptModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Novo Roteiro de Qualificação</h3>
-              <button onClick={() => setShowScriptModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <form onSubmit={handleCreateScript} className="flex flex-col flex-1 overflow-hidden">
-              <div className="p-6 overflow-y-auto flex-1 space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Título do Roteiro</label>
-                  <input 
-                    type="text" 
-                    required
-                    placeholder="Ex: Roteiro de Cardiologia"
-                    className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
-                    value={scriptForm.title}
-                    onChange={e => setScriptForm({...scriptForm, title: e.target.value})}
-                  />
-                </div>
-                
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-medium text-gray-700">Itens do Checklist</label>
-                    <button 
-                      type="button"
-                      onClick={() => setScriptForm({
-                        ...scriptForm, 
-                        items: [...scriptForm.items, { id: Date.now(), title: '', description: '' }]
-                      })}
-                      className="text-sm text-[#00995D] font-medium hover:underline flex items-center gap-1"
-                    >
-                      <Plus className="w-4 h-4" /> Adicionar Item
-                    </button>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    {scriptForm.items.map((item, index) => (
-                      <div key={item.id} className="p-4 border border-gray-200 rounded-lg bg-gray-50 relative">
-                        {scriptForm.items.length > 1 && (
-                          <button 
-                            type="button"
-                            onClick={() => setScriptForm({
-                              ...scriptForm,
-                              items: scriptForm.items.filter(i => i.id !== item.id)
-                            })}
-                            className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Nome do Documento/Requisito</label>
-                            <input 
-                              type="text" 
-                              required
-                              className="w-full border-gray-300 rounded-md shadow-sm focus:ring-[#00995D] focus:border-[#00995D] text-sm"
-                              value={item.title}
-                              onChange={e => {
-                                const newItems = [...scriptForm.items];
-                                newItems[index].title = e.target.value;
-                                setScriptForm({...scriptForm, items: newItems});
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Descrição (Opcional)</label>
-                            <input 
-                              type="text" 
-                              className="w-full border-gray-300 rounded-md shadow-sm focus:ring-[#00995D] focus:border-[#00995D] text-sm"
-                              value={item.description}
-                              onChange={e => {
-                                const newItems = [...scriptForm.items];
-                                newItems[index].description = e.target.value;
-                                setScriptForm({...scriptForm, items: newItems});
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-                <button 
-                  type="button"
-                  onClick={() => setShowScriptModal(false)}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit"
-                  className="px-4 py-2 bg-[#00995D] text-white rounded-lg hover:bg-[#007A4A] transition-colors"
-                >
-                  Salvar Roteiro
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {showTrainingModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -1430,27 +1252,6 @@ function VersionBadge({ script }: { script: any }) {
     >
       v{script.version ?? '?'} · {vigente ? 'vigente' : 'substituído'}
     </span>
-  );
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  rascunho: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  ativo: 'bg-green-100 text-green-700 border-green-200',
-  arquivado: 'bg-gray-100 text-gray-600 border-gray-200',
-};
-
-function StatusControl({ script, onChange }: { script: any; onChange: (id: number, status: string) => void }) {
-  const current = script.status || 'ativo';
-  return (
-    <select
-      value={current}
-      onChange={(e) => onChange(script.id, e.target.value)}
-      className={`text-xs font-medium rounded-full border px-2.5 py-1 cursor-pointer focus:outline-none ${STATUS_STYLES[current] || STATUS_STYLES.ativo}`}
-    >
-      <option value="rascunho">rascunho</option>
-      <option value="ativo">ativo</option>
-      <option value="arquivado">arquivado</option>
-    </select>
   );
 }
 

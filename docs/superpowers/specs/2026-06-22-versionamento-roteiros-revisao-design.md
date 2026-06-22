@@ -37,6 +37,8 @@ revisão e data de implantação **obrigatórias** e **únicas por roteiro**.
 | Coluna redundante | **Dropar** `revisao` (= `version` agora) |
 | Datas | `revisao_date` (existente) + **nova** `implantacao_date`; ambas `NOT NULL` |
 | Vigência | Maior número de revisão por `source_file` (`is_current`) |
+| Status manual | **Removido** — vigente/substituído (automático) substitui ativo/arquivado/rascunho |
+| Visão do prestador | Lista apenas a revisão **vigente** de cada roteiro |
 | Não sobrepor | Novas revisões **empilham** (nunca apagam as anteriores) |
 | Unicidade | Por roteiro (`source_file`): revisão única **e** data de revisão única |
 | Obrigatoriedade | Revisão, data de revisão e data de implantação são obrigatórias; faltando qualquer uma → import rejeitado |
@@ -53,6 +55,7 @@ vazia, sem risco de violar dados legados).
 -- Reset é passo operacional explícito (fora da migration): DELETE FROM eval_scripts;
 ALTER TABLE eval_scripts ADD COLUMN IF NOT EXISTS implantacao_date date;
 ALTER TABLE eval_scripts DROP COLUMN IF EXISTS revisao;            -- redundante: version É a revisão
+ALTER TABLE eval_scripts DROP COLUMN IF EXISTS status;            -- redundante com a vigência automática
 ALTER TABLE eval_scripts ALTER COLUMN revisao_date SET NOT NULL;
 ALTER TABLE eval_scripts ALTER COLUMN implantacao_date SET NOT NULL;
 ALTER TABLE eval_scripts ADD CONSTRAINT eval_scripts_source_version_uq UNIQUE (source_file, version);
@@ -107,12 +110,23 @@ O preview passa a **detectar e avisar antes de confirmar**: se a planilha não t
 os obrigatórios, ou se a revisão/data já existe para o roteiro, o preview retorna o
 mesmo erro — o usuário vê o problema na prévia, sem precisar tentar importar.
 
-### 5. Remoção da criação manual
+### 5. Remoção da criação manual e do status manual
 
+**Criação manual:**
 - Remover o endpoint `POST /api/eval/scripts` (manual).
 - Remover no `Admin.tsx` toda a UI de "montar manual": o estado `scriptForm`, o
   handler de criação manual e o formulário. "Novo Roteiro" oferece **apenas** o
   upload `.xlsx` (`ImportRoteiroModal`).
+
+**Status manual (`eval_scripts.status`):**
+- Remover o endpoint `PUT /api/eval/scripts/:id/status` e o uso de `status` no GET
+  e no import; dropar a coluna `status` (migration `0008`).
+- Remover no `Admin.tsx` o componente `StatusControl`, o handler
+  `handleUpdateScriptStatus` e a coluna "Status" da visão lista. A vigência
+  (vigente/substituída) passa a ser o único indicador de estado.
+- **Atenção — não confundir:** `eval_instances.status` (pendente/finalizado/
+  aprovado/reprovado — ciclo da *avaliação* preenchida) é **outro campo**, usado
+  por PrestadorView/CooperadoView/AuditorView/RoteiroPlayer; **permanece intacto**.
 
 ### 6. Reset dos dados (produção)
 
@@ -122,15 +136,24 @@ Executado **antes** da migration `0008`. O usuário re-sobe os roteiros pelo por
 
 ### 7. Frontend — selo único + histórico agrupado (`Admin.tsx`)
 
-- **Selo único** por versão (substitui VersionBadge + RevisaoChip, que ficariam
-  redundantes): "Revisão {version} · vigente" (verde) / "· substituída" (cinza),
-  com "rev. {revisao_date}" e "implantação: {implantacao_date}" (pt-BR).
+- **Selo único** por versão (substitui VersionBadge + RevisaoChip + StatusControl,
+  todos redundantes agora): "Revisão {version} · vigente" (verde) / "· substituída"
+  (cinza), com "rev. {revisao_date}" e "implantação: {implantacao_date}" (pt-BR).
 - **Agrupar por roteiro:** como cada especialidade passa a ter várias revisões,
   mostrar a **vigente** e um expansível *"ver revisões anteriores (N)"* listando as
   substituídas (revisão + datas). Evita a lista achatada com muitas linhas por
-  especialidade. Vale nas visões cards e lista.
+  especialidade. Vale nas visões cards e lista. A coluna "Status" da lista é
+  removida (vide item 5); colunas passam a ser: Roteiro · Revisão · Implantação ·
+  Critérios · Alertas · Ações.
 - Erros de import (obrigatórios/conflito) exibidos no `ImportRoteiroModal` de forma
   legível (não `alert` nativo).
+
+### 8. Visão do prestador — só a vigente
+
+Com revisões empilhadas, PrestadorView/CooperadoView passariam a listar várias
+revisões da mesma especialidade. Ajustar essas telas para exibir **apenas a revisão
+vigente** de cada `source_file` (filtrar por `is_current`), preservando toda a
+lógica de `eval_instances` (instância/`inst.status`) inalterada.
 
 ## Tratamento de erros
 

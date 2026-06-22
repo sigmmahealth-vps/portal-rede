@@ -1672,7 +1672,9 @@ async function startServer() {
         return res.status(400).json({ error: 'Envie um arquivo .xlsx no campo "file".' });
       }
 
-      const parsed = parseWorkbook(req.file.buffer, req.file.originalname);
+      // multer decodifica originalname como latin1; reconstruir o UTF-8 do nome do arquivo
+      const fileName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      const parsed = parseWorkbook(req.file.buffer, fileName);
 
       const totalMaxScore = parsed.questions.reduce((s, q) => s + q.maxScore, 0);
       const dimensions: Record<string, number> = {};
@@ -1735,7 +1737,9 @@ async function startServer() {
         return res.status(400).json({ error: 'Envie um arquivo .xlsx no campo "file".' });
       }
 
-      const parsed = parseWorkbook(req.file.buffer, req.file.originalname);
+      // multer decodifica originalname como latin1; reconstruir o UTF-8 do nome do arquivo
+      const fileName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      const parsed = parseWorkbook(req.file.buffer, fileName);
       const noHeader = parsed.orphans.some((o) => o.startsWith('!!'));
       if (parsed.questions.length === 0 || noHeader) {
         return res.status(422).json({ error: 'Planilha sem critérios reconhecíveis ou cabeçalho inválido.' });

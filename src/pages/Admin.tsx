@@ -530,11 +530,13 @@ export default function Admin() {
                         </button>
                         {revisoesAbertas[key] && (
                           <ul className="mt-3 space-y-2">
-                            {anteriores.map((ant: any) => (
+                            {anteriores.map((ant: any) => {
+                              const revDate = formatBRDate(ant.revisao_date);
+                              return (
                               <li key={ant.id} className="flex items-center justify-between gap-2 text-xs text-gray-500">
                                 <span>
                                   Revisão {ant.version ?? '?'}
-                                  {formatBRDate(ant.revisao_date) ? ` — rev. ${formatBRDate(ant.revisao_date)}` : ''}
+                                  {revDate ? ` — rev. ${revDate}` : ''}
                                 </span>
                                 <button
                                   onClick={() => handleDeleteScript(ant)}
@@ -544,7 +546,8 @@ export default function Admin() {
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </li>
-                            ))}
+                              );
+                            })}
                           </ul>
                         )}
                       </div>
@@ -1322,6 +1325,7 @@ function RevisaoBadge({ script }: { script: any }) {
 function RoteiroDatas({ script }: { script: any }) {
   const rev = formatBRDate(script.revisao_date);
   const impl = formatBRDate(script.implantacao_date);
+  if (!rev && !impl) return null;
   return (
     <div className="text-xs text-gray-500 leading-tight">
       {rev && <div>rev. {rev}</div>}
@@ -1341,6 +1345,8 @@ function agruparPorRoteiro(scripts: any[]): { key: string; vigente: any; anterio
   const num = (v: any) => parseInt(String(v ?? '').replace(/[^0-9]/g, ''), 10) || 0;
   return Array.from(grupos.entries()).map(([key, lista]) => {
     const ordenada = [...lista].sort((a, b) => num(b.version) - num(a.version));
-    return { key, vigente: ordenada[0], anteriores: ordenada.slice(1) };
+    const vigenteIdx = ordenada.findIndex((s) => s.is_current === true);
+    const idx = vigenteIdx >= 0 ? vigenteIdx : 0;
+    return { key, vigente: ordenada[idx], anteriores: ordenada.filter((_, i) => i !== idx) };
   });
 }

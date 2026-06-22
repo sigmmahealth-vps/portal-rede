@@ -62,6 +62,12 @@ const scriptVersionNum = (v: unknown): number => {
   return digits ? parseInt(digits, 10) : 0;
 };
 
+// ISO "YYYY-MM-DD" → "DD/MM/AAAA" para mensagens ao usuário.
+const isoToBR = (iso: unknown): string => {
+  const [y, m, d] = String(iso ?? '').slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : String(iso ?? '');
+};
+
 // Critérios que, por definição, NÃO têm evidência e portanto não devem disparar
 // o aviso "sem evidência" no preview. Hoje só existe um: a participação na
 // pesquisa de satisfação da qualificação da rede (coletada automaticamente
@@ -1722,17 +1728,28 @@ async function startServer() {
       const noHeader = parsed.orphans.some((o) => o.startsWith('!!'));
       const blocked = parsed.questions.length === 0 || noHeader;
 
-      const { rows: existingRows } = await query('SELECT version FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
-      let existing: { currentVersion: number; nextVersion: number } | null = null;
-      if (existingRows.length) {
-        let maxv = 0;
-        for (const r of existingRows as any[]) maxv = Math.max(maxv, scriptVersionNum(r.version));
-        existing = { currentVersion: maxv, nextVersion: maxv + 1 };
+      const errors: string[] = [];
+      if (!parsed.version) errors.push('A planilha não informa o número da revisão.');
+      if (!parsed.revisaoDate) errors.push('A planilha não informa a data da revisão.');
+      if (!parsed.implantacaoDate) errors.push('A planilha não informa a data de implantação.');
+      if (parsed.version || parsed.revisaoDate) {
+        const { rows: dupRows } = await query(
+          'SELECT version, revisao_date FROM eval_scripts WHERE source_file = $1',
+          [parsed.sourceFile],
+        );
+        if (parsed.version && (dupRows as any[]).some((r) => String(r.version) === parsed.version)) {
+          errors.push(`Já existe uma versão com a revisão ${parsed.version} para este roteiro.`);
+        }
+        if (parsed.revisaoDate && (dupRows as any[]).some((r) => String(r.revisao_date).slice(0, 10) === parsed.revisaoDate)) {
+          errors.push(`Já existe uma versão com a data de revisão ${isoToBR(parsed.revisaoDate)} para este roteiro.`);
+        }
       }
 
       res.json({
         title: parsed.title,
         version: parsed.version,
+        revisaoDate: parsed.revisaoDate,
+        implantacaoDate: parsed.implantacaoDate,
         sourceFile: parsed.sourceFile,
         sectionCount: parsed.sections.length,
         questionCount: parsed.questions.length,
@@ -1744,8 +1761,8 @@ async function startServer() {
           noEvidence: parsed.questions.filter((q) => !q.guidance && !isEvidenceExempt(q.text)).length,
           noHeader,
         },
-        existing,
-        blocked,
+        errors,
+        blocked: blocked || errors.length > 0,
       });
     } catch (err: any) {
       console.error(err);
@@ -1768,61 +1785,70 @@ async function startServer() {
       if (parsed.questions.length === 0 || noHeader) {
         return res.status(422).json({ error: 'Planilha sem critérios reconhecíveis ou cabeçalho inválido.' });
       }
+      if (!parsed.version) return res.status(422).json({ error: 'A planilha não informa o número da revisão.' });
+      if (!parsed.revisaoDate) return res.status(422).json({ error: 'A planilha não informa a data da revisão.' });
+      if (!parsed.implantacaoDate) return res.status(422).json({ error: 'A planilha não informa a data de implantação.' });
 
-      const result = await withTransaction(async (client) => {
-        // nova versão = (maior versão existente p/ aquele arquivo) + 1; novo => 1.
-        const { rows: existing } = await client.query('SELECT version FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
-        let maxv = 0;
-        for (const r of existing as any[]) maxv = Math.max(maxv, scriptVersionNum(r.version));
-        const nextVersion = String(maxv + 1);
+      const { rows: dupRows } = await query(
+        'SELECT version, revisao_date FROM eval_scripts WHERE source_file = $1',
+        [parsed.sourceFile],
+      );
+      if ((dupRows as any[]).some((r) => String(r.version) === parsed.version)) {
+        return res.status(409).json({ error: `Já existe uma versão com a revisão ${parsed.version} para este roteiro.` });
+      }
+      if ((dupRows as any[]).some((r) => String(r.revisao_date).slice(0, 10) === parsed.revisaoDate)) {
+        return res.status(409).json({ error: `Já existe uma versão com a data de revisão ${isoToBR(parsed.revisaoDate)} para este roteiro.` });
+      }
 
-        const { rows: sr } = await client.query(
-          `INSERT INTO eval_scripts (title, description, version, source_file, revisao, revisao_date, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
-          [parsed.title, parsed.description, nextVersion, parsed.sourceFile, parsed.version, parsed.revisaoDate],
-        );
-        const scriptId = sr[0].id as number;
-
-        const idByTmp = new Map<number, number>();
-        for (const s of parsed.sections) {
-          const parentId = s.parentTmp != null ? idByTmp.get(s.parentTmp) ?? null : null;
-          const { rows: secRows } = await client.query(
-            `INSERT INTO eval_sections (script_id, parent_section_id, name, order_index)
-             VALUES ($1, $2, $3, $4) RETURNING id`,
-            [scriptId, parentId, s.name, s.order],
+      try {
+        const result = await withTransaction(async (client) => {
+          const { rows: sr } = await client.query(
+            `INSERT INTO eval_scripts (title, description, version, source_file, revisao_date, implantacao_date, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
+            [parsed.title, parsed.description, parsed.version, parsed.sourceFile, parsed.revisaoDate, parsed.implantacaoDate],
           );
-          idByTmp.set(s.tmp, secRows[0].id);
-        }
+          const scriptId = sr[0].id as number;
 
-        for (const q of parsed.questions) {
-          const sectionId = q.sectionTmp != null ? idByTmp.get(q.sectionTmp) ?? null : null;
-          if (sectionId == null) {
-            console.warn('[import] critério ignorado — seção não encontrada (sectionTmp):', q.sectionTmp, q.code);
-            continue;
+          const idByTmp = new Map<number, number>();
+          for (const s of parsed.sections) {
+            const parentId = s.parentTmp != null ? idByTmp.get(s.parentTmp) ?? null : null;
+            const { rows: secRows } = await client.query(
+              `INSERT INTO eval_sections (script_id, parent_section_id, name, order_index)
+               VALUES ($1, $2, $3, $4) RETURNING id`,
+              [scriptId, parentId, s.name, s.order],
+            );
+            idByTmp.set(s.tmp, secRows[0].id);
           }
-          await client.query(
-            `INSERT INTO eval_questions
-               (section_id, code, text, legislation, type, weight, max_score, dimension,
-                guidance, evidence_required, is_eliminatory, order_index)
-             VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11)`,
-            [
-              sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
-              q.dimension, q.guidance, q.evidenceRequired, q.isEliminatory, q.order,
-            ],
-          );
+          for (const q of parsed.questions) {
+            const sectionId = q.sectionTmp != null ? idByTmp.get(q.sectionTmp) ?? null : null;
+            if (sectionId == null) continue;
+            await client.query(
+              `INSERT INTO eval_questions
+                 (section_id, code, text, legislation, type, weight, max_score, dimension,
+                  guidance, evidence_required, is_eliminatory, order_index)
+               VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11)`,
+              [sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
+               q.dimension, q.guidance, q.evidenceRequired, q.isEliminatory, q.order],
+            );
+          }
+          return { id: scriptId, version: parsed.version };
+        });
+
+        res.json({
+          success: true,
+          id: result.id,
+          version: result.version,
+          title: parsed.title,
+          sourceFile: parsed.sourceFile,
+          questionCount: parsed.questions.length,
+        });
+      } catch (err: any) {
+        if (err?.code === '23505') {
+          return res.status(409).json({ error: 'Já existe uma versão com esta revisão ou data de revisão para este roteiro.' });
         }
-
-        return { id: scriptId, version: nextVersion };
-      });
-
-      res.json({
-        success: true,
-        id: result.id,
-        version: result.version,
-        title: parsed.title,
-        sourceFile: parsed.sourceFile,
-        questionCount: parsed.questions.length,
-      });
+        console.error(err);
+        res.status(500).json({ error: err.message || 'Falha ao importar o roteiro.' });
+      }
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message || 'Falha ao importar o roteiro.' });

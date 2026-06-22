@@ -91,3 +91,26 @@ test('parseWorkbook: isEliminatory detecta "eliminatório" e normal = false', ()
   assert.equal(elim.isEliminatory, true);
   assert.equal(normal.isEliminatory, false);
 });
+
+test('parseWorkbook extrai a data da revisão quando presente', () => {
+  const aoa = [
+    ['ROTEIRO PARA AVALIAÇÃO DE QUALIFICAÇÃO', 'OPS-REDS Implantação: 01/04/2023 Revisão: 02 em 28/01/2026 Classificação: Interna'],
+    ['GRUPO DE TESTE'],
+    ['ITEM', 'EVIDÊNCIA', 'PESO MÁXIMO', 'PESO À CONSIDERAR'],
+    ['SEÇÃO 1. Estrutura'],
+    ['1.1.1 Possui alvará?', 'Alvará', '10', '10'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Roteiro');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const parsed = parseWorkbook(buf, 'OPS-RED-FOR-001 - Teste.xlsx');
+  assert.equal(parsed.version, '02');
+  assert.equal(parsed.revisaoDate, '2026-01-28');
+});
+
+test('parseWorkbook deixa revisaoDate null quando a planilha não traz data', () => {
+  const parsed = parseWorkbook(buildBuffer(), 'OPS-RED-FOR-017 - Teste.xlsx');
+  assert.equal(parsed.version, '03');
+  assert.equal(parsed.revisaoDate, null);
+});

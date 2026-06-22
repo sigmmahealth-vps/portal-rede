@@ -90,6 +90,38 @@ export default function Dashboard() {
   const isCooperado = user?.role === 'cooperado';
   const isPrestador = user?.role === 'prestador';
 
+  // Formata percentual em pt-BR (vírgula). Valores numeric do Postgres chegam como string.
+  const formatPct = (value: number) => value.toFixed(2).replace('.', ',');
+
+  // Distribuição de selos da rede (admin) — vinda de eval_instances via /dashboard.
+  const sealRows: any[] = adminData?.sealDistribution || [];
+  const sealTotal = sealRows.reduce((acc, r) => acc + Number(r.count || 0), 0);
+  const getSeal = (name: string) => {
+    const count = Number(sealRows.find(r => r.seal === name)?.count || 0);
+    return { count, pct: sealTotal > 0 ? (count / sealTotal) * 100 : 0 };
+  };
+
+  // Qualificação individual do prestador — avaliação finalizada mais recente.
+  const myEvaluation = adminData?.latestEvaluation || null;
+  const myPercentual = myEvaluation && myEvaluation.percentual != null ? Number(myEvaluation.percentual) : null;
+  const mySeal: string | null = myEvaluation?.seal || null;
+
+  // Tempo de casa (anos) a partir do cadastro do prestador no portal.
+  const providerCreatedAt = adminData?.provider?.created_at;
+  const yearsAsProvider = providerCreatedAt
+    ? Math.floor((Date.now() - new Date(providerCreatedAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    : null;
+
+  // Estilo do selo (cor de fundo, texto e rótulo) por nível.
+  const sealStyle = (seal: string | null) => {
+    switch (seal) {
+      case 'Ouro': return { bg: 'bg-[#FFD700]', border: 'border-yellow-200', text: 'text-yellow-800', label: 'SELO\nOURO' };
+      case 'Prata': return { bg: 'bg-gray-300', border: 'border-gray-200', text: 'text-gray-700', label: 'SELO\nPRATA' };
+      case 'Bronze': return { bg: 'bg-orange-300', border: 'border-orange-200', text: 'text-orange-900', label: 'SELO\nBRONZE' };
+      default: return { bg: 'bg-gray-100', border: 'border-gray-200', text: 'text-gray-400', label: 'SEM\nSELO' };
+    }
+  };
+
   const getRoleGreeting = () => {
     if (isCooperado) return 'Bem-vindo(a) ao portal do Cooperado Unimed';
     if (isPrestador) return 'Bem-vindo(a) ao portal da Rede Prestadora';
@@ -116,7 +148,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500 font-medium">Total de Prestadores</p>
-              <p className="text-3xl font-bold text-gray-800">669</p>
+              <p className="text-3xl font-bold text-gray-800">{Number(adminData?.providersCount?.count) || 0}</p>
             </div>
           </div>
           
@@ -126,7 +158,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500 font-medium">OS SGU-Card Abertas</p>
-              <p className="text-3xl font-bold text-gray-800">44</p>
+              <p className="text-lg font-bold text-gray-400">Em breve</p>
             </div>
           </div>
 
@@ -136,7 +168,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500 font-medium">Docs. Legais Pendentes</p>
-              <p className="text-3xl font-bold text-gray-800">11%</p>
+              <p className="text-3xl font-bold text-gray-800">{Number(adminData?.pendingDocsCount?.count) || 0}</p>
             </div>
           </div>
 
@@ -146,7 +178,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-500 font-medium">Consultas (Consulta Já)</p>
-              <p className="text-3xl font-bold text-gray-800">250</p>
+              <p className="text-lg font-bold text-gray-400">Em breve</p>
             </div>
           </div>
 
@@ -165,48 +197,39 @@ export default function Dashboard() {
           {/* Qualificação da Rede */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-800">Qualificação da Rede (2025)</h3>
+              <h3 className="text-lg font-bold text-gray-800">Qualificação da Rede</h3>
               <Link to="/qualificacao" className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center">
                 Ver detalhes <ArrowRight className="h-4 w-4 ml-1" />
               </Link>
             </div>
             <div className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
-                    <Award className="h-5 w-5 text-yellow-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-800">Selo Ouro</p>
-                    <p className="text-xs text-gray-500">Crescimento de 13.54% para 16.27%</p>
-                  </div>
+              {sealTotal > 0 ? (
+                <div className="space-y-4">
+                  {[
+                    { name: 'Ouro', icon: 'bg-yellow-100', color: 'text-yellow-600' },
+                    { name: 'Prata', icon: 'bg-gray-100', color: 'text-gray-500' },
+                    { name: 'Bronze', icon: 'bg-orange-100', color: 'text-orange-600' },
+                  ].map(({ name, icon, color }) => {
+                    const { count, pct } = getSeal(name);
+                    return (
+                      <div key={name} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full ${icon} flex items-center justify-center`}>
+                            <Award className={`h-5 w-5 ${color}`} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-gray-800">Selo {name}</p>
+                            <p className="text-xs text-gray-500">{count} {count === 1 ? 'prestador avaliado' : 'prestadores avaliados'}</p>
+                          </div>
+                        </div>
+                        <span className="text-lg font-bold text-gray-800">{formatPct(pct)}%</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <span className="text-lg font-bold text-gray-800">16,27%</span>
-              </div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                    <Award className="h-5 w-5 text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-800">Selo Prata</p>
-                    <p className="text-xs text-gray-500">Crescimento de 67.55% para 82.16%</p>
-                  </div>
-                </div>
-                <span className="text-lg font-bold text-gray-800">82,16%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
-                    <Award className="h-5 w-5 text-orange-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-800">Selo Bronze</p>
-                    <p className="text-xs text-gray-500">Redução de 13.35% para 1.57%</p>
-                  </div>
-                </div>
-                <span className="text-lg font-bold text-gray-800">1,57%</span>
-              </div>
+              ) : (
+                <div className="text-center py-6 text-gray-500 text-sm">Nenhuma avaliação finalizada ainda.</div>
+              )}
             </div>
           </div>
 
@@ -214,46 +237,22 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-800">Atendimento à Rede</h3>
-              <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Jan a Out/2025</span>
+              <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Em breve</span>
             </div>
             <div className="p-5">
               <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">E-mail</span>
-                    <span className="font-bold text-gray-800">4.230</span>
+                {['E-mail', 'WhatsApp', 'Ligação', 'CRM / Presencial'].map((canal) => (
+                  <div key={canal}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-gray-700">{canal}</span>
+                      <span className="font-bold text-gray-400">—</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className="bg-gray-200 h-2 rounded-full" style={{ width: '0%' }}></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: '45%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">WhatsApp</span>
-                    <span className="font-bold text-gray-800">2.892</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '31%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">Ligação</span>
-                    <span className="font-bold text-gray-800">2.100</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-orange-500 h-2 rounded-full" style={{ width: '22%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">CRM / Presencial</span>
-                    <span className="font-bold text-gray-800">60</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className="bg-purple-500 h-2 rounded-full" style={{ width: '2%' }}></div>
-                  </div>
-                </div>
+                ))}
+                <p className="text-xs text-gray-400 pt-1">Disponível após a integração com os canais de atendimento.</p>
               </div>
             </div>
           </div>
@@ -599,24 +598,30 @@ export default function Dashboard() {
           
           {/* Qualificação */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center text-center">
-            <div className="w-24 h-24 bg-[#FFD700] rounded-full flex items-center justify-center mb-4 shadow-inner border-4 border-yellow-200">
-              <span className="text-xl font-black text-yellow-800 tracking-tighter leading-none">SELO<br/>OURO</span>
+            <div className={`w-24 h-24 ${sealStyle(mySeal).bg} rounded-full flex items-center justify-center mb-4 shadow-inner border-4 ${sealStyle(mySeal).border}`}>
+              <span className={`text-xl font-black ${sealStyle(mySeal).text} tracking-tighter leading-none`}>
+                {sealStyle(mySeal).label.split('\n').map((line, i) => (
+                  <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>
+                ))}
+              </span>
             </div>
             <h3 className="text-sm font-bold text-gray-800">Sua qualificação na rede</h3>
-            <p className="text-4xl font-black text-[#00995D] my-2">92%</p>
+            <p className="text-4xl font-black text-[#00995D] my-2">{myPercentual != null ? `${formatPct(myPercentual)}%` : '—'}</p>
             <Link to="/qualificacao" className="mt-2 px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-colors">
-              Ver detalhes da sua avaliação
+              {myEvaluation ? 'Ver detalhes da sua avaliação' : 'Responder roteiro'}
             </Link>
           </div>
 
-          {/* Parabéns */}
-          <div className="bg-[#e6f4ea] rounded-xl shadow-sm border border-[#cce8d6] p-5 relative overflow-hidden">
-            <Award className="absolute -right-4 -bottom-4 h-24 w-24 text-[#00995D] opacity-10" />
-            <h3 className="text-sm font-bold text-[#00995D] mb-2">Parabéns!</h3>
-            <p className="text-xs text-gray-700 leading-relaxed">
-              Hoje você completa <strong className="text-[#00995D]">3 anos</strong> como prestador da <strong>Unimed Criciúma</strong>! Obrigado por fazer parte da nossa rede.
-            </p>
-          </div>
+          {/* Tempo de casa */}
+          {yearsAsProvider != null && yearsAsProvider >= 1 && (
+            <div className="bg-[#e6f4ea] rounded-xl shadow-sm border border-[#cce8d6] p-5 relative overflow-hidden">
+              <Award className="absolute -right-4 -bottom-4 h-24 w-24 text-[#00995D] opacity-10" />
+              <h3 className="text-sm font-bold text-[#00995D] mb-2">Obrigado por fazer parte!</h3>
+              <p className="text-xs text-gray-700 leading-relaxed">
+                Você já integra a rede da <strong>Unimed Criciúma</strong> há <strong className="text-[#00995D]">{yearsAsProvider} {yearsAsProvider === 1 ? 'ano' : 'anos'}</strong>. Obrigado por fazer parte!
+              </p>
+            </div>
+          )}
 
           {/* Precisa de ajuda */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -645,28 +650,9 @@ export default function Dashboard() {
           {/* Atualizações */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <h3 className="text-sm font-bold text-gray-800 mb-4">Atualizações</h3>
-            <ul className="space-y-4">
-              <li className="flex items-start">
-                <CheckCircle className="h-4 w-4 text-[#00995D] mt-0.5 mr-3 flex-shrink-0" />
-                <span className="text-xs text-gray-600">Treinamento "Segurança do Paciente" concluído</span>
-              </li>
-              <li className="flex items-start">
-                <AlertCircle className="h-4 w-4 text-[#f59e0b] mt-0.5 mr-3 flex-shrink-0" />
-                <span className="text-xs text-gray-600">Chamado #2345 atualizado</span>
-              </li>
-              <li className="flex items-start">
-                <FileText className="h-4 w-4 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
-                <span className="text-xs text-gray-600">Novo Manual de Faturamento publicado</span>
-              </li>
-              <li className="flex items-start">
-                <Clock className="h-4 w-4 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
-                <span className="text-xs text-gray-600">Documento CRM vence em 30 dias</span>
-              </li>
-            </ul>
-            <div className="mt-5 flex justify-center">
-              <button className="px-6 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-colors">
-                Ver mais
-              </button>
+            <div className="text-center py-6 text-gray-400 text-xs">
+              <Clock className="h-6 w-6 mx-auto mb-2 opacity-50" />
+              Em breve — seu histórico de atualizações aparecerá aqui.
             </div>
           </div>
 

@@ -6,6 +6,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { query, pool, withTransaction } from './db/db.js';
+import { parseWorkbook } from './db/roteiro-parser.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-unimed-mvp';
 
@@ -26,6 +27,40 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage: storage });
+
+// Upload em memória, só para .xlsx (parse de roteiro). Limite de 5 MB.
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.xlsx$/i.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas arquivos .xlsx são aceitos'));
+    }
+  },
+});
+
+// Adapta erros do multer (ex.: tamanho) para 400 com mensagem clara.
+const xlsxUpload = (req: any, res: any, next: any) => {
+  uploadMemory.single('file')(req, res, (err: any) => {
+    if (err) {
+      const isSize = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+      return res.status(400).json({ error: isSize ? 'Arquivo maior que 5 MB' : (err.message || 'Falha no upload') });
+    }
+    next();
+  });
+};
+
+// Extrai o número da versão a partir do texto livre gravado ("03", "v2", "" → 0).
+// Observação: remove TODOS os não-dígitos, então versões pontuadas como "1.0"
+// viram 10. Isso é seguro aqui porque o import grava sempre inteiros sequenciais
+// (String(maxv + 1)); só o criador manual antigo usa "1.0", e ele não define
+// source_file, então nunca entra no cálculo de vigência por arquivo.
+const scriptVersionNum = (v: unknown): number => {
+  const digits = String(v ?? '').replace(/[^0-9]/g, '');
+  return digits ? parseInt(digits, 10) : 0;
+};
 
 // =============================================================================
 // Seed inicial / dados de demonstração.
@@ -393,11 +428,24 @@ async function startServer() {
         const { rows: recentPendingDocs } = await query('SELECT d.*, p.name as provider_name FROM documents d JOIN providers p ON d.provider_id = p.id WHERE d.status = $1 ORDER BY d.id DESC LIMIT 5', ['pendente']);
         const { rows: recentOpenTickets } = await query('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 5', ['aberto']);
 
+        // Distribuição de selos: por prestador, considera a avaliação finalizada mais recente.
+        const { rows: sealDistribution } = await query(
+          `SELECT seal, COUNT(*)::int AS count
+             FROM (
+               SELECT DISTINCT ON (provider_id) provider_id, seal
+                 FROM eval_instances
+                WHERE seal IS NOT NULL AND status IN ('finalizado','aprovado')
+                ORDER BY provider_id, completed_at DESC NULLS LAST, started_at DESC
+             ) latest
+            GROUP BY seal`
+        );
+
         res.json({
           providersCount: providersCountRows[0],
           openTicketsCount: openTicketsCountRows[0],
           pendingDocsCount: pendingDocsCountRows[0],
           pendingCredentialingCount: pendingCredentialingCountRows[0],
+          sealDistribution,
           recentPendingDocs,
           recentOpenTickets
         });
@@ -409,6 +457,15 @@ async function startServer() {
         const { rows: audits } = await query('SELECT * FROM audits WHERE provider_id = $1', [provider_id]);
         const { rows: financials } = await query('SELECT * FROM financials WHERE provider_id = $1 ORDER BY competence DESC LIMIT 3', [provider_id]);
         const { rows: announcements } = await query('SELECT * FROM announcements ORDER BY date DESC LIMIT 5');
+        // Avaliação finalizada mais recente do prestador (qualificação individual + selo).
+        const { rows: latestEval } = await query(
+          `SELECT percentual, seal, completed_at
+             FROM eval_instances
+            WHERE provider_id = $1 AND status IN ('finalizado','aprovado')
+            ORDER BY completed_at DESC NULLS LAST, started_at DESC
+            LIMIT 1`,
+          [provider_id]
+        );
 
         res.json({
           provider: providerRows[0],
@@ -417,7 +474,8 @@ async function startServer() {
           trainings: trainings,
           audits: audits,
           financials: financials,
-          announcements: announcements
+          announcements: announcements,
+          latestEvaluation: latestEval[0] || null
         });
       } else {
         res.json({
@@ -476,7 +534,7 @@ async function startServer() {
     try {
       const { role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: providers } = await query('SELECT id, name, cnpj, sgu_code AS code, provider_group, qualification_level, status FROM providers ORDER BY name ASC');
+        const { rows: providers } = await query('SELECT id, name, cnpj, sgu_code AS code, provider_group, provider_type, area_atuacao, qualification_level, status FROM providers ORDER BY name ASC');
         res.json(providers);
       } else {
         res.status(403).json({ error: 'Unauthorized' });
@@ -493,16 +551,16 @@ async function startServer() {
       if (role !== 'admin' && role !== 'auditoria') {
         return res.status(403).json({ error: 'Unauthorized' });
       }
-      const { name, cnpj, code, provider_group, qualification_level, status } = req.body;
+      const { name, cnpj, code, provider_group, provider_type, area_atuacao, qualification_level, status } = req.body;
       if (!name || !cnpj) {
         return res.status(400).json({ error: 'Name and CNPJ are required' });
       }
       try {
         const { rows } = await query(
-          'INSERT INTO providers (name, cnpj, sgu_code, provider_group, qualification_level, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-          [name, cnpj, code || null, provider_group || null, qualification_level || null, status || 'Ativo']
+          'INSERT INTO providers (name, cnpj, sgu_code, provider_group, provider_type, area_atuacao, qualification_level, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+          [name, cnpj, code || null, provider_group || null, provider_type || null, area_atuacao || null, qualification_level || null, status || 'Ativo']
         );
-        res.json({ id: rows[0].id, name, cnpj, code, provider_group, qualification_level, status });
+        res.json({ id: rows[0].id, name, cnpj, code, provider_group, provider_type, area_atuacao, qualification_level, status });
       } catch (err: any) {
         res.status(400).json({ error: err.message });
       }
@@ -1636,6 +1694,154 @@ async function startServer() {
     }
   });
 
+  app.post('/api/eval/scripts/preview', authenticate, xlsxUpload, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: 'Envie um arquivo .xlsx no campo "file".' });
+      }
+
+      const parsed = parseWorkbook(req.file.buffer, req.file.originalname);
+
+      const totalMaxScore = parsed.questions.reduce((s, q) => s + q.maxScore, 0);
+      const dimensions: Record<string, number> = {};
+      for (const q of parsed.questions) {
+        const k = q.dimension ?? '(sem dimensão)';
+        dimensions[k] = (dimensions[k] ?? 0) + 1;
+      }
+      const noHeader = parsed.orphans.some((o) => o.startsWith('!!'));
+      const blocked = parsed.questions.length === 0 || noHeader;
+
+      const { rows: existingRows } = await query('SELECT version FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
+      let existing: { currentVersion: number; nextVersion: number } | null = null;
+      if (existingRows.length) {
+        let maxv = 0;
+        for (const r of existingRows as any[]) maxv = Math.max(maxv, scriptVersionNum(r.version));
+        existing = { currentVersion: maxv, nextVersion: maxv + 1 };
+      }
+
+      res.json({
+        title: parsed.title,
+        version: parsed.version,
+        sourceFile: parsed.sourceFile,
+        sectionCount: parsed.sections.length,
+        questionCount: parsed.questions.length,
+        totalMaxScore,
+        dimensions,
+        warnings: {
+          orphans: parsed.orphans,
+          noWeight: parsed.questions.filter((q) => !q.maxScore).length,
+          noEvidence: parsed.questions.filter((q) => !q.guidance).length,
+          noHeader,
+        },
+        existing,
+        blocked,
+      });
+    } catch (err: any) {
+      console.error(err);
+      res.status(400).json({ error: err.message || 'Não foi possível ler a planilha.' });
+    }
+  });
+
+  app.post('/api/eval/scripts/import', authenticate, xlsxUpload, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: 'Envie um arquivo .xlsx no campo "file".' });
+      }
+
+      const parsed = parseWorkbook(req.file.buffer, req.file.originalname);
+      const noHeader = parsed.orphans.some((o) => o.startsWith('!!'));
+      if (parsed.questions.length === 0 || noHeader) {
+        return res.status(422).json({ error: 'Planilha sem critérios reconhecíveis ou cabeçalho inválido.' });
+      }
+
+      const result = await withTransaction(async (client) => {
+        // nova versão = (maior versão existente p/ aquele arquivo) + 1; novo => 1.
+        const { rows: existing } = await client.query('SELECT version FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
+        let maxv = 0;
+        for (const r of existing as any[]) maxv = Math.max(maxv, scriptVersionNum(r.version));
+        const nextVersion = String(maxv + 1);
+
+        const { rows: sr } = await client.query(
+          `INSERT INTO eval_scripts (title, description, version, source_file, created_at)
+           VALUES ($1, $2, $3, $4, now()) RETURNING id`,
+          [parsed.title, parsed.description, nextVersion, parsed.sourceFile],
+        );
+        const scriptId = sr[0].id as number;
+
+        const idByTmp = new Map<number, number>();
+        for (const s of parsed.sections) {
+          const parentId = s.parentTmp != null ? idByTmp.get(s.parentTmp) ?? null : null;
+          const { rows: secRows } = await client.query(
+            `INSERT INTO eval_sections (script_id, parent_section_id, name, order_index)
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [scriptId, parentId, s.name, s.order],
+          );
+          idByTmp.set(s.tmp, secRows[0].id);
+        }
+
+        for (const q of parsed.questions) {
+          const sectionId = q.sectionTmp != null ? idByTmp.get(q.sectionTmp) ?? null : null;
+          if (sectionId == null) {
+            console.warn('[import] critério ignorado — seção não encontrada (sectionTmp):', q.sectionTmp, q.code);
+            continue;
+          }
+          await client.query(
+            `INSERT INTO eval_questions
+               (section_id, code, text, legislation, type, weight, max_score, dimension,
+                guidance, evidence_required, is_eliminatory, order_index)
+             VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11)`,
+            [
+              sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
+              q.dimension, q.guidance, q.evidenceRequired, q.isEliminatory, q.order,
+            ],
+          );
+        }
+
+        return { id: scriptId, version: nextVersion };
+      });
+
+      res.json({
+        success: true,
+        id: result.id,
+        version: result.version,
+        title: parsed.title,
+        sourceFile: parsed.sourceFile,
+        questionCount: parsed.questions.length,
+      });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message || 'Falha ao importar o roteiro.' });
+    }
+  });
+
+  app.put('/api/eval/scripts/:id/status', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { status } = req.body;
+      const allowed = ['rascunho', 'ativo', 'arquivado'];
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ error: 'Status inválido. Use: rascunho, ativo ou arquivado.' });
+      }
+      const { rowCount } = await query('UPDATE eval_scripts SET status = $1 WHERE id = $2', [status, req.params.id]);
+      if (!rowCount) return res.status(404).json({ error: 'Roteiro não encontrado.' });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.delete('/api/eval/scripts/:id', authenticate, async (req: any, res) => {
     try {
       const { role } = req.user;
@@ -1665,6 +1871,15 @@ async function startServer() {
   app.get('/api/eval/scripts', authenticate, async (req: any, res) => {
     try {
       const { rows: scripts } = await query('SELECT * FROM eval_scripts ORDER BY created_at DESC');
+
+      // Maior versão por source_file → define a vigência ("is_current").
+      const maxBySource = new Map<string, number>();
+      for (const s of scripts as any[]) {
+        if (!s.source_file) continue;
+        const n = scriptVersionNum(s.version);
+        if (n > (maxBySource.get(s.source_file) ?? -1)) maxBySource.set(s.source_file, n);
+      }
+
       const scriptsWithItems = [];
       for (const script of scripts as any[]) {
         const { rows: questions } = await query(`
@@ -1673,7 +1888,9 @@ async function startServer() {
           WHERE es.script_id = $1
           ORDER BY eq.order_index ASC
         `, [script.id]);
-        scriptsWithItems.push({ ...script, items: questions });
+        const isCurrent = !script.source_file
+          || scriptVersionNum(script.version) === maxBySource.get(script.source_file);
+        scriptsWithItems.push({ ...script, items: questions, is_current: isCurrent });
       }
       res.json(scriptsWithItems);
     } catch (err: any) {

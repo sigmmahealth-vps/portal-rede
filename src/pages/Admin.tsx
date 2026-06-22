@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../lib/api';
-import { 
+import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
+import {
   Users, 
   GraduationCap, 
   Megaphone, 
@@ -22,7 +23,10 @@ import {
   Trash2,
   Mail,
   ShieldCheck,
-  XCircle
+  XCircle,
+  LayoutGrid,
+  List,
+  UploadCloud
 } from 'lucide-react';
 
 const TABS = [
@@ -78,10 +82,17 @@ export default function Admin() {
   // Modals
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showScriptModal, setShowScriptModal] = useState(false);
+  const [showScriptChooser, setShowScriptChooser] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'cards' | 'lista'>(
+    () => (localStorage.getItem('roteirosViewMode') as 'cards' | 'lista') || 'cards',
+  );
   const [showTrainingModal, setShowTrainingModal] = useState(false);
 
+  const scriptChooserRef = useRef<HTMLDivElement>(null);
+
   // Provider Form
-  const [providerForm, setProviderForm] = useState({ name: '', cnpj: '', code: '', provider_group: '', qualification_level: '', status: 'Ativo' });
+  const [providerForm, setProviderForm] = useState({ name: '', cnpj: '', code: '', provider_group: '', provider_type: '', area_atuacao: '', qualification_level: '', status: 'Ativo' });
 
   // Script Form
   const [scriptForm, setScriptForm] = useState({ title: '', items: [{ id: 1, title: '', description: '' }] });
@@ -104,6 +115,21 @@ export default function Admin() {
       loadData();
     }
   }, [user, activeTab, accessFilter]);
+
+  useEffect(() => {
+    localStorage.setItem('roteirosViewMode', viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (!showScriptChooser) return;
+    const handler = (e: MouseEvent) => {
+      if (scriptChooserRef.current && !scriptChooserRef.current.contains(e.target as Node)) {
+        setShowScriptChooser(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showScriptChooser]);
 
   const loadData = async () => {
     setLoading(true);
@@ -160,7 +186,7 @@ export default function Admin() {
         body: JSON.stringify(providerForm)
       });
       setShowProviderModal(false);
-      setProviderForm({ name: '', cnpj: '', code: '', provider_group: '', qualification_level: '', status: 'Ativo' });
+      setProviderForm({ name: '', cnpj: '', code: '', provider_group: '', provider_type: '', area_atuacao: '', qualification_level: '', status: 'Ativo' });
       loadData();
     } catch (err: any) {
       alert(err.message || 'Erro ao criar prestador');
@@ -189,6 +215,18 @@ export default function Admin() {
       loadData();
     } catch (err: any) {
       alert(err.message || 'Erro ao excluir roteiro');
+    }
+  };
+
+  const handleUpdateScriptStatus = async (id: number, status: string) => {
+    try {
+      await fetchApi(`/eval/scripts/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      });
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao atualizar status');
     }
   };
 
@@ -295,13 +333,33 @@ export default function Admin() {
           </button>
         )}
         {activeTab === 'roteiros' && (
-          <button 
-            onClick={() => setShowScriptModal(true)}
-            className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Novo Roteiro</span>
-          </button>
+          <div className="relative" ref={scriptChooserRef}>
+            <button
+              onClick={() => setShowScriptChooser((v) => !v)}
+              className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Novo Roteiro</span>
+            </button>
+            {showScriptChooser && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => { setShowScriptChooser(false); setShowImportModal(true); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                >
+                  <UploadCloud className="w-4 h-4 text-[#00995D]" />
+                  Subir planilha (.xlsx)
+                </button>
+                <button
+                  onClick={() => { setShowScriptChooser(false); setShowScriptModal(true); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 text-left border-t border-gray-100"
+                >
+                  <Plus className="w-4 h-4 text-gray-400" />
+                  Montar manualmente
+                </button>
+              </div>
+            )}
+          </div>
         )}
         {activeTab === 'treinamentos' && (
           <button 
@@ -394,6 +452,7 @@ export default function Admin() {
                     <th className="pb-3 font-medium">Nome</th>
                     <th className="pb-3 font-medium">CNPJ</th>
                     <th className="pb-3 font-medium">Código</th>
+                    <th className="pb-3 font-medium">Tipo (SGU)</th>
                     <th className="pb-3 font-medium">Nível Qualificação</th>
                     <th className="pb-3 font-medium">Status</th>
                     <th className="pb-3 font-medium text-right">Ações</th>
@@ -405,6 +464,7 @@ export default function Admin() {
                       <td className="py-4 font-medium text-gray-800">{prestador.name}</td>
                       <td className="py-4 text-gray-600">{prestador.cnpj}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
+                      <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>
                       <td className="py-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -424,7 +484,7 @@ export default function Admin() {
                   ))}
                   {providers.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-gray-500">Nenhum prestador encontrado.</td>
+                      <td colSpan={7} className="py-8 text-center text-gray-500">Nenhum prestador encontrado.</td>
                     </tr>
                   )}
                 </tbody>
@@ -441,47 +501,103 @@ export default function Admin() {
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
               <h2 className="text-lg font-bold text-gray-800">Roteiros de Especialidade</h2>
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('cards')}
+                  className={`p-2 rounded-md transition-colors ${viewMode === 'cards' ? 'bg-white shadow-sm text-[#00995D]' : 'text-gray-500'}`}
+                  title="Ver como cards"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('lista')}
+                  className={`p-2 rounded-md transition-colors ${viewMode === 'lista' ? 'bg-white shadow-sm text-[#00995D]' : 'text-gray-500'}`}
+                  title="Ver como lista"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {scripts.map(script => (
-                <div key={script.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className="text-lg font-bold text-gray-900">{script.title}</h3>
-                    <button 
-                      onClick={() => handleDeleteScript(script.id)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                      title="Excluir roteiro"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+
+            {scripts.length === 0 && !loading && (
+              <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-100">
+                <ClipboardList className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-1">Nenhum roteiro cadastrado</h3>
+                <p className="text-gray-500">Clique em "Novo Roteiro" para subir uma planilha ou montar manualmente.</p>
+              </div>
+            )}
+
+            {viewMode === 'cards' && scripts.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {scripts.map((script) => (
+                  <div key={script.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex justify-between items-start mb-3">
+                      <h3 className="text-lg font-bold text-gray-900">{script.title}</h3>
+                      <button
+                        onClick={() => handleDeleteScript(script.id)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                        title="Excluir roteiro"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                      <VersionBadge script={script} />
+                      <StatusControl script={script} onChange={handleUpdateScriptStatus} />
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-gray-700">Itens do Checklist ({script.items.length}):</p>
+                      <ul className="space-y-2">
+                        {script.items.slice(0, 3).map((item: any) => (
+                          <li key={item.id} className="text-sm text-gray-600 flex items-start gap-2">
+                            <CheckCircle className="w-4 h-4 text-[#00995D] mt-0.5 flex-shrink-0" />
+                            <span>{item.title}</span>
+                          </li>
+                        ))}
+                        {script.items.length > 3 && (
+                          <li className="text-sm text-gray-500 italic">+ {script.items.length - 3} outros itens...</li>
+                        )}
+                      </ul>
+                    </div>
                   </div>
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-gray-700">Itens do Checklist ({script.items.length}):</p>
-                    <ul className="space-y-2">
-                      {script.items.slice(0, 3).map((item: any) => (
-                        <li key={item.id} className="text-sm text-gray-600 flex items-start gap-2">
-                          <CheckCircle className="w-4 h-4 text-[#00995D] mt-0.5 flex-shrink-0" />
-                          <span>{item.title}</span>
-                        </li>
-                      ))}
-                      {script.items.length > 3 && (
-                        <li className="text-sm text-gray-500 italic">
-                          + {script.items.length - 3} outros itens...
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              ))}
-              {scripts.length === 0 && !loading && (
-                <div className="col-span-full text-center py-12 bg-gray-50 rounded-xl border border-gray-100">
-                  <ClipboardList className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-1">Nenhum roteiro cadastrado</h3>
-                  <p className="text-gray-500">Crie seu primeiro roteiro de qualificação clicando no botão acima.</p>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
+
+            {viewMode === 'lista' && scripts.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-sm text-gray-500">
+                      <th className="pb-3 font-medium">Roteiro</th>
+                      <th className="pb-3 font-medium">Versão</th>
+                      <th className="pb-3 font-medium">Critérios</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {scripts.map((script) => (
+                      <tr key={script.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        <td className="py-4 font-medium text-gray-800">{script.title}</td>
+                        <td className="py-4"><VersionBadge script={script} /></td>
+                        <td className="py-4 text-gray-600">{script.items.length}</td>
+                        <td className="py-4"><StatusControl script={script} onChange={handleUpdateScriptStatus} /></td>
+                        <td className="py-4 text-right">
+                          <button
+                            onClick={() => handleDeleteScript(script.id)}
+                            className="text-red-500 hover:text-red-700 p-1"
+                            title="Excluir roteiro"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -982,6 +1098,33 @@ export default function Admin() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo do Prestador (SGU)</label>
+                <select
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
+                  value={providerForm.provider_type}
+                  onChange={e => setProviderForm({...providerForm, provider_type: e.target.value})}
+                >
+                  <option value="">Selecione...</option>
+                  <option value="CLINICA COOPERADO">Clínica Cooperado</option>
+                  <option value="CLINICA CREDENCIADO">Clínica Credenciado</option>
+                  <option value="HOSPITAL">Hospital</option>
+                  <option value="LABORATORIO">Laboratório</option>
+                  <option value="MEDICO COOPERADO">Médico Cooperado</option>
+                  <option value="MEDICO CREDENCIADO">Médico Credenciado</option>
+                  <option value="MEDICO PLANTONISTA">Médico Plantonista</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Área de Atuação (Opcional)</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Cardiologia, Pediatria (Pessoa Física)"
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
+                  value={providerForm.area_atuacao}
+                  onChange={e => setProviderForm({...providerForm, area_atuacao: e.target.value})}
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nível de Qualificação (Opcional)</label>
                 <select 
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
@@ -1012,6 +1155,13 @@ export default function Admin() {
             </form>
           </div>
         </div>
+      )}
+
+      {showImportModal && (
+        <ImportRoteiroModal
+          onClose={() => setShowImportModal(false)}
+          onImported={loadData}
+        />
       )}
 
       {showScriptModal && (
@@ -1133,8 +1283,8 @@ export default function Admin() {
             <form onSubmit={handleCreateTraining} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
                   value={trainingForm.title}
@@ -1143,7 +1293,7 @@ export default function Admin() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                <textarea 
+                <textarea
                   rows={3}
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
                   value={trainingForm.description}
@@ -1152,7 +1302,7 @@ export default function Admin() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Segmentação de Público</label>
-                <select 
+                <select
                   value={trainingForm.target_audience}
                   onChange={e => setTrainingForm({...trainingForm, target_audience: e.target.value})}
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D] p-2 border mb-2"
@@ -1167,7 +1317,7 @@ export default function Admin() {
                   )}
                   <option value="especifico">Específico (Prestador individual)</option>
                 </select>
-                
+
                 {trainingForm.target_audience === 'especifico' && (
                   <select
                     required
@@ -1184,8 +1334,8 @@ export default function Admin() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">URL do Vídeo (Opcional)</label>
-                <input 
-                  type="url" 
+                <input
+                  type="url"
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
                   value={trainingForm.video_url}
                   onChange={e => setTrainingForm({...trainingForm, video_url: e.target.value})}
@@ -1193,8 +1343,8 @@ export default function Admin() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">URL do Material/PDF (Opcional)</label>
-                <input 
-                  type="url" 
+                <input
+                  type="url"
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
                   value={trainingForm.pdf_url}
                   onChange={e => setTrainingForm({...trainingForm, pdf_url: e.target.value})}
@@ -1202,14 +1352,14 @@ export default function Admin() {
                 <p className="text-xs text-gray-500 mt-1">Você pode adicionar apenas um PDF, apenas um vídeo, ou ambos.</p>
               </div>
               <div className="pt-4 flex justify-end gap-3">
-                <button 
+                <button
                   type="button"
                   onClick={() => setShowTrainingModal(false)}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   Cancelar
                 </button>
-                <button 
+                <button
                   type="submit"
                   className="px-4 py-2 bg-[#00995D] text-white rounded-lg hover:bg-[#007A4A] transition-colors"
                 >
@@ -1221,5 +1371,40 @@ export default function Admin() {
         </div>
       )}
     </div>
+  );
+}
+
+function VersionBadge({ script }: { script: any }) {
+  if (!script.version && !script.source_file) return null;
+  const vigente = script.is_current !== false;
+  return (
+    <span
+      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+        vigente ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+      }`}
+    >
+      v{script.version ?? '?'} · {vigente ? 'vigente' : 'substituído'}
+    </span>
+  );
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  rascunho: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  ativo: 'bg-green-100 text-green-700 border-green-200',
+  arquivado: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+
+function StatusControl({ script, onChange }: { script: any; onChange: (id: number, status: string) => void }) {
+  const current = script.status || 'ativo';
+  return (
+    <select
+      value={current}
+      onChange={(e) => onChange(script.id, e.target.value)}
+      className={`text-xs font-medium rounded-full border px-2.5 py-1 cursor-pointer focus:outline-none ${STATUS_STYLES[current] || STATUS_STYLES.ativo}`}
+    >
+      <option value="rascunho">rascunho</option>
+      <option value="ativo">ativo</option>
+      <option value="arquivado">arquivado</option>
+    </select>
   );
 }

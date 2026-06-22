@@ -595,31 +595,32 @@ export default function Admin() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-gray-100 text-sm text-gray-500">
-                      <th className="pb-3 font-medium">Roteiro</th>
-                      <th className="pb-3 font-medium">Versão</th>
-                      <th className="pb-3 font-medium">Critérios</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium text-right">Ações</th>
+                      <th className="pb-3 pr-4 font-medium">Roteiro</th>
+                      <th className="pb-3 pr-4 font-medium w-44 whitespace-nowrap">Versão</th>
+                      <th className="pb-3 pr-4 font-medium w-20 text-center whitespace-nowrap">Critérios</th>
+                      <th className="pb-3 pr-4 font-medium w-40 whitespace-nowrap">Alertas</th>
+                      <th className="pb-3 pr-4 font-medium w-36 whitespace-nowrap">Status</th>
+                      <th className="pb-3 font-medium text-right w-16 whitespace-nowrap">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
                     {scripts.map((script) => (
                       <tr key={script.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                        <td className="py-4 font-medium text-gray-800">{script.title}</td>
-                        <td className="py-4">
+                        <td className="py-4 pr-4 align-top font-medium text-gray-800">{script.title}</td>
+                        <td className="py-4 pr-4 align-top">
                           <div className="flex flex-col gap-1 items-start">
                             <VersionBadge script={script} />
                             <RevisaoChip script={script} />
                           </div>
                         </td>
-                        <td className="py-4 text-gray-600">{script.items.length}</td>
-                        <td className="py-4">
-                          <div className="flex flex-col gap-1 items-start">
-                            <StatusControl script={script} onChange={handleUpdateScriptStatus} />
-                            <RoteiroAlerts alerts={script.alerts} />
-                          </div>
+                        <td className="py-4 pr-4 align-top text-center text-gray-600">{script.items.length}</td>
+                        <td className="py-4 pr-4 align-top">
+                          <RoteiroAlerts alerts={script.alerts} />
                         </td>
-                        <td className="py-4 text-right">
+                        <td className="py-4 pr-4 align-top">
+                          <StatusControl script={script} onChange={handleUpdateScriptStatus} />
+                        </td>
+                        <td className="py-4 align-top text-right">
                           <button
                             onClick={() => handleDeleteScript(script)}
                             className="text-red-500 hover:text-red-700 p-1"

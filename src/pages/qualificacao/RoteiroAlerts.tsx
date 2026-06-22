@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface AlertItem {
@@ -12,6 +12,7 @@ interface Alerts {
 
 export default function RoteiroAlerts({ alerts }: { alerts?: Alerts }) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const semEvidencia = alerts?.semEvidencia ?? [];
   const semPeso = alerts?.semPeso ?? [];
   const total = semEvidencia.length + semPeso.length;
@@ -22,6 +23,8 @@ export default function RoteiroAlerts({ alerts }: { alerts?: Alerts }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={panelId}
         className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 hover:bg-amber-100 transition-colors"
       >
         {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -30,7 +33,7 @@ export default function RoteiroAlerts({ alerts }: { alerts?: Alerts }) {
       </button>
 
       {open && (
-        <div className="mt-2 space-y-3 bg-amber-50/60 border border-amber-100 rounded-lg p-3">
+        <div id={panelId} className="mt-2 space-y-3 bg-amber-50/60 border border-amber-100 rounded-lg p-3">
           {semEvidencia.length > 0 && (
             <AlertGroup title={`Sem evidência (${semEvidencia.length})`} items={semEvidencia} />
           )}
@@ -48,6 +51,7 @@ function AlertGroup({ title, items }: { title: string; items: AlertItem[] }) {
     <div>
       <p className="text-xs font-semibold text-amber-800 mb-1">{title}</p>
       <ul className="space-y-1">
+        {/* Lista estática vinda do servidor (não reordenada no cliente); índice no key é seguro. */}
         {items.map((it, i) => (
           <li key={`${it.code ?? '-'}-${i}`} className="text-xs text-gray-700 flex gap-1.5">
             {it.code && <span className="font-mono text-gray-500 flex-shrink-0">{it.code}</span>}

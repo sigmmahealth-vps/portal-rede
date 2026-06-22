@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../lib/api';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
+import RoteiroAlerts from './qualificacao/RoteiroAlerts';
 import {
   Users, 
   GraduationCap, 
@@ -543,7 +544,11 @@ export default function Admin() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mb-4">
                       <VersionBadge script={script} />
+                      <RevisaoChip script={script} />
                       <StatusControl script={script} onChange={handleUpdateScriptStatus} />
+                    </div>
+                    <div className="mb-4">
+                      <RoteiroAlerts alerts={script.alerts} />
                     </div>
                     <div className="space-y-3">
                       <p className="text-sm font-medium text-gray-700">Itens do Checklist ({script.items.length}):</p>
@@ -580,9 +585,19 @@ export default function Admin() {
                     {scripts.map((script) => (
                       <tr key={script.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                         <td className="py-4 font-medium text-gray-800">{script.title}</td>
-                        <td className="py-4"><VersionBadge script={script} /></td>
+                        <td className="py-4">
+                          <div className="flex flex-col gap-1 items-start">
+                            <VersionBadge script={script} />
+                            <RevisaoChip script={script} />
+                          </div>
+                        </td>
                         <td className="py-4 text-gray-600">{script.items.length}</td>
-                        <td className="py-4"><StatusControl script={script} onChange={handleUpdateScriptStatus} /></td>
+                        <td className="py-4">
+                          <div className="flex flex-col gap-1 items-start">
+                            <StatusControl script={script} onChange={handleUpdateScriptStatus} />
+                            <RoteiroAlerts alerts={script.alerts} />
+                          </div>
+                        </td>
                         <td className="py-4 text-right">
                           <button
                             onClick={() => handleDeleteScript(script.id)}
@@ -1406,5 +1421,21 @@ function StatusControl({ script, onChange }: { script: any; onChange: (id: numbe
       <option value="ativo">ativo</option>
       <option value="arquivado">arquivado</option>
     </select>
+  );
+}
+
+function formatRevisaoDate(iso?: string | null): string | null {
+  if (!iso) return null;
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : null;
+}
+
+function RevisaoChip({ script }: { script: any }) {
+  if (!script.revisao) return null;
+  const data = formatRevisaoDate(script.revisao_date);
+  return (
+    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+      Revisão {script.revisao}{data ? ` · ${data}` : ''}
+    </span>
   );
 }

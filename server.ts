@@ -1856,8 +1856,22 @@ async function startServer() {
         return res.status(403).json({ error: 'Unauthorized' });
       }
       try {
+        const scriptId = req.params.id;
+        // Proteção: roteiro já usado em avaliações só pode ser excluído com
+        // confirmação forte (frase "excluir roteiro"). Recalculamos no servidor —
+        // nunca confiamos no frontend. A exclusão remove o histórico por cascade.
+        const { rows: usage } = await query('SELECT count(*)::int AS n FROM eval_instances WHERE script_id = $1', [scriptId]);
+        const usageCount = (usage[0] as any)?.n ?? 0;
+        const confirmPhrase = String(req.body?.confirm ?? '').trim().toLowerCase();
+        if (usageCount > 0 && confirmPhrase !== 'excluir roteiro') {
+          const avaliacoes = usageCount === 1 ? '1 avaliação preenchida' : `${usageCount} avaliações preenchidas`;
+          return res.status(409).json({
+            error: `Há ${avaliacoes} por prestadores usando este roteiro. A exclusão também removerá esse histórico permanentemente. Para confirmar, digite: excluir roteiro.`,
+            usage_count: usageCount,
+            requiresConfirmation: true,
+          });
+        }
         await withTransaction(async (client) => {
-          const scriptId = req.params.id;
           const { rows: sections } = await client.query('SELECT id FROM eval_sections WHERE script_id = $1', [scriptId]);
           for (const sec of sections as any[]) {
             await client.query('DELETE FROM eval_questions WHERE section_id = $1', [sec.id]);
@@ -1904,7 +1918,9 @@ async function startServer() {
           .map((q) => ({ code: q.code, text: q.title }));
         const isCurrent = !script.source_file
           || scriptVersionNum(script.version) === maxBySource.get(script.source_file);
-        scriptsWithItems.push({ ...script, items: questions, is_current: isCurrent, alerts: { semEvidencia, semPeso } });
+        const { rows: usage } = await query('SELECT count(*)::int AS n FROM eval_instances WHERE script_id = $1', [script.id]);
+        const usageCount = (usage[0] as any)?.n ?? 0;
+        scriptsWithItems.push({ ...script, items: questions, is_current: isCurrent, alerts: { semEvidencia, semPeso }, usage_count: usageCount });
       }
       res.json(scriptsWithItems);
     } catch (err: any) {

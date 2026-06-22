@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../lib/api';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
+import ConfirmDeleteRoteiroModal from './qualificacao/ConfirmDeleteRoteiroModal';
 import {
   Users, 
   GraduationCap, 
@@ -85,6 +86,7 @@ export default function Admin() {
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [showScriptChooser, setShowScriptChooser] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'lista'>(
     () => (localStorage.getItem('roteirosViewMode') as 'cards' | 'lista') || 'cards',
   );
@@ -209,10 +211,29 @@ export default function Admin() {
     }
   };
 
-  const handleDeleteScript = async (id: number) => {
+  const handleDeleteScript = async (script: any) => {
+    // Roteiro já usado em avaliações: exige confirmação forte (modal).
+    if (Number(script?.usage_count ?? 0) > 0) {
+      setDeleteTarget(script);
+      return;
+    }
     if (!window.confirm('Tem certeza que deseja excluir este roteiro?')) return;
     try {
-      await fetchApi(`/eval/scripts/${id}`, { method: 'DELETE' });
+      await fetchApi(`/eval/scripts/${script.id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir roteiro');
+    }
+  };
+
+  const confirmDeleteScript = async () => {
+    if (!deleteTarget) return;
+    try {
+      await fetchApi(`/eval/scripts/${deleteTarget.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ confirm: 'excluir roteiro' }),
+      });
+      setDeleteTarget(null);
       loadData();
     } catch (err: any) {
       alert(err.message || 'Erro ao excluir roteiro');
@@ -535,7 +556,7 @@ export default function Admin() {
                     <div className="flex justify-between items-start mb-3">
                       <h3 className="text-lg font-bold text-gray-900">{script.title}</h3>
                       <button
-                        onClick={() => handleDeleteScript(script.id)}
+                        onClick={() => handleDeleteScript(script)}
                         className="text-red-500 hover:text-red-700 p-1"
                         title="Excluir roteiro"
                       >
@@ -600,7 +621,7 @@ export default function Admin() {
                         </td>
                         <td className="py-4 text-right">
                           <button
-                            onClick={() => handleDeleteScript(script.id)}
+                            onClick={() => handleDeleteScript(script)}
                             className="text-red-500 hover:text-red-700 p-1"
                             title="Excluir roteiro"
                           >
@@ -1176,6 +1197,14 @@ export default function Admin() {
         <ImportRoteiroModal
           onClose={() => setShowImportModal(false)}
           onImported={loadData}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDeleteRoteiroModal
+          script={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={confirmDeleteScript}
         />
       )}
 

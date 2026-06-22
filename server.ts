@@ -1662,51 +1662,6 @@ async function startServer() {
   // NEW EVAL (QUALIFICATION) ENGINE APIs
   // ---------------------------------------------------------
 
-  app.post('/api/eval/scripts', authenticate, async (req: any, res) => {
-    try {
-      const { role } = req.user;
-      if (role !== 'admin' && role !== 'auditoria') {
-        return res.status(403).json({ error: 'Unauthorized' });
-      }
-      const { title, description, items } = req.body;
-      if (!title || !items || !Array.isArray(items)) {
-        return res.status(400).json({ error: 'Title and items array are required' });
-      }
-      try {
-        const scriptId = await withTransaction(async (client) => {
-          const { rows: scriptRows } = await client.query(
-            'INSERT INTO eval_scripts (title, description, version, created_at) VALUES ($1, $2, $3, $4) RETURNING id',
-            [title, description || '', '1.0', new Date().toISOString()]
-          );
-          const sId = scriptRows[0].id;
-
-          const { rows: secRows } = await client.query(
-            'INSERT INTO eval_sections (script_id, name, order_index) VALUES ($1, $2, $3) RETURNING id',
-            [sId, 'Geral', 1]
-          );
-          const sectionId = secRows[0].id;
-
-          for (let index = 0; index < items.length; index++) {
-            const item: any = items[index];
-            await client.query(
-              `INSERT INTO eval_questions (section_id, text, type, weight, max_score, evidence_required, is_eliminatory, order_index) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [sectionId, item.title, 'sim_nao', 10, 10, true, false, index + 1]
-            );
-          }
-
-          return sId;
-        });
-
-        res.json({ id: scriptId, title, items });
-      } catch (err: any) {
-        res.status(400).json({ error: err.message });
-      }
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   app.post('/api/eval/scripts/preview', authenticate, xlsxUpload, async (req: any, res) => {
     try {
       const { role } = req.user;
@@ -1852,26 +1807,6 @@ async function startServer() {
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message || 'Falha ao importar o roteiro.' });
-    }
-  });
-
-  app.put('/api/eval/scripts/:id/status', authenticate, async (req: any, res) => {
-    try {
-      const { role } = req.user;
-      if (role !== 'admin' && role !== 'auditoria') {
-        return res.status(403).json({ error: 'Unauthorized' });
-      }
-      const { status } = req.body;
-      const allowed = ['rascunho', 'ativo', 'arquivado'];
-      if (!allowed.includes(status)) {
-        return res.status(400).json({ error: 'Status inválido. Use: rascunho, ativo ou arquivado.' });
-      }
-      const { rowCount } = await query('UPDATE eval_scripts SET status = $1 WHERE id = $2', [status, req.params.id]);
-      if (!rowCount) return res.status(404).json({ error: 'Roteiro não encontrado.' });
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
     }
   });
 

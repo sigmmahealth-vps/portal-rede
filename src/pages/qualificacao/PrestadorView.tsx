@@ -43,6 +43,8 @@ export default function PrestadorView({ user }: { user: any }) {
     );
   }
 
+  const scriptsVigentes = scripts.filter((s: any) => s.is_current !== false);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div>
@@ -55,7 +57,7 @@ export default function PrestadorView({ user }: { user: any }) {
           
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-gray-900 border-b pb-2">Roteiros Disponíveis</h2>
-            {scripts.map(s => {
+            {scriptsVigentes.map(s => {
               // check if already have instance
               const existing = instances.find(i => i.script_id === s.id && i.status !== 'finalizado' && i.status !== 'aprovado' && i.status !== 'reprovado');
               return (

@@ -35,8 +35,9 @@ export default function CooperadoView({ user }: { user: any }) {
   // Roteiro do médico cooperado (PF) = "OPS-RED-FOR-017 — Médicos" (plural).
   // O plural evita casar com roteiros de PJ ("Clínica Médica", "Não Médico", "Medicina Nuclear").
   // Se nenhum casar, faz fallback para todos os roteiros disponíveis.
-  const medicoScripts = scripts.filter(s => /m[ée]dicos\b/i.test(s.title || ''));
-  const visibleScripts = medicoScripts.length > 0 ? medicoScripts : scripts;
+  const scriptsVigentes = scripts.filter((s: any) => s.is_current !== false);
+  const medicoScripts = scriptsVigentes.filter(s => /m[ée]dicos\b/i.test(s.title || ''));
+  const visibleScripts = medicoScripts.length > 0 ? medicoScripts : scriptsVigentes;
 
   if (activePlayer) {
     return (

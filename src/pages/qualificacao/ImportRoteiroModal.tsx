@@ -4,7 +4,9 @@ import { X, UploadCloud, AlertTriangle, CheckCircle, Loader2 } from 'lucide-reac
 
 interface PreviewResult {
   title: string;
-  version: string;
+  version: string | null;
+  revisaoDate: string | null;
+  implantacaoDate: string | null;
   sourceFile: string;
   sectionCount: number;
   questionCount: number;
@@ -16,7 +18,7 @@ interface PreviewResult {
     noEvidence: number;
     noHeader: boolean;
   };
-  existing: { currentVersion: number; nextVersion: number } | null;
+  errors: string[];
   blocked: boolean;
 }
 
@@ -58,7 +60,7 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
   };
 
   const handleConfirm = async () => {
-    if (!file || !preview || preview.blocked) return;
+    if (!file || !preview || preview.blocked || (preview.errors && preview.errors.length > 0)) return;
     setLoading(true);
     setError(null);
     try {
@@ -112,8 +114,9 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
             <div className="space-y-5">
               <div>
                 <h4 className="text-base font-bold text-gray-900">{preview.title}</h4>
+                <p className="text-xs text-gray-500">Arquivo: {preview.sourceFile}</p>
                 <p className="text-xs text-gray-500">
-                  Arquivo: {preview.sourceFile} · revisão da planilha: {preview.version}
+                  Revisão {preview.version ?? '—'} · rev. {preview.revisaoDate ?? '—'} · implantação {preview.implantacaoDate ?? '—'}
                 </p>
               </div>
 
@@ -134,11 +137,14 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
                 </div>
               </div>
 
-              {preview.existing && (
-                <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg p-3 text-sm">
-                  Já existe a versão {preview.existing.currentVersion} deste arquivo.
-                  Confirmar criará a <strong>versão {preview.existing.nextVersion}</strong>{' '}
-                  (a anterior é mantida).
+              {preview.errors && preview.errors.length > 0 && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm space-y-1">
+                  <p className="font-medium flex items-center gap-1">
+                    <AlertTriangle className="w-4 h-4" /> Não é possível importar
+                  </p>
+                  {preview.errors.map((msg, i) => (
+                    <p key={i}>• {msg}</p>
+                  ))}
                 </div>
               )}
 
@@ -159,7 +165,7 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
                 </div>
               )}
 
-              {preview.blocked && (
+              {preview.blocked && (!preview.errors || preview.errors.length === 0) && (
                 <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
                   Esta planilha não pode ser importada (0 critérios ou layout inválido).
                 </div>
@@ -199,7 +205,7 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
           {stage === 'review' && preview && (
             <button
               type="button"
-              disabled={preview.blocked || loading}
+              disabled={preview.blocked || (preview.errors && preview.errors.length > 0) || loading}
               onClick={handleConfirm}
               className="px-4 py-2 bg-[#00995D] text-white rounded-lg hover:bg-[#007A4A] transition-colors disabled:opacity-50 flex items-center gap-2"
             >

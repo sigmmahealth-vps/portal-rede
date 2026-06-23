@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import RightSidebar from './RightSidebar';
+import { fetchApi } from '../lib/api';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -106,8 +107,12 @@ export default function Layout() {
     }
   }, [navigate]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    try {
+      await fetchApi('/auth/logout', { method: 'POST' });
+    } catch {
+      // sessão pode já estar inválida no servidor — ainda assim segue limpando cliente
+    }
     localStorage.removeItem('user');
     navigate('/login');
   };

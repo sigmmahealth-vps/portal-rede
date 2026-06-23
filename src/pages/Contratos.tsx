@@ -73,21 +73,10 @@ export default function Contratos() {
       }
       formData.append('file', file);
 
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/contracts', {
+      const contract = await fetchApi('/contracts', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
         body: formData,
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to upload contract');
-      }
-
-      const contract = await response.json();
       
       // Add provider name for admin view
       if (user?.role === 'admin' || user?.role === 'auditoria') {
@@ -129,11 +118,8 @@ export default function Contratos() {
 
   const handleDownload = async (id: number, title: string) => {
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(`/api/contracts/${id}/download`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        credentials: 'include',
       });
 
       if (!response.ok) throw new Error('Failed to download file');

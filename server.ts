@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
@@ -8,7 +9,11 @@ import path from 'path';
 import { query, pool, withTransaction } from './db/db.js';
 import { parseWorkbook } from './db/roteiro-parser.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-unimed-mvp';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: variável de ambiente JWT_SECRET não definida. Abortando boot.');
+  process.exit(1);
+}
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -220,8 +225,9 @@ async function startServer() {
   // Atrás do proxy do Railway: confia no X-Forwarded-For para obter o IP real do cliente (RN 630 — trilha de acesso).
   app.set('trust proxy', true);
 
-  app.use(cors());
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
+  app.use(cookieParser());
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   // Seed/init data BEFORE routes are registered.
@@ -236,7 +242,7 @@ async function startServer() {
 
     const token = authHeader.split(' ')[1];
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
+      const decoded = jwt.verify(token, JWT_SECRET as string);
       req.user = decoded;
       next();
     } catch (err) {
@@ -288,7 +294,7 @@ async function startServer() {
       await query('UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2', [ip, user.id]);
       await recordAccess(user.id, user.email, true, req);
 
-      const token = jwt.sign({ id: user.id, name: user.name, role: user.role, provider_id: user.provider_id }, JWT_SECRET, { expiresIn: '24h' });
+      const token = jwt.sign({ id: user.id, name: user.name, role: user.role, provider_id: user.provider_id }, JWT_SECRET as string, { expiresIn: '24h' });
       res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, provider_id: user.provider_id, last_login_at: previousLoginAt } });
     } catch (err: any) {
       console.error(err);

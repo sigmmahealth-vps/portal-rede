@@ -253,15 +253,15 @@ async function startServer() {
 
   // --- API Routes ---
 
-  // Auth Middleware
+  // Auth Middleware — sessão por cookie httpOnly; mantém fallback ao header Authorization
+  // para compatibilidade durante a transição (clientes antigos com token no localStorage).
   const authenticate = (req: any, res: any, next: any) => {
+    const fromCookie = req.cookies?.session;
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
-
-    const token = authHeader.split(' ')[1];
+    const token = fromCookie || (authHeader ? authHeader.split(' ')[1] : null);
+    if (!token) return res.status(401).json({ error: 'No token provided' });
     try {
-      const decoded = jwt.verify(token, JWT_SECRET as string);
-      req.user = decoded;
+      req.user = jwt.verify(token, JWT_SECRET as string);
       next();
     } catch (err) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -497,6 +497,44 @@ async function startServer() {
       console.error(err);
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Logout — limpa apenas o cookie de sessão (trusted_device segue valendo).
+  app.post('/api/auth/logout', (_req, res) => {
+    res.clearCookie('session');
+    res.json({ ok: true });
+  });
+
+  // Dados do usuário autenticado (substitui leitura do localStorage no frontend).
+  app.get('/api/auth/me', authenticate, async (req: any, res) => {
+    const { rows } = await query(
+      'SELECT id, name, email, role, provider_id, last_login_at FROM users WHERE id = $1',
+      [req.user.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' });
+    res.json({ user: rows[0] });
+  });
+
+  // Lista dispositivos confiáveis ativos do usuário corrente.
+  app.get('/api/auth/trusted-devices', authenticate, async (req: any, res) => {
+    const { rows } = await query(
+      `SELECT id, label, last_ip, last_used_at, expires_at, created_at
+         FROM trusted_devices
+        WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+        ORDER BY last_used_at DESC`,
+      [req.user.id],
+    );
+    res.json({ devices: rows });
+  });
+
+  // Revoga um dispositivo confiável do usuário corrente.
+  app.delete('/api/auth/trusted-devices/:id', authenticate, async (req: any, res) => {
+    const result = await query(
+      'UPDATE trusted_devices SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL',
+      [req.params.id, req.user.id],
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Dispositivo não encontrado' });
+    res.json({ ok: true });
   });
 
   // Trilha de acesso — leitura (RN 630). Restrito a admin/auditoria.

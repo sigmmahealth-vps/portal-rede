@@ -10,7 +10,24 @@ export default function Login() {
   const [showCredenciamentoModal, setShowCredenciamentoModal] = useState(false);
   const [credenciamentoSuccess, setCredenciamentoSuccess] = useState(false);
   const [credenciamentoLoading, setCredenciamentoLoading] = useState(false);
+  const [step, setStep] = useState<'password' | 'otp'>('password');
+  const [challengeId, setChallengeId] = useState<number | null>(null);
+  const [code, setCode] = useState('');
+  const [trustDevice, setTrustDevice] = useState(true);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const navigate = useNavigate();
+
+  const maskedEmail = (() => {
+    const [u, d] = email.split('@');
+    if (!d) return email;
+    return `${u.slice(0, 2)}${'*'.repeat(Math.max(1, u.length - 2))}@${d}`;
+  })();
+
+  React.useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   const handleCredenciamentoSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -48,6 +65,7 @@ export default function Login() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
@@ -57,13 +75,58 @@ export default function Login() {
         throw new Error(data.error || 'Erro ao fazer login');
       }
 
-      localStorage.setItem('token', data.token);
+      if (data.needs_otp) {
+        setChallengeId(data.challenge_id);
+        setStep('otp');
+        setResendCooldown(60);
+      } else {
+        localStorage.setItem('user', JSON.stringify(data.user));
+        navigate('/dashboard');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ challenge_id: challengeId, code, trust_device: trustDevice }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Código inválido');
       localStorage.setItem('user', JSON.stringify(data.user));
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    setError('');
+    try {
+      const response = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ challenge_id: challengeId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao reenviar');
+      setResendCooldown(60);
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -86,6 +149,7 @@ export default function Login() {
             </p>
           </div>
 
+          {step === 'password' ? (
           <form className="space-y-5" onSubmit={handleSubmit}>
             {error && (
               <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
@@ -142,7 +206,7 @@ export default function Login() {
               >
                 {loading ? 'Entrando...' : 'Entrar'}
               </button>
-              
+
               <button
                 type="button"
                 onClick={() => setShowCredenciamentoModal(true)}
@@ -152,18 +216,68 @@ export default function Login() {
               </button>
             </div>
           </form>
-
-          <div className="mt-8 pt-6 border-t border-gray-100">
-            <div className="bg-blue-50 p-4 rounded-lg text-xs text-blue-800">
-              <strong className="block mb-1">Credenciais de Teste (MVP):</strong>
-              <ul className="list-disc pl-4 space-y-1">
-                <li>prestador@unimed.com / senha123</li>
-                <li>cooperado@unimed.com / senha123</li>
-                <li>admin@unimed.com / senha123</li>
-                <li>auditoria@unimed.com / senha123</li>
-              </ul>
+          ) : (
+          <form className="space-y-5" onSubmit={handleVerifyOtp}>
+            {error && (
+              <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-md">
+                <div className="flex">
+                  <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0" aria-hidden="true" />
+                  <p className="ml-3 text-sm text-red-700">{error}</p>
+                </div>
+              </div>
+            )}
+            <p className="text-sm text-gray-600">
+              Enviamos um código de 6 dígitos para <strong>{maskedEmail}</strong>.
+            </p>
+            <div>
+              <label htmlFor="otp" className="block text-sm font-medium text-gray-700 mb-1">Código</label>
+              <input
+                id="otp"
+                name="otp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
+                className="block w-full px-4 py-3 bg-[#f0f0f0] border border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-[#00995D] tracking-[0.5em] text-center text-lg sm:text-sm"
+                placeholder="000000"
+              />
             </div>
-          </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={trustDevice}
+                onChange={(e) => setTrustDevice(e.target.checked)}
+              />
+              Confiar neste dispositivo por 30 dias
+            </label>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex justify-center py-3 px-4 rounded-lg text-sm font-bold text-white bg-[#00995D] hover:bg-[#007A4A] disabled:opacity-50"
+            >
+              {loading ? 'Verificando...' : 'Verificar código'}
+            </button>
+            <div className="flex justify-between text-xs">
+              <button
+                type="button"
+                onClick={() => { setStep('password'); setError(''); setCode(''); }}
+                className="text-gray-500 hover:text-[#00995D]"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendCooldown > 0}
+                className="text-gray-500 hover:text-[#00995D] disabled:opacity-50"
+              >
+                {resendCooldown > 0 ? `Reenviar em ${resendCooldown}s` : 'Reenviar código'}
+              </button>
+            </div>
+          </form>
+          )}
         </div>
       </div>
 

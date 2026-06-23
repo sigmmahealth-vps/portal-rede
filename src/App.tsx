@@ -25,6 +25,7 @@ import Pesquisa from './pages/Pesquisa';
 import Admin from './pages/Admin';
 import Credenciamento from './pages/Credenciamento';
 import Equipe from './pages/Equipe';
+import Dispositivos from './pages/Dispositivos';
 
 export default function App() {
   return (
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="equipe" element={<Equipe />} />
           <Route path="tabelas" element={<Tabelas />} />
           <Route path="perfil" element={<Perfil />} />
+          <Route path="dispositivos" element={<Dispositivos />} />
           <Route path="ferramentas" element={<Ferramentas />} />
           <Route path="medicacoes" element={<EmConstrucao />} />
           <Route path="producao" element={<EmConstrucao />} />

@@ -15,7 +15,7 @@
     "lint": "tsc --noEmit",
     "db:migrate": "tsx db/migrate.ts",
     "db:import-roteiros": "tsx db/import-roteiros.ts",
-    "test": "node --import tsx --test db/roteiro-parser.test.ts auth/otp.test.ts auth/trustedDevice.test.ts"
+    "test": "node --import tsx --test db/roteiro-parser.test.ts auth/otp.test.ts auth/trustedDevice.test.ts auth/rateLimit.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

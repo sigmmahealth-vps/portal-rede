@@ -8,6 +8,10 @@ import fs from 'fs';
 import path from 'path';
 import { query, pool, withTransaction } from './db/db.js';
 import { parseWorkbook } from './db/roteiro-parser.js';
+import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS } from './auth/otp.js';
+import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
+import { isRateLimited, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
+import { createMailer } from './auth/mailer.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -220,12 +224,26 @@ async function initData() {
 async function startServer() {
   console.log("=== STARTING THE SERVER ===");
   const app = express();
+  const mailer = createMailer();
   const PORT = Number(process.env.PORT) || 3000;
 
   // Atrás do proxy do Railway: confia no X-Forwarded-For para obter o IP real do cliente (RN 630 — trilha de acesso).
   app.set('trust proxy', true);
 
-  app.use(cors({ origin: true, credentials: true }));
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,http://localhost:3000')
+    .split(',').map((o) => o.trim()).filter(Boolean);
+  if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGINS) {
+    console.error('FATAL: ALLOWED_ORIGINS não definido em produção. Abortando boot.');
+    process.exit(1);
+  }
+  app.use(cors({
+    origin: (origin, cb) => {
+      // Permite same-origin (sem header Origin) e qualquer domínio listado.
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`Origem não permitida: ${origin}`));
+    },
+    credentials: true,
+  }));
   app.use(express.json());
   app.use(cookieParser());
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
@@ -269,33 +287,212 @@ async function startServer() {
     }
   };
 
-  // Login
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Emite a sessão (JWT em cookie httpOnly) e devolve o payload do usuário.
+  const issueSession = (res: any, user: any, previousLoginAt: any) => {
+    const token = jwt.sign(
+      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id },
+      JWT_SECRET as string,
+      { expiresIn: '24h' },
+    );
+    res.cookie('session', token, {
+      httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: 24 * 60 * 60 * 1000,
+    });
+    return {
+      user: {
+        id: user.id, name: user.name, email: user.email, role: user.role,
+        provider_id: user.provider_id, last_login_at: previousLoginAt,
+      },
+    };
+  };
+
+  // Marca login bem-sucedido: atualiza último acesso + trilha.
+  const finalizeLogin = async (user: any, req: any) => {
+    const previousLoginAt = user.last_login_at ?? null;
+    const { ip } = clientMeta(req);
+    await query('UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2', [ip, user.id]);
+    await recordAccess(user.id, user.email, true, req);
+    return previousLoginAt;
+  };
+
+  // Confere o cookie de dispositivo confiável; devolve a linha válida ou null.
+  const findValidTrustedDevice = async (userId: number, secret: string | undefined) => {
+    if (!secret) return null;
+    const hash = hashDeviceSecret(secret);
+    const { rows } = await query(
+      'SELECT * FROM trusted_devices WHERE user_id = $1 AND token_hash = $2',
+      [userId, hash],
+    );
+    const device = rows[0] as any;
+    if (!device) return null;
+    return isTrustedDeviceValid({ expiresAt: device.expires_at, revokedAt: device.revoked_at }, new Date())
+      ? device : null;
+  };
+
+  // Cria um desafio OTP, envia o e-mail e devolve o id do desafio.
+  const createOtpChallenge = async (user: any, req: any): Promise<number> => {
+    const code = generateOtpCode();
+    const { ip } = clientMeta(req);
+    const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+    const { rows } = await query(
+      'INSERT INTO otp_codes (user_id, code_hash, expires_at, ip) VALUES ($1, $2, $3, $4) RETURNING id',
+      [user.id, hashOtp(code), expiresAt, ip],
+    );
+    await mailer.sendOtp(user.email, code);
+    return rows[0].id;
+  };
+
+  // Bloqueio por excesso de falhas recentes (conta na trilha access_logs).
+  const isLoginBlocked = async (email: string): Promise<boolean> => {
+    const { rows } = await query(
+      `SELECT created_at FROM access_logs
+        WHERE email = $1 AND success = false
+          AND created_at > now() - interval '15 minutes'`,
+      [email],
+    );
+    return isRateLimited(rows.map((r: any) => r.created_at), new Date(), PASSWORD_WINDOW_MS, PASSWORD_MAX_FAILURES);
+  };
+
+  // Login — etapa 1: senha. Emite sessão se o dispositivo for confiável; senão, dispara OTP.
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body;
+      if (email && await isLoginBlocked(email)) {
+        return res.status(429).json({ error: 'Muitas tentativas. Tente novamente em alguns minutos.' });
+      }
       const { rows } = await query('SELECT * FROM users WHERE email = $1', [email]);
       const user = rows[0] as any;
-
       if (!user || !bcrypt.compareSync(password, user.password)) {
         await recordAccess(user?.id ?? null, email ?? null, false, req);
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(401).json({ error: 'Credenciais inválidas' });
       }
-
       if (user.is_active === false) {
         await recordAccess(user.id, user.email, false, req);
         return res.status(403).json({ error: 'Usuário inativo' });
       }
+      const device = await findValidTrustedDevice(user.id, req.cookies?.trusted_device);
+      if (device) {
+        await query('UPDATE trusted_devices SET last_used_at = now(), last_ip = $1 WHERE id = $2',
+          [clientMeta(req).ip, device.id]);
+        const previousLoginAt = await finalizeLogin(user, req);
+        return res.json(issueSession(res, user, previousLoginAt));
+      }
+      try {
+        const challengeId = await createOtpChallenge(user, req);
+        return res.json({ needs_otp: true, challenge_id: challengeId });
+      } catch (mailErr: any) {
+        console.error('Falha ao enviar OTP:', mailErr);
+        return res.status(502).json({ error: 'Não foi possível enviar o código por e-mail. Tente novamente.' });
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
-      // Captura o acesso ANTERIOR antes de sobrescrever (§5.2.2 Tela 4 — "seu último acesso foi...").
-      const previousLoginAt = user.last_login_at ?? null;
+  // Login — etapa 2: verificação do código OTP.
+  app.post('/api/auth/verify-otp', async (req, res) => {
+    try {
+      const { challenge_id, code, trust_device } = req.body;
+      const { rows } = await query('SELECT * FROM otp_codes WHERE id = $1', [challenge_id]);
+      const challenge = rows[0] as any;
+      if (!challenge || challenge.consumed_at) {
+        return res.status(400).json({ error: 'Código inválido ou já utilizado. Solicite um novo.' });
+      }
+      if (isOtpExpired(challenge.expires_at, new Date())) {
+        return res.status(400).json({ error: 'Código expirado. Solicite um novo.' });
+      }
+      // Incremento atômico de tentativas (evita TOCTOU em requisições concorrentes).
+      const reserved = await query(
+        `UPDATE otp_codes
+            SET attempts = attempts + 1
+          WHERE id = $1 AND consumed_at IS NULL AND attempts < $2
+          RETURNING attempts`,
+        [challenge.id, OTP_MAX_ATTEMPTS],
+      );
+      if (reserved.rowCount === 0) {
+        await query('UPDATE otp_codes SET consumed_at = now() WHERE id = $1 AND consumed_at IS NULL', [challenge.id]);
+        return res.status(429).json({ error: 'Muitas tentativas. Solicite um novo código.' });
+      }
+      const { rows: userRows } = await query('SELECT * FROM users WHERE id = $1', [challenge.user_id]);
+      const user = userRows[0] as any;
+      if (!user) {
+        return res.status(400).json({ error: 'Usuário não encontrado.' });
+      }
+      if (user.is_active === false) {
+        await recordAccess(user.id, user.email, false, req);
+        return res.status(403).json({ error: 'Usuário inativo' });
+      }
+      if (!verifyOtp(String(code ?? ''), challenge.code_hash)) {
+        await recordAccess(user.id, user.email, false, req);
+        return res.status(401).json({ error: 'Código incorreto.' });
+      }
+      await query('UPDATE otp_codes SET consumed_at = now() WHERE id = $1', [challenge.id]);
+      if (trust_device) {
+        const secret = generateDeviceSecret();
+        const expiresAt = new Date(Date.now() + TRUSTED_DEVICE_TTL_MS);
+        const { ip, userAgent } = clientMeta(req);
+        await query(
+          `INSERT INTO trusted_devices (user_id, token_hash, label, last_ip, expires_at)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [user.id, hashDeviceSecret(secret), deviceLabelFromUserAgent(userAgent ?? undefined), ip, expiresAt],
+        );
+        res.cookie('trusted_device', secret, {
+          httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: TRUSTED_DEVICE_TTL_MS,
+        });
+      }
+      const previousLoginAt = await finalizeLogin(user, req);
+      return res.json(issueSession(res, user, previousLoginAt));
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
-      // Sucesso: atualiza último acesso e grava a trilha.
-      const { ip } = clientMeta(req);
-      await query('UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2', [ip, user.id]);
-      await recordAccess(user.id, user.email, true, req);
-
-      const token = jwt.sign({ id: user.id, name: user.name, role: user.role, provider_id: user.provider_id }, JWT_SECRET as string, { expiresIn: '24h' });
-      res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, provider_id: user.provider_id, last_login_at: previousLoginAt } });
+  // Reenvio de OTP — cooldown de 60s e teto de 6 códigos/hora por usuário.
+  app.post('/api/auth/resend-otp', async (req, res) => {
+    try {
+      const { challenge_id } = req.body;
+      const { rows } = await query('SELECT * FROM otp_codes WHERE id = $1', [challenge_id]);
+      const challenge = rows[0] as any;
+      if (!challenge || challenge.consumed_at) {
+        return res.status(400).json({ error: 'Desafio inválido. Faça login novamente.' });
+      }
+      const { rows: countRows } = await query(
+        `SELECT count(*)::int AS n FROM otp_codes
+          WHERE user_id = $1 AND created_at > now() - interval '1 hour'`,
+        [challenge.user_id],
+      );
+      if (countRows[0].n >= 6) {
+        return res.status(429).json({ error: 'Limite de códigos por hora atingido. Tente mais tarde.' });
+      }
+      const { rows: userRows } = await query('SELECT email FROM users WHERE id = $1', [challenge.user_id]);
+      const user = userRows[0] as any;
+      if (!user) {
+        return res.status(400).json({ error: 'Usuário não encontrado.' });
+      }
+      const code = generateOtpCode();
+      // Cooldown + reset atômico (evita corrida em resends concorrentes).
+      const reserved = await query(
+        `UPDATE otp_codes
+            SET code_hash = $1, attempts = 0, expires_at = $2, created_at = now()
+          WHERE id = $3
+            AND consumed_at IS NULL
+            AND created_at <= now() - interval '60 seconds'
+          RETURNING id`,
+        [hashOtp(code), new Date(Date.now() + OTP_TTL_MS), challenge.id],
+      );
+      if (reserved.rowCount === 0) {
+        return res.status(429).json({ error: 'Aguarde alguns segundos antes de pedir um novo código.' });
+      }
+      try {
+        await mailer.sendOtp(user.email, code);
+      } catch (mailErr: any) {
+        console.error('Falha ao reenviar OTP:', mailErr);
+        return res.status(502).json({ error: 'Não foi possível reenviar o código. Tente novamente.' });
+      }
+      return res.json({ ok: true });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

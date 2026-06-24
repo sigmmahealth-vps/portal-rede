@@ -363,13 +363,21 @@ async function startServer() {
       }
       const { rows } = await query('SELECT * FROM users WHERE email = $1', [email]);
       const user = rows[0] as any;
-      if (!user || !bcrypt.compareSync(password, user.password)) {
-        await recordAccess(user?.id ?? null, email ?? null, false, req);
-        return res.status(401).json({ error: 'Credenciais inválidas' });
+      if (!user) {
+        await recordAccess(null, email ?? null, false, req);
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       }
       if (user.is_active === false) {
         await recordAccess(user.id, user.email, false, req);
-        return res.status(403).json({ error: 'Usuário inativo' });
+        return res.status(403).json({ error: 'Sua conta está inativa. Procure o administrador.' });
+      }
+      if (!user.password) {
+        await recordAccess(user.id, user.email, false, req);
+        return res.status(403).json({ error: 'Sua conta ainda não foi ativada. Verifique seu e-mail.' });
+      }
+      if (!bcrypt.compareSync(password, user.password)) {
+        await recordAccess(user.id, user.email, false, req);
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       }
       const device = await findValidTrustedDevice(user.id, req.cookies?.trusted_device);
       if (device) {

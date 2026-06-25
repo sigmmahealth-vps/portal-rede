@@ -26,12 +26,16 @@ import Admin from './pages/Admin';
 import Credenciamento from './pages/Credenciamento';
 import Equipe from './pages/Equipe';
 import Dispositivos from './pages/Dispositivos';
+import EsqueciSenha from './pages/EsqueciSenha';
+import DefinirSenha from './pages/DefinirSenha';
 
 export default function App() {
   return (
     <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/esqueci-senha" element={<EsqueciSenha />} />
+        <Route path="/definir-senha" element={<DefinirSenha />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />

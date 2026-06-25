@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle, X } from 'lucide-react';
 
 export default function Login() {
@@ -182,9 +182,9 @@ export default function Login() {
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   Senha
                 </label>
-                <a href="#" className="text-xs font-medium text-gray-500 hover:text-[#00995D] underline decoration-gray-300 underline-offset-2">
+                <Link to="/esqueci-senha" className="text-xs font-medium text-gray-500 hover:text-[#00995D] underline decoration-gray-300 underline-offset-2">
                   Esqueceu sua senha?
-                </a>
+                </Link>
               </div>
               <input
                 id="password"

@@ -10,9 +10,11 @@ interface TokenInfo {
 }
 
 const checks = (pw: string) => ({
-  length: pw.length >= 8,
-  letter: /\p{L}/u.test(pw),
+  length: pw.length >= 10,
+  upper: /\p{Lu}/u.test(pw),
+  lower: /\p{Ll}/u.test(pw),
   digit: /\d/.test(pw),
+  symbol: /[^\p{L}\d\s]/u.test(pw),
 });
 
 export default function DefinirSenha() {
@@ -33,7 +35,7 @@ export default function DefinirSenha() {
   }, [token]);
 
   const c = checks(pw);
-  const allOk = c.length && c.letter && c.digit && pw === pw2;
+  const allOk = c.length && c.upper && c.lower && c.digit && c.symbol && pw === pw2;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,9 +93,11 @@ export default function DefinirSenha() {
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500" />
           </div>
           <ul className="text-xs space-y-1">
-            <li className={c.length ? 'text-emerald-700' : 'text-gray-400'}>{c.length ? '✓' : '○'} Mínimo 8 caracteres</li>
-            <li className={c.letter ? 'text-emerald-700' : 'text-gray-400'}>{c.letter ? '✓' : '○'} Pelo menos 1 letra</li>
+            <li className={c.length ? 'text-emerald-700' : 'text-gray-400'}>{c.length ? '✓' : '○'} Mínimo 10 caracteres</li>
+            <li className={c.upper ? 'text-emerald-700' : 'text-gray-400'}>{c.upper ? '✓' : '○'} Pelo menos 1 letra maiúscula</li>
+            <li className={c.lower ? 'text-emerald-700' : 'text-gray-400'}>{c.lower ? '✓' : '○'} Pelo menos 1 letra minúscula</li>
             <li className={c.digit ? 'text-emerald-700' : 'text-gray-400'}>{c.digit ? '✓' : '○'} Pelo menos 1 número</li>
+            <li className={c.symbol ? 'text-emerald-700' : 'text-gray-400'}>{c.symbol ? '✓' : '○'} Pelo menos 1 símbolo (!@#$%)</li>
           </ul>
           {error && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{error}</div>}
           <button type="submit" disabled={!allOk || submitting}

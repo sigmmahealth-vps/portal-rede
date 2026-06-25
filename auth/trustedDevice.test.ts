@@ -33,6 +33,6 @@ test('isTrustedDeviceValid exige não expirado e não revogado', () => {
   assert.equal(isTrustedDeviceValid({ expiresAt: futuro, revokedAt: now }, now), false);
 });
 
-test('TTL é 30 dias', () => {
-  assert.equal(TRUSTED_DEVICE_TTL_MS, 30 * 24 * 60 * 60 * 1000);
+test('TTL é 90 dias', () => {
+  assert.equal(TRUSTED_DEVICE_TTL_MS, 90 * 24 * 60 * 60 * 1000);
 });

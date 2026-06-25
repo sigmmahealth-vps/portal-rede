@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-export const TRUSTED_DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
+export const TRUSTED_DEVICE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 dias
 
 /** Segredo opaco guardado no cookie do navegador (nunca persistido em texto puro). */
 export function generateDeviceSecret(): string {

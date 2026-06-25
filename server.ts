@@ -629,6 +629,14 @@ async function startServer() {
       }
       if (!matched) return res.status(400).json({ error: 'Link inválido ou expirado.' });
 
+      if (matched.kind === 'reset') {
+        const { rows: pwRows } = await query('SELECT password FROM users WHERE id = $1', [matched.user_id]);
+        const currentHash = pwRows[0]?.password;
+        if (currentHash && await bcrypt.compare(new_password, currentHash)) {
+          return res.status(400).json({ error: 'A nova senha não pode ser igual à anterior.' });
+        }
+      }
+
       const pwHash = await bcrypt.hash(new_password, 10);
 
       await withTransaction(async (client) => {

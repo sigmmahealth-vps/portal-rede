@@ -250,7 +250,7 @@ export default function Login() {
                 checked={trustDevice}
                 onChange={(e) => setTrustDevice(e.target.checked)}
               />
-              Confiar neste dispositivo por 30 dias
+              Confiar neste dispositivo por 90 dias
             </label>
             <button
               type="submit"

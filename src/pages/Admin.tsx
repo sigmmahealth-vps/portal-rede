@@ -3,6 +3,7 @@ import { fetchApi } from '../lib/api';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
 import ConfirmDeleteRoteiroModal from './qualificacao/ConfirmDeleteRoteiroModal';
+import UsuariosTab from './admin/UsuariosTab';
 import {
   Users, 
   GraduationCap, 
@@ -38,6 +39,7 @@ const TABS = [
   { id: 'emails', label: 'Disparo de E-mails', icon: Mail },
   { id: 'banners', label: 'Banners', icon: ImageIcon },
   { id: 'pesquisas', label: 'Pesquisas', icon: ClipboardList },
+  { id: 'usuarios', label: 'Usuários', icon: UserPlus },
   { id: 'acessos', label: 'Trilha de Acesso', icon: ShieldCheck },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
@@ -327,7 +329,7 @@ export default function Admin() {
             <span>Novo Material</span>
           </button>
         )}
-        {activeTab !== 'prestadores' && activeTab !== 'roteiros' && activeTab !== 'treinamentos' && activeTab !== 'configuracoes' && activeTab !== 'pesquisas' && (
+        {activeTab !== 'prestadores' && activeTab !== 'roteiros' && activeTab !== 'treinamentos' && activeTab !== 'configuracoes' && activeTab !== 'pesquisas' && activeTab !== 'usuarios' && (
           <button className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors">
             <Plus className="w-5 h-5" />
             <span>Adicionar Novo</span>
@@ -944,6 +946,8 @@ export default function Admin() {
             )}
           </div>
         )}
+
+        {activeTab === 'usuarios' && <UsuariosTab />}
 
         {activeTab === 'acessos' && (
           <div className="space-y-6">

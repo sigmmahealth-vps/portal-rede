@@ -632,7 +632,11 @@ async function startServer() {
       const pwHash = await bcrypt.hash(new_password, 10);
 
       await withTransaction(async (client) => {
-        await client.query(`UPDATE password_setup_tokens SET used_at = now() WHERE id = $1`, [matched.id]);
+        const claim = await client.query(
+          `UPDATE password_setup_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL`,
+          [matched.id]
+        );
+        if (claim.rowCount === 0) throw new Error('token_already_consumed');
         await client.query(
           `UPDATE users SET password = $1, invite_status = 'accepted' WHERE id = $2`,
           [pwHash, matched.user_id],
@@ -650,6 +654,9 @@ async function startServer() {
 
       res.json({ ok: true });
     } catch (err: any) {
+      if (err?.message === 'token_already_consumed') {
+        return res.status(400).json({ error: 'Link inválido ou expirado.' });
+      }
       console.error('POST /api/auth/redeem-token:', err);
       res.status(500).json({ error: 'Falha ao definir senha.' });
     }

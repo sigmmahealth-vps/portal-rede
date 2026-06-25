@@ -663,6 +663,124 @@ async function startServer() {
     }
   });
 
+  app.patch('/api/users/:id', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const targetId = parseInt(req.params.id, 10);
+      if (!Number.isInteger(targetId)) return res.status(400).json({ error: 'ID inválido.' });
+
+      const { rows: targetRows } = await query('SELECT id, role, is_active FROM users WHERE id = $1', [targetId]);
+      const target = targetRows[0];
+      if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+      const { role: newRole, is_active: newActive } = req.body ?? {};
+
+      if (typeof newRole !== 'undefined') {
+        if (newRole !== 'admin' && newRole !== 'auditoria' && newRole !== 'prestador' && newRole !== 'cooperado') {
+          return res.status(400).json({ error: 'Role inválida.' });
+        }
+        if (targetId === req.user.id && target.role === 'admin' && newRole !== 'admin') {
+          return res.status(400).json({ error: 'Você não pode rebaixar a própria conta.' });
+        }
+      }
+
+      if (typeof newActive !== 'undefined') {
+        if (typeof newActive !== 'boolean') return res.status(400).json({ error: 'is_active deve ser booleano.' });
+        if (targetId === req.user.id && newActive === false) {
+          return res.status(400).json({ error: 'Você não pode desativar a própria conta.' });
+        }
+      }
+
+      const updates: string[] = [];
+      const params: any[] = [];
+      if (typeof newRole !== 'undefined' && newRole !== target.role) {
+        params.push(newRole);
+        updates.push(`role = $${params.length}`);
+      }
+      if (typeof newActive !== 'undefined' && newActive !== target.is_active) {
+        params.push(newActive);
+        updates.push(`is_active = $${params.length}`);
+      }
+
+      if (updates.length === 0) {
+        const { rows } = await query('SELECT id, name, email, role, is_active, invite_status, last_login_at FROM users WHERE id = $1', [targetId]);
+        return res.json(rows[0]);
+      }
+
+      params.push(targetId);
+      const { rows } = await query(
+        `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
+         RETURNING id, name, email, role, is_active, invite_status, last_login_at`,
+        params
+      );
+
+      if (typeof newRole !== 'undefined' && newRole !== target.role) {
+        await query(
+          `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
+           VALUES ($1, 'user_role_changed', $2, $3, true, now())`,
+          [req.user.id, JSON.stringify({ target_user_id: targetId, from: target.role, to: newRole }), req.ip]
+        );
+      }
+      if (typeof newActive !== 'undefined' && newActive !== target.is_active) {
+        await query(
+          `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
+           VALUES ($1, $2, $3, $4, true, now())`,
+          [req.user.id, newActive ? 'user_activated' : 'user_deactivated', JSON.stringify({ target_user_id: targetId }), req.ip]
+        );
+      }
+
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error('PATCH /api/users/:id:', err);
+      res.status(500).json({ error: 'Falha ao atualizar usuário.' });
+    }
+  });
+
+  app.post('/api/users/:id/resend-invite', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const targetId = parseInt(req.params.id, 10);
+      if (!Number.isInteger(targetId)) return res.status(400).json({ error: 'ID inválido.' });
+
+      const { rows: targetRows } = await query('SELECT id, name, email, invite_status FROM users WHERE id = $1', [targetId]);
+      const target = targetRows[0];
+      if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+      if (target.invite_status === 'accepted') {
+        return res.status(409).json({ error: 'Usuário já definiu senha. Oriente-o a usar "Esqueci minha senha".' });
+      }
+
+      await query(
+        `UPDATE password_setup_tokens SET used_at = now()
+         WHERE user_id = $1 AND kind = 'invite' AND used_at IS NULL`,
+        [targetId]
+      );
+
+      const token = generateToken();
+      const tokenHash = await hashToken(token);
+      const expiresAt = expirationFor('invite');
+      await query(
+        `INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at, created_by_user_id)
+         VALUES ($1, $2, 'invite', $3, $4)`,
+        [targetId, tokenHash, expiresAt, req.user.id]
+      );
+
+      await query(`UPDATE users SET invite_status = 'pending' WHERE id = $1`, [targetId]);
+
+      const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
+      const link = `${appUrl}/definir-senha?token=${token}`;
+      await mailer.sendInvite(target.email, target.name, link);
+
+      await query(
+        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
+         VALUES ($1, 'invite_resent', $2, $3, true, now())`,
+        [req.user.id, JSON.stringify({ target_user_id: targetId }), req.ip]
+      );
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/users/:id/resend-invite:', err);
+      res.status(500).json({ error: 'Falha ao reenviar convite.' });
+    }
+  });
+
   // === WS5: Equipe do prestador (provider_contacts) — §5.2.3 Tela 3. Contatos informativos, sem login. ===
 
   // Resolve o provider_id do usuário logado (JWT já traz; faz fallback no banco por segurança).

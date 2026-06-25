@@ -16,6 +16,7 @@ import { generateToken, hashToken, verifyToken, expirationFor } from './auth/set
 import { validatePassword } from './auth/passwordPolicy.js';
 import { auditLog } from './auth/auditLog.js';
 import { hashIp } from './auth/ipHash.js';
+import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -808,6 +809,20 @@ async function startServer() {
     } catch (err: any) {
       console.error('POST /api/users:', err);
       res.status(500).json({ error: 'Falha ao criar usuário.' });
+    }
+  });
+
+  app.post('/api/admin/data-retention/run', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const result = await purgeExpiredLogs(query);
+      await auditLog({
+        query, userId: req.user.id, action: 'data_retention_run',
+        meta: result as unknown as Record<string, unknown>, ip: hashClientIp(req),
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error('POST /api/admin/data-retention/run:', err);
+      res.status(500).json({ error: 'Falha ao executar expurgo.' });
     }
   });
 
@@ -2717,6 +2732,21 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+
+  if (process.env.RETENTION_AUTO_PURGE !== 'false') {
+    try {
+      const { rows } = await query("SELECT value FROM settings WHERE key = 'data_retention_last_run_at'");
+      const last = rows[0]?.value ? new Date(rows[0].value) : new Date(0);
+      const hours = (Date.now() - last.getTime()) / 3_600_000;
+      if (hours > 24) {
+        purgeExpiredLogs(query)
+          .then(r => console.log('[retention] expurgo concluído', r))
+          .catch(e => console.error('[retention] falhou', e));
+      }
+    } catch (e) {
+      console.error('[retention] não pôde decidir se deve rodar:', e);
+    }
+  }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

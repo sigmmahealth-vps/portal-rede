@@ -12,6 +12,7 @@ import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
 import { isRateLimited, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
 import { createMailer } from './auth/mailer.js';
+import { generateToken, hashToken, expirationFor } from './auth/setupToken.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -266,6 +267,11 @@ async function startServer() {
     } catch (err) {
       return res.status(401).json({ error: 'Invalid token' });
     }
+  };
+
+  const requireAdmin = (req: any, res: any, next: any) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Apenas administradores.' });
+    next();
   };
 
   // Metadados do cliente para a trilha de acesso (RN 630 — §5.2.2).
@@ -584,6 +590,76 @@ async function startServer() {
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // === Cadastro de usuários internos (admin/auditoria) por convite por e-mail ===
+
+  app.post('/api/users', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const { name, email, role } = req.body ?? {};
+
+      if (typeof name !== 'string' || name.trim().length < 2 || name.length > 100) {
+        return res.status(400).json({ error: 'Nome inválido (2 a 100 caracteres).' });
+      }
+      if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'E-mail inválido.' });
+      }
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Esta UI só cria usuários admin ou auditoria.' });
+      }
+
+      const emailLc = email.trim().toLowerCase();
+      const dup = await query('SELECT id FROM users WHERE LOWER(email) = $1', [emailLc]);
+      if (dup.rows.length > 0) {
+        return res.status(409).json({ error: 'Já existe um usuário com este e-mail.' });
+      }
+
+      const ins = await query(
+        `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
+         VALUES ($1, $2, NULL, $3, NULL, true, 'pending')
+         RETURNING id, name, email, role, is_active, invite_status`,
+        [name.trim(), emailLc, role]
+      );
+      const newUser = ins.rows[0];
+
+      const token = generateToken();
+      const tokenHash = await hashToken(token);
+      const expiresAt = expirationFor('invite');
+      await query(
+        `INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at, created_by_user_id)
+         VALUES ($1, $2, 'invite', $3, $4)`,
+        [newUser.id, tokenHash, expiresAt, req.user.id]
+      );
+
+      const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
+      const link = `${appUrl}/definir-senha?token=${token}`;
+      await mailer.sendInvite(newUser.email, newUser.name, link);
+
+      await query(
+        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
+         VALUES ($1, 'user_invited', $2, $3, true, now())`,
+        [req.user.id, JSON.stringify({ invited_email: newUser.email, invited_role: newUser.role }), req.ip]
+      );
+
+      res.status(201).json(newUser);
+    } catch (err: any) {
+      console.error('POST /api/users:', err);
+      res.status(500).json({ error: 'Falha ao criar usuário.' });
+    }
+  });
+
+  app.get('/api/users', authenticate, requireAdmin, async (_req: any, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT id, name, email, role, is_active, invite_status, last_login_at, created_at
+         FROM users
+         ORDER BY created_at DESC`
+      );
+      res.json(rows);
+    } catch (err: any) {
+      console.error('GET /api/users:', err);
+      res.status(500).json({ error: 'Falha ao listar usuários.' });
     }
   });
 

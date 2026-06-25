@@ -601,6 +601,14 @@ async function startServer() {
     }
   });
 
+  // Encarregado de Dados (DPO) — público, sem autenticação.
+  app.get('/api/privacy/dpo', (_req, res) => {
+    res.json({
+      name: process.env.DPO_NAME ?? 'A definir',
+      email: process.env.DPO_EMAIL ?? null,
+    });
+  });
+
   // Consome um token de convite/reset definindo a senha. Em reset, derruba os
   // trusted_devices do usuário para invalidar sessões antigas após troca de senha.
   app.post('/api/auth/redeem-token', async (req: any, res) => {

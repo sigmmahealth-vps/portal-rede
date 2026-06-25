@@ -28,6 +28,7 @@ import Equipe from './pages/Equipe';
 import Dispositivos from './pages/Dispositivos';
 import EsqueciSenha from './pages/EsqueciSenha';
 import DefinirSenha from './pages/DefinirSenha';
+import PoliticaPrivacidade from './pages/PoliticaPrivacidade';
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/esqueci-senha" element={<EsqueciSenha />} />
         <Route path="/definir-senha" element={<DefinirSenha />} />
+        <Route path="/politica-privacidade" element={<PoliticaPrivacidade />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />

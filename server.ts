@@ -12,7 +12,8 @@ import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
 import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
 import { createMailer } from './auth/mailer.js';
-import { generateToken, hashToken, expirationFor } from './auth/setupToken.js';
+import { generateToken, hashToken, verifyToken, expirationFor } from './auth/setupToken.js';
+import { validatePassword } from './auth/passwordPolicy.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -563,6 +564,94 @@ async function startServer() {
     } catch (err: any) {
       console.error('POST /api/auth/forgot-password:', err);
       res.json({ ok: true });
+    }
+  });
+
+  // Valida um token de convite/reset sem consumi-lo — usado pelo /definir-senha
+  // para exibir o nome do usuário e diferenciar fluxo (invite vs reset).
+  app.get('/api/auth/validate-setup-token', async (req: any, res) => {
+    try {
+      const token = typeof req.query.token === 'string' ? req.query.token : '';
+      if (!/^[0-9a-f]{64}$/.test(token)) {
+        return res.json({ valid: false, reason: 'unknown' });
+      }
+
+      const { rows } = await query(
+        `SELECT t.id, t.user_id, t.kind, t.expires_at, t.used_at, t.token_hash, u.name
+         FROM password_setup_tokens t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.kind IN ('invite','reset') AND t.used_at IS NULL AND t.expires_at > now()`,
+      );
+
+      for (const row of rows as any[]) {
+        if (await verifyToken(token, row.token_hash)) {
+          return res.json({ valid: true, kind: row.kind, name: row.name });
+        }
+      }
+      return res.json({ valid: false, reason: 'expired' });
+    } catch (err: any) {
+      console.error('GET /api/auth/validate-setup-token:', err);
+      res.json({ valid: false, reason: 'unknown' });
+    }
+  });
+
+  // Consome um token de convite/reset definindo a senha. Em reset, derruba os
+  // trusted_devices do usuário para invalidar sessões antigas após troca de senha.
+  app.post('/api/auth/redeem-token', async (req: any, res) => {
+    try {
+      const { token, new_password } = req.body ?? {};
+
+      if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) {
+        return res.status(400).json({ error: 'Link inválido.' });
+      }
+      if (typeof new_password !== 'string') {
+        return res.status(400).json({ error: 'Senha obrigatória.' });
+      }
+
+      const ipOk = await checkRateLimit('', req.ip ?? '', 'redeem_token', 60, 10);
+      if (!ipOk) return res.status(429).json({ error: 'Muitas tentativas. Tente novamente em 1 hora.' });
+
+      const policy = validatePassword(new_password);
+      if (!policy.ok) return res.status(400).json({ error: policy.errors.join(' ') });
+
+      const { rows } = await query(
+        `SELECT t.id, t.user_id, t.kind, t.token_hash
+         FROM password_setup_tokens t
+         WHERE t.kind IN ('invite','reset') AND t.used_at IS NULL AND t.expires_at > now()`,
+      );
+
+      let matched: any = null;
+      for (const row of rows as any[]) {
+        if (await verifyToken(token, row.token_hash)) {
+          matched = row;
+          break;
+        }
+      }
+      if (!matched) return res.status(400).json({ error: 'Link inválido ou expirado.' });
+
+      const pwHash = await bcrypt.hash(new_password, 10);
+
+      await withTransaction(async (client) => {
+        await client.query(`UPDATE password_setup_tokens SET used_at = now() WHERE id = $1`, [matched.id]);
+        await client.query(
+          `UPDATE users SET password = $1, invite_status = 'accepted' WHERE id = $2`,
+          [pwHash, matched.user_id],
+        );
+        if (matched.kind === 'reset') {
+          await client.query(`DELETE FROM trusted_devices WHERE user_id = $1`, [matched.user_id]);
+        }
+      });
+
+      await query(
+        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
+         VALUES ($1, 'password_set', $2, $3, true, now())`,
+        [matched.user_id, JSON.stringify({ kind: matched.kind }), req.ip],
+      );
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/auth/redeem-token:', err);
+      res.status(500).json({ error: 'Falha ao definir senha.' });
     }
   });
 

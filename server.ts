@@ -283,9 +283,12 @@ async function startServer() {
     next();
   };
 
+  // Consolida IP_HASH_SECRET num único call-site — todos os auditLog usam este helper.
+  const hashClientIp = (req: any): string | null => hashIp(req.ip, IP_HASH_SECRET as string);
+
   // Metadados do cliente para a trilha de acesso (RN 630 — §5.2.2).
   const clientMeta = (req: any) => ({
-    ipHash: hashIp(req.ip, IP_HASH_SECRET as string),
+    ipHash: hashClientIp(req),
     userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) || null,
   });
 
@@ -538,7 +541,7 @@ async function startServer() {
       await auditLog({
         query, action: 'password_reset_requested',
         meta: { exists: !!user },
-        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+        ip: hashClientIp(req),
       });
 
       if (!user) return res.json({ ok: true });
@@ -659,7 +662,7 @@ async function startServer() {
       await auditLog({
         query, userId: matched.user_id, action: 'password_set',
         meta: { kind: matched.kind },
-        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+        ip: hashClientIp(req),
       });
 
       res.json({ ok: true });
@@ -735,7 +738,7 @@ async function startServer() {
 
       params.push(limit, offset);
       const { rows } = await query(
-        `SELECT al.id, al.user_id, al.email, al.ip_hash, al.user_agent, al.success, al.action, al.meta, al.created_at,
+        `SELECT al.id, al.user_id, al.email, al.ip_hash, al.success, al.action, al.meta, al.created_at,
                 u.name AS user_name, u.role AS user_role
          FROM access_logs al
          LEFT JOIN users u ON u.id = al.user_id
@@ -798,7 +801,7 @@ async function startServer() {
       await auditLog({
         query, userId: req.user.id, action: 'user_invited',
         meta: { invited_email: newUser.email, invited_role: newUser.role },
-        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+        ip: hashClientIp(req),
       });
 
       res.status(201).json(newUser);
@@ -876,7 +879,7 @@ async function startServer() {
         await auditLog({
           query, userId: req.user.id, action: 'user_role_changed',
           meta: { target_user_id: targetId, from: target.role, to: newRole },
-          ip: hashIp(req.ip, IP_HASH_SECRET as string),
+          ip: hashClientIp(req),
         });
       }
       if (typeof newActive !== 'undefined' && newActive !== target.is_active) {
@@ -884,7 +887,7 @@ async function startServer() {
           query, userId: req.user.id,
           action: newActive ? 'user_activated' : 'user_deactivated',
           meta: { target_user_id: targetId },
-          ip: hashIp(req.ip, IP_HASH_SECRET as string),
+          ip: hashClientIp(req),
         });
       }
 
@@ -931,7 +934,7 @@ async function startServer() {
       await auditLog({
         query, userId: req.user.id, action: 'invite_resent',
         meta: { target_user_id: targetId },
-        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+        ip: hashClientIp(req),
       });
 
       res.json({ ok: true });

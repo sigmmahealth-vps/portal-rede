@@ -12,9 +12,9 @@ export async function purgeExpiredLogs(query: QueryFn): Promise<PurgeResult> {
   for (const p of policies) {
     const isLogin = p.action === '__login__';
     const sql = isLogin
-      ? `DELETE FROM access_logs WHERE action IS NULL AND created_at < now() - ($2::int || ' days')::interval`
-      : `DELETE FROM access_logs WHERE action = $1 AND created_at < now() - ($2::int || ' days')::interval`;
-    const result = await query(sql, [isLogin ? null : p.action, p.ttl_days]);
+      ? `DELETE FROM access_logs WHERE action IS NULL AND created_at < now() - make_interval(days => $1::int)`
+      : `DELETE FROM access_logs WHERE action = $1 AND created_at < now() - make_interval(days => $2::int)`;
+    const result = await query(sql, isLogin ? [p.ttl_days] : [p.action, p.ttl_days]);
     const count = result.rowCount ?? 0;
     out.deletedByAction[p.action] = count;
     out.totalDeleted += count;

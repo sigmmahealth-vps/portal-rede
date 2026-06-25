@@ -12,7 +12,7 @@ function fakeDb() {
     if (/FROM data_retention_policies/.test(sql)) return { rows: policies };
     if (/DELETE FROM access_logs/.test(sql)) {
       deleted.push({ sql, params });
-      return { rowCount: params[0] === null ? 3 : 1, rows: [] };
+      return { rowCount: /action IS NULL/.test(sql) ? 3 : 1, rows: [] };
     }
     if (/UPDATE settings/.test(sql)) return { rows: [] };
     return { rows: [] };
@@ -32,7 +32,7 @@ test('purgeExpiredLogs aplica cada política e retorna totais', async () => {
 test('purgeExpiredLogs traduz __login__ para action IS NULL', async () => {
   const db = fakeDb();
   await purgeExpiredLogs(db.query);
-  const loginCall = db.deleted.find(d => d.params[0] === null);
+  const loginCall = db.deleted.find(d => /action IS NULL/.test(d.sql));
   assert.ok(loginCall, 'esperava um DELETE com action IS NULL');
   assert.match(loginCall.sql, /action IS NULL/);
 });

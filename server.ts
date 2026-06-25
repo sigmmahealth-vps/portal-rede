@@ -817,11 +817,16 @@ async function startServer() {
       const result = await purgeExpiredLogs(query);
       await auditLog({
         query, userId: req.user.id, action: 'data_retention_run',
-        meta: result as unknown as Record<string, unknown>, ip: hashClientIp(req),
+        meta: { ...result }, ip: hashClientIp(req),
       });
       res.json(result);
     } catch (err: any) {
       console.error('POST /api/admin/data-retention/run:', err);
+      await auditLog({
+        query, userId: req.user.id, action: 'data_retention_run',
+        meta: { error: String(err?.message ?? err) },
+        ip: hashClientIp(req), success: false,
+      }).catch(e => console.error('[retention] falhou ao registrar audit de erro:', e));
       res.status(500).json({ error: 'Falha ao executar expurgo.' });
     }
   });
@@ -2736,7 +2741,9 @@ async function startServer() {
   if (process.env.RETENTION_AUTO_PURGE !== 'false') {
     try {
       const { rows } = await query("SELECT value FROM settings WHERE key = 'data_retention_last_run_at'");
-      const last = rows[0]?.value ? new Date(rows[0].value) : new Date(0);
+      const raw = rows[0]?.value;
+      const parsed = raw ? new Date(raw) : null;
+      const last = parsed && !isNaN(parsed.getTime()) ? parsed : new Date(0);
       const hours = (Date.now() - last.getTime()) / 3_600_000;
       if (hours > 24) {
         purgeExpiredLogs(query)

@@ -536,7 +536,7 @@ async function startServer() {
       await query(
         `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
          VALUES (NULL, 'password_reset_requested', $1, $2, true, now())`,
-        [JSON.stringify({ email: emailLc, exists: !!user }), req.ip],
+        [JSON.stringify({ exists: !!user }), req.ip],
       );
 
       if (!user) return res.json({ ok: true });

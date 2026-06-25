@@ -214,10 +214,6 @@ export default function Login() {
               >
                 Quero ser credenciado
               </button>
-
-              <p className="text-center">
-                <Link to="/politica-privacidade" className="text-xs text-gray-500 hover:underline">Política de Privacidade</Link>
-              </p>
             </div>
           </form>
           ) : (
@@ -282,6 +278,12 @@ export default function Login() {
             </div>
           </form>
           )}
+
+          <p className="text-center mt-4">
+            <Link to="/politica-privacidade" className="text-xs text-gray-500 hover:underline">
+              Política de Privacidade
+            </Link>
+          </p>
         </div>
       </div>
 

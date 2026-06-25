@@ -724,20 +724,25 @@ async function startServer() {
 
   // Trilha de acesso do próprio titular (LGPD art. 19) — sem ip_hash nem user_agent.
   app.get('/api/me/access-logs', authenticate, async (req: any, res) => {
-    const limit = Math.min(Number(req.query.limit ?? 50), 200);
-    const offset = Math.max(Number(req.query.offset ?? 0), 0);
-    const { rows: countRows } = await query(
-      'SELECT COUNT(*)::int AS total FROM access_logs WHERE user_id = $1', [req.user.id],
-    );
-    const { rows } = await query(
-      `SELECT id, action, meta, success, created_at
-         FROM access_logs
-        WHERE user_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2 OFFSET $3`,
-      [req.user.id, limit, offset],
-    );
-    res.json({ logs: rows, total: countRows[0]?.total ?? 0, limit, offset });
+    try {
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const { rows: countRows } = await query(
+        'SELECT COUNT(*)::int AS total FROM access_logs WHERE user_id = $1', [req.user.id],
+      );
+      const { rows } = await query(
+        `SELECT id, action, meta, success, created_at
+           FROM access_logs
+          WHERE user_id = $1
+          ORDER BY created_at DESC
+          LIMIT $2 OFFSET $3`,
+        [req.user.id, limit, offset],
+      );
+      res.json({ logs: rows, total: countRows[0]?.total ?? 0, limit, offset });
+    } catch (err: any) {
+      console.error('GET /api/me/access-logs:', err);
+      res.status(500).json({ error: 'Falha ao carregar logs.' });
+    }
   });
 
   // Trilha de acesso — leitura (RN 630). Restrito a admin/auditoria.

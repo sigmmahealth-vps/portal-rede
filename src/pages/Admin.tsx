@@ -33,13 +33,13 @@ import {
 
 const TABS = [
   { id: 'prestadores', label: 'Rede de Prestadores', icon: Users },
+  { id: 'usuarios', label: 'Usuários', icon: UserPlus },
   { id: 'roteiros', label: 'Roteiros de Avaliação', icon: CheckCircle },
   { id: 'treinamentos', label: 'Cursos e Treinamentos', icon: GraduationCap },
   { id: 'comunicados', label: 'Comunicados', icon: Megaphone },
   { id: 'emails', label: 'Disparo de E-mails', icon: Mail },
   { id: 'banners', label: 'Banners', icon: ImageIcon },
   { id: 'pesquisas', label: 'Pesquisas', icon: ClipboardList },
-  { id: 'usuarios', label: 'Usuários', icon: UserPlus },
   { id: 'acessos', label: 'Trilha de Acesso', icon: ShieldCheck },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
@@ -302,15 +302,6 @@ export default function Admin() {
           <p className="text-gray-500">Gerencie a rede de prestadores, conteúdos e comunicações.</p>
         </div>
         
-        {activeTab === 'prestadores' && (
-          <button 
-            onClick={() => setShowProviderModal(true)}
-            className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Novo Prestador</span>
-          </button>
-        )}
         {activeTab === 'roteiros' && (
           <button
             onClick={() => setShowImportModal(true)}

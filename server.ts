@@ -10,7 +10,7 @@ import { query, pool, withTransaction } from './db/db.js';
 import { parseWorkbook } from './db/roteiro-parser.js';
 import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS } from './auth/otp.js';
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
-import { isRateLimited, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
+import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
 import { createMailer } from './auth/mailer.js';
 import { generateToken, hashToken, expirationFor } from './auth/setupToken.js';
 
@@ -510,6 +510,59 @@ async function startServer() {
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Esqueci a senha — sempre responde { ok: true } para evitar enumeração de e-mails.
+  // Rate-limit duplo (IP e e-mail) usa access_logs como fonte de verdade.
+  app.post('/api/auth/forgot-password', async (req: any, res) => {
+    try {
+      const { email } = req.body ?? {};
+      if (typeof email !== 'string') return res.json({ ok: true });
+
+      const emailLc = email.trim().toLowerCase();
+
+      const ipOk = await checkRateLimit('', req.ip ?? '', 'password_reset_requested', 60, 10);
+      const emailOk = await checkRateLimit(emailLc, '', 'password_reset_requested', 60, 5);
+      if (!ipOk || !emailOk) return res.json({ ok: true });
+
+      const { rows } = await query(
+        'SELECT id, email FROM users WHERE LOWER(email) = $1 AND is_active = true',
+        [emailLc],
+      );
+      const user = rows[0] as any;
+
+      await query(
+        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
+         VALUES (NULL, 'password_reset_requested', $1, $2, true, now())`,
+        [JSON.stringify({ email: emailLc, exists: !!user }), req.ip],
+      );
+
+      if (!user) return res.json({ ok: true });
+
+      await query(
+        `UPDATE password_setup_tokens SET used_at = now()
+         WHERE user_id = $1 AND kind = 'reset' AND used_at IS NULL`,
+        [user.id],
+      );
+
+      const token = generateToken();
+      const tokenHash = await hashToken(token);
+      const expiresAt = expirationFor('reset');
+      await query(
+        `INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at)
+         VALUES ($1, $2, 'reset', $3)`,
+        [user.id, tokenHash, expiresAt],
+      );
+
+      const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
+      const link = `${appUrl}/definir-senha?token=${token}`;
+      await mailer.sendPasswordReset(user.email, link);
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/auth/forgot-password:', err);
+      res.json({ ok: true });
     }
   });
 

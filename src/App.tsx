@@ -29,6 +29,7 @@ import Dispositivos from './pages/Dispositivos';
 import EsqueciSenha from './pages/EsqueciSenha';
 import DefinirSenha from './pages/DefinirSenha';
 import PoliticaPrivacidade from './pages/PoliticaPrivacidade';
+import MeusDados from './pages/MeusDados';
 
 export default function App() {
   return (
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="tabelas" element={<Tabelas />} />
           <Route path="perfil" element={<Perfil />} />
           <Route path="dispositivos" element={<Dispositivos />} />
+          <Route path="meus-dados" element={<MeusDados />} />
           <Route path="ferramentas" element={<Ferramentas />} />
           <Route path="medicacoes" element={<EmConstrucao />} />
           <Route path="producao" element={<EmConstrucao />} />

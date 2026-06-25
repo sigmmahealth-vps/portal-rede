@@ -343,6 +343,7 @@ export default function Layout() {
                       <p className="text-xs text-gray-500 truncate">{user.email || 'prestador@unimed.com'}</p>
                     </div>
                     <Link to="/perfil" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Meu Perfil</Link>
+                    <Link to="/meus-dados" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Meus dados</Link>
                     <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Configurações</button>
                     <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">Sair</button>
                   </div>

@@ -991,7 +991,7 @@ export default function Admin() {
                       <td className="py-3 font-medium text-gray-800">{log.user_name || <span className="text-gray-400 italic">—</span>}</td>
                       <td className="py-3 text-gray-600">{log.email || '-'}</td>
                       <td className="py-3 text-gray-600">{log.user_role || '-'}</td>
-                      <td className="py-3 text-gray-600 font-mono text-xs">{log.ip || '-'}</td>
+                      <td className="py-3 text-gray-600 font-mono text-xs" title={log.ip_hash || ''}>{log.ip_hash ? log.ip_hash.slice(0, 12) + '…' : '-'}</td>
                       <td className="py-3">
                         {log.success ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">

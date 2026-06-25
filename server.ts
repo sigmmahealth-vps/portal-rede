@@ -14,10 +14,18 @@ import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_M
 import { createMailer } from './auth/mailer.js';
 import { generateToken, hashToken, verifyToken, expirationFor } from './auth/setupToken.js';
 import { validatePassword } from './auth/passwordPolicy.js';
+import { auditLog } from './auth/auditLog.js';
+import { hashIp } from './auth/ipHash.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.error('FATAL: variável de ambiente JWT_SECRET não definida. Abortando boot.');
+  process.exit(1);
+}
+
+const IP_HASH_SECRET = process.env.IP_HASH_SECRET;
+if (!IP_HASH_SECRET || IP_HASH_SECRET.length < 32) {
+  console.error('FATAL: variável IP_HASH_SECRET ausente ou com menos de 32 caracteres. Abortando boot.');
   process.exit(1);
 }
 
@@ -277,21 +285,17 @@ async function startServer() {
 
   // Metadados do cliente para a trilha de acesso (RN 630 — §5.2.2).
   const clientMeta = (req: any) => ({
-    ip: (req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '') || null,
+    ipHash: hashIp(req.ip, IP_HASH_SECRET as string),
     userAgent: (req.headers['user-agent'] as string | undefined)?.slice(0, 500) || null,
   });
 
   // Registra uma tentativa de login na trilha de acesso. Nunca lança — auditoria não pode quebrar o login.
   const recordAccess = async (userId: number | null, email: string | null, success: boolean, req: any) => {
-    try {
-      const { ip, userAgent } = clientMeta(req);
-      await query(
-        'INSERT INTO access_logs (user_id, email, ip, user_agent, success) VALUES ($1, $2, $3, $4, $5)',
-        [userId, email, ip, userAgent, success]
-      );
-    } catch (err) {
-      console.error('Falha ao registrar access_log:', err);
-    }
+    const { ipHash, userAgent } = clientMeta(req);
+    await auditLog({
+      query, userId, email, action: null, success,
+      ip: ipHash, meta: { user_agent: userAgent },
+    });
   };
 
   const isProd = process.env.NODE_ENV === 'production';
@@ -317,8 +321,7 @@ async function startServer() {
   // Marca login bem-sucedido: atualiza último acesso + trilha.
   const finalizeLogin = async (user: any, req: any) => {
     const previousLoginAt = user.last_login_at ?? null;
-    const { ip } = clientMeta(req);
-    await query('UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2', [ip, user.id]);
+    await query('UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2', [req.ip, user.id]);
     await recordAccess(user.id, user.email, true, req);
     return previousLoginAt;
   };
@@ -340,11 +343,10 @@ async function startServer() {
   // Cria um desafio OTP, envia o e-mail e devolve o id do desafio.
   const createOtpChallenge = async (user: any, req: any): Promise<number> => {
     const code = generateOtpCode();
-    const { ip } = clientMeta(req);
     const expiresAt = new Date(Date.now() + OTP_TTL_MS);
     const { rows } = await query(
       'INSERT INTO otp_codes (user_id, code_hash, expires_at, ip) VALUES ($1, $2, $3, $4) RETURNING id',
-      [user.id, hashOtp(code), expiresAt, ip],
+      [user.id, hashOtp(code), expiresAt, req.ip],
     );
     await mailer.sendOtp(user.email, code);
     return rows[0].id;
@@ -389,7 +391,7 @@ async function startServer() {
       const device = await findValidTrustedDevice(user.id, req.cookies?.trusted_device);
       if (device) {
         await query('UPDATE trusted_devices SET last_used_at = now(), last_ip = $1 WHERE id = $2',
-          [clientMeta(req).ip, device.id]);
+          [req.ip, device.id]);
         const previousLoginAt = await finalizeLogin(user, req);
         return res.json(issueSession(res, user, previousLoginAt));
       }
@@ -447,11 +449,11 @@ async function startServer() {
       if (trust_device) {
         const secret = generateDeviceSecret();
         const expiresAt = new Date(Date.now() + TRUSTED_DEVICE_TTL_MS);
-        const { ip, userAgent } = clientMeta(req);
+        const { userAgent } = clientMeta(req);
         await query(
           `INSERT INTO trusted_devices (user_id, token_hash, label, last_ip, expires_at)
            VALUES ($1, $2, $3, $4, $5)`,
-          [user.id, hashDeviceSecret(secret), deviceLabelFromUserAgent(userAgent ?? undefined), ip, expiresAt],
+          [user.id, hashDeviceSecret(secret), deviceLabelFromUserAgent(userAgent ?? undefined), req.ip, expiresAt],
         );
         res.cookie('trusted_device', secret, {
           httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: TRUSTED_DEVICE_TTL_MS,
@@ -533,11 +535,11 @@ async function startServer() {
       );
       const user = rows[0] as any;
 
-      await query(
-        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
-         VALUES (NULL, 'password_reset_requested', $1, $2, true, now())`,
-        [JSON.stringify({ exists: !!user }), req.ip],
-      );
+      await auditLog({
+        query, action: 'password_reset_requested',
+        meta: { exists: !!user },
+        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+      });
 
       if (!user) return res.json({ ok: true });
 
@@ -654,11 +656,11 @@ async function startServer() {
         }
       });
 
-      await query(
-        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
-         VALUES ($1, 'password_set', $2, $3, true, now())`,
-        [matched.user_id, JSON.stringify({ kind: matched.kind }), req.ip],
-      );
+      await auditLog({
+        query, userId: matched.user_id, action: 'password_set',
+        meta: { kind: matched.kind },
+        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+      });
 
       res.json({ ok: true });
     } catch (err: any) {
@@ -733,7 +735,7 @@ async function startServer() {
 
       params.push(limit, offset);
       const { rows } = await query(
-        `SELECT al.id, al.user_id, al.email, al.ip, al.user_agent, al.success, al.created_at,
+        `SELECT al.id, al.user_id, al.email, al.ip_hash, al.user_agent, al.success, al.action, al.meta, al.created_at,
                 u.name AS user_name, u.role AS user_role
          FROM access_logs al
          LEFT JOIN users u ON u.id = al.user_id
@@ -793,11 +795,11 @@ async function startServer() {
       const link = `${appUrl}/definir-senha?token=${token}`;
       await mailer.sendInvite(newUser.email, newUser.name, link);
 
-      await query(
-        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
-         VALUES ($1, 'user_invited', $2, $3, true, now())`,
-        [req.user.id, JSON.stringify({ invited_email: newUser.email, invited_role: newUser.role }), req.ip]
-      );
+      await auditLog({
+        query, userId: req.user.id, action: 'user_invited',
+        meta: { invited_email: newUser.email, invited_role: newUser.role },
+        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+      });
 
       res.status(201).json(newUser);
     } catch (err: any) {
@@ -871,18 +873,19 @@ async function startServer() {
       );
 
       if (typeof newRole !== 'undefined' && newRole !== target.role) {
-        await query(
-          `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
-           VALUES ($1, 'user_role_changed', $2, $3, true, now())`,
-          [req.user.id, JSON.stringify({ target_user_id: targetId, from: target.role, to: newRole }), req.ip]
-        );
+        await auditLog({
+          query, userId: req.user.id, action: 'user_role_changed',
+          meta: { target_user_id: targetId, from: target.role, to: newRole },
+          ip: hashIp(req.ip, IP_HASH_SECRET as string),
+        });
       }
       if (typeof newActive !== 'undefined' && newActive !== target.is_active) {
-        await query(
-          `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
-           VALUES ($1, $2, $3, $4, true, now())`,
-          [req.user.id, newActive ? 'user_activated' : 'user_deactivated', JSON.stringify({ target_user_id: targetId }), req.ip]
-        );
+        await auditLog({
+          query, userId: req.user.id,
+          action: newActive ? 'user_activated' : 'user_deactivated',
+          meta: { target_user_id: targetId },
+          ip: hashIp(req.ip, IP_HASH_SECRET as string),
+        });
       }
 
       res.json(rows[0]);
@@ -925,11 +928,11 @@ async function startServer() {
       const link = `${appUrl}/definir-senha?token=${token}`;
       await mailer.sendInvite(target.email, target.name, link);
 
-      await query(
-        `INSERT INTO access_logs (user_id, action, meta, ip, success, created_at)
-         VALUES ($1, 'invite_resent', $2, $3, true, now())`,
-        [req.user.id, JSON.stringify({ target_user_id: targetId }), req.ip]
-      );
+      await auditLog({
+        query, userId: req.user.id, action: 'invite_resent',
+        meta: { target_user_id: targetId },
+        ip: hashIp(req.ip, IP_HASH_SECRET as string),
+      });
 
       res.json({ ok: true });
     } catch (err: any) {

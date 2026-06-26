@@ -181,18 +181,8 @@ export default function Admin() {
   };
 
   const handleDeleteScript = async (script: any) => {
-    // Roteiro já usado em avaliações: exige confirmação forte (modal).
-    if (Number(script?.usage_count ?? 0) > 0) {
-      setDeleteTarget(script);
-      return;
-    }
-    if (!window.confirm('Tem certeza que deseja excluir este roteiro?')) return;
-    try {
-      await fetchApi(`/eval/scripts/${script.id}`, { method: 'DELETE' });
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Erro ao excluir roteiro');
-    }
+    // Sempre exige confirmação forte (digitar "excluir roteiro") — independente de uso.
+    setDeleteTarget(script);
   };
 
   const confirmDeleteScript = async () => {

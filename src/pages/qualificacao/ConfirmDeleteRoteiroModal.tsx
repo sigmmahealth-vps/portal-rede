@@ -48,11 +48,19 @@ export default function ConfirmDeleteRoteiroModal({ script, onCancel, onConfirm 
 
         <div className="space-y-3 text-sm text-gray-700">
           <p className="font-medium text-gray-900">{script?.title}</p>
-          <p>
-            Há <span className="font-semibold text-red-600">{avaliacoes}</span> por
-            prestadores usando este roteiro. A exclusão também removerá esse histórico
-            <span className="font-semibold"> permanentemente</span>.
-          </p>
+          {count > 0 ? (
+            <p>
+              Há <span className="font-semibold text-red-600">{avaliacoes}</span> por
+              prestadores usando este roteiro. A exclusão também removerá esse histórico
+              <span className="font-semibold"> permanentemente</span>.
+            </p>
+          ) : (
+            <p>
+              Este roteiro ainda <span className="font-semibold">não tem avaliações</span> vinculadas,
+              mas a exclusão é <span className="font-semibold">permanente</span> e remove todas as
+              seções, critérios e revisões.
+            </p>
+          )}
           <p>
             Para confirmar, digite{' '}
             <span className="font-mono font-semibold text-gray-900">{CONFIRM_PHRASE}</span> abaixo:

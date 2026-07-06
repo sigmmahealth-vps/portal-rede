@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseProviders, normalizeDoc, type RawRow } from './providers-parser.js';
+import { parseProviders, normalizeDoc, parseAddress, buildLocations, type RawRow } from './providers-parser.js';
 
 function row(over: Record<string, unknown> = {}): RawRow {
   return {
@@ -65,4 +65,44 @@ test('CNPJ repetido entre códigos diferentes é zerado no segundo', () => {
   assert.equal(a2.cnpj, null); // duplicado zerado
   assert.equal(a2.person_type, 'PJ'); // continua PJ
   assert.ok(warnings.some((w) => w.includes('CNPJ') && w.includes('A2')));
+});
+
+test('parseAddress separa logradouro, número, cidade e UF', () => {
+  const a = parseAddress('RUA VITAL BRASIL, 455 - HOSPITAL SAO JOAO - CRUZEIRO DO SUL - CRICIUMA - SC');
+  assert.equal(a.logradouro, 'RUA VITAL BRASIL');
+  assert.equal(a.numero, '455');
+  assert.equal(a.cidade, 'CRICIUMA');
+  assert.equal(a.uf, 'SC');
+});
+
+test('parseAddress cai para logradouro cru quando não dá para separar', () => {
+  const a = parseAddress('ENDERECO SEM PADRAO');
+  assert.equal(a.logradouro, 'ENDERECO SEM PADRAO');
+  assert.equal(a.uf, null);
+});
+
+test('buildLocations cria comercial primário (guia médico) e residencial secundário', () => {
+  const locs = buildLocations(row({
+    'Endereço Comercial': 'RUA A, 10 - CENTRO - CRICIUMA - SC', 'CEP Comercial': '88801-000',
+    'Endereço Residencial': 'RUA B, 20 - PROSPERA - CRICIUMA - SC', 'CEP Residencial': '88815-000',
+    'Telefone': '48 3433-0000', 'Email': 'x@y.com',
+  }), '4000059');
+  assert.equal(locs.length, 2);
+  const com = locs.find((l) => l.label === 'Comercial')!;
+  assert.equal(com.is_primary, true);
+  assert.equal(com.in_medical_guide, true);
+  assert.equal(com.phone, '48 3433-0000');
+  assert.equal(com.email, 'x@y.com');
+  assert.equal(com.sgu_location_code, '4000059-COM');
+  const res = locs.find((l) => l.label === 'Residencial')!;
+  assert.equal(res.is_primary, false);
+  assert.equal(res.in_medical_guide, false);
+});
+
+test('parseProviders preenche locations do prestador', () => {
+  const { providers } = parseProviders([
+    row({ 'Endereço Comercial': 'RUA A, 10 - CENTRO - CRICIUMA - SC', 'CEP Comercial': '88801-000' }),
+  ]);
+  assert.equal(providers[0].locations.length, 1);
+  assert.equal(providers[0].locations[0].label, 'Comercial');
 });

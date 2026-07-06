@@ -82,6 +82,60 @@ const H = {
 
 const val = (row: RawRow, key: string): string => clean(row[key]);
 
+export interface ParsedAddr {
+  logradouro: string | null; numero: string | null; complemento: string | null;
+  bairro: string | null; cidade: string | null; uf: string | null;
+}
+
+/** Parse best-effort do endereço-texto "LOGRADOURO, N - ... - CIDADE - UF". */
+export function parseAddress(raw: string): ParsedAddr {
+  const s = clean(raw);
+  const empty: ParsedAddr = { logradouro: null, numero: null, complemento: null, bairro: null, cidade: null, uf: null };
+  if (!s) return empty;
+  const parts = s.split(' - ').map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 3) return { ...empty, logradouro: s };
+  let uf: string | null = null;
+  const last = parts[parts.length - 1];
+  if (/^[A-Za-z]{2}$/.test(last)) { uf = last.toUpperCase(); parts.pop(); }
+  const cidade = parts.length ? parts.pop()! : null;
+  const first = parts.shift() ?? '';
+  let logradouro = first;
+  let numero: string | null = null;
+  const m = /^(.*?),\s*(\d+[A-Za-z]?)$/.exec(first);
+  if (m) { logradouro = m[1].trim(); numero = m[2]; }
+  const bairro = parts.length ? parts.join(' - ') : null;
+  return { logradouro: logradouro || null, numero, complemento: null, bairro, cidade, uf };
+}
+
+/** Constrói os locais (comercial primário + residencial) a partir de uma linha. */
+export function buildLocations(row: RawRow, code: string): ParsedLocation[] {
+  const out: ParsedLocation[] = [];
+  const phone = val(row, H.tel) || val(row, H.cel) || null;
+  const email = val(row, H.email) || null;
+  const endCom = val(row, H.endCom);
+  const cepCom = val(row, H.cepCom);
+  if (endCom || cepCom || phone || email) {
+    const a = parseAddress(endCom);
+    out.push({
+      sgu_location_code: `${code}-COM`, label: 'Comercial', cep: cepCom || null,
+      logradouro: a.logradouro, numero: a.numero, complemento: a.complemento, bairro: a.bairro,
+      cidade: a.cidade, uf: a.uf, phone, email, is_primary: true, in_medical_guide: true,
+    });
+  }
+  const endRes = val(row, H.endRes);
+  const cepRes = val(row, H.cepRes);
+  if (endRes || cepRes) {
+    const a = parseAddress(endRes);
+    out.push({
+      sgu_location_code: `${code}-RES`, label: 'Residencial', cep: cepRes || null,
+      logradouro: a.logradouro, numero: a.numero, complemento: a.complemento, bairro: a.bairro,
+      cidade: a.cidade, uf: a.uf, phone: null, email: null,
+      is_primary: out.length === 0, in_medical_guide: false,
+    });
+  }
+  return out;
+}
+
 /** Zera CNPJ/CPF repetidos entre prestadores distintos (índice único parcial). */
 function dedupeDocs(providers: ParsedProvider[], warnings: string[]): void {
   const seenCnpj = new Map<string, string>();
@@ -148,7 +202,7 @@ export function parseProviders(rows: RawRow[]): ParseResult {
       status: val(first, H.motExcl) ? 'inativo' : 'ativo',
       roteiro_cod: val(first, H.roteiroCod) || null,
       roteiro_confianca: val(first, H.roteiroConf) || null,
-      locations: [],
+      locations: buildLocations(first, code),
       certifications: [],
     });
   }

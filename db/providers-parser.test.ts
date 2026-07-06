@@ -53,3 +53,16 @@ test('PF por CPF; status inativo quando há motivo de exclusão', () => {
   assert.equal(providers[0].council_registry, '12345');
   assert.equal(providers[0].status, 'inativo');
 });
+
+test('CNPJ repetido entre códigos diferentes é zerado no segundo', () => {
+  const { providers, warnings } = parseProviders([
+    row({ 'Código Prestador': 'A1', 'CNPJ': 82996712000163 }),
+    row({ 'Código Prestador': 'A2', 'CNPJ': 82996712000163 }),
+  ]);
+  const a1 = providers.find((p) => p.sgu_code === 'A1')!;
+  const a2 = providers.find((p) => p.sgu_code === 'A2')!;
+  assert.equal(a1.cnpj, '82996712000163');
+  assert.equal(a2.cnpj, null); // duplicado zerado
+  assert.equal(a2.person_type, 'PJ'); // continua PJ
+  assert.ok(warnings.some((w) => w.includes('CNPJ') && w.includes('A2')));
+});

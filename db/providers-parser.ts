@@ -82,6 +82,24 @@ const H = {
 
 const val = (row: RawRow, key: string): string => clean(row[key]);
 
+/** Zera CNPJ/CPF repetidos entre prestadores distintos (índice único parcial). */
+function dedupeDocs(providers: ParsedProvider[], warnings: string[]): void {
+  const seenCnpj = new Map<string, string>();
+  const seenCpf = new Map<string, string>();
+  for (const p of providers) {
+    if (p.cnpj) {
+      const owner = seenCnpj.get(p.cnpj);
+      if (owner) { warnings.push(`CNPJ ${p.cnpj} duplicado (código ${p.sgu_code} já em ${owner}); documento zerado em ${p.sgu_code}.`); p.cnpj = null; }
+      else seenCnpj.set(p.cnpj, p.sgu_code);
+    }
+    if (p.cpf) {
+      const owner = seenCpf.get(p.cpf);
+      if (owner) { warnings.push(`CPF ${p.cpf} duplicado (código ${p.sgu_code} já em ${owner}); documento zerado em ${p.sgu_code}.`); p.cpf = null; }
+      else seenCpf.set(p.cpf, p.sgu_code);
+    }
+  }
+}
+
 export function parseProviders(rows: RawRow[]): ParseResult {
   const warnings: string[] = [];
   const groups = new Map<string, RawRow[]>();
@@ -135,5 +153,6 @@ export function parseProviders(rows: RawRow[]): ParseResult {
     });
   }
 
+  dedupeDocs(providers, warnings);
   return { providers, warnings };
 }

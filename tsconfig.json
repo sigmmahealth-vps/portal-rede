@@ -25,14 +25,6 @@
   },
   "exclude": [
     "node_modules",
-    "dist",
-    "check.ts",
-    "check_data.ts",
-    "check_exec.ts",
-    "check_user.ts",
-    "check_users.ts",
-    "app/applet/check.ts",
-    "app/applet/check_exec.ts",
-    "app/applet/check_exec2.ts"
+    "dist"
   ]
 }

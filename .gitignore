@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+dist_old*/
 coverage/
 .DS_Store
 *.log
@@ -11,3 +12,8 @@ uploads/
 *.db-shm
 *.db-wal
 *.sqlite
+*.bak
+*.tsbuildinfo
+
+# Scratch de ferramentas (não versionar)
+.superpowers/

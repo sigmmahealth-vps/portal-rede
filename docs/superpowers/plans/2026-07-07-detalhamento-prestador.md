@@ -514,25 +514,34 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
 }
 ```
 
-- [ ] **Step 2: Rewrite `Equipe.tsx` to use the panel**
+- [ ] **Step 2: Rewrite `Equipe.tsx` to use the panel, keeping the cross-provider view**
 
-Replace the full contents of `src/pages/Equipe.tsx` with a version that keeps the provider-selector (admin picks a provider, or the logged-in prestador/cooperado implicitly uses their own) but delegates the contact list/CRUD to `ProviderContactsPanel`:
+`Equipe.tsx` has two distinct views for admin/auditoria today, and both must survive:
+- a provider selected → single-provider contact list with add/remove (this is what moves to `ProviderContactsPanel`)
+- no provider selected ("Todos os prestadores") → a **read-only-except-delete** table of every contact across every provider, with a "Prestador" column, fetched via `GET /api/provider-contacts` with no `provider_id` (`server.ts:1018-1021`). The original code allowed deleting a contact directly from this cross view (the "Ações" column with the trash icon was always rendered, regardless of `selectedProviderId`) — keep that.
+
+`ProviderContactsPanel` only models a single `providerId`, so the cross-provider table stays as its own small block inside `Equipe.tsx` rather than being folded into the shared component. Replace the full contents of `src/pages/Equipe.tsx` with:
 
 ```tsx
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import ProviderContactsPanel from './admin/ProviderContactsPanel';
+import { Users, Mail, Phone, Trash2 } from 'lucide-react';
 
 // WS5 — Cadastro de equipe do prestador (§5.2.3 Tela 3).
 // Contatos informativos (sem login). Prestador/cooperado gerenciam a própria equipe;
-// admin/auditoria escolhem um prestador para visualizar/cadastrar.
+// admin/auditoria escolhem um prestador para visualizar/cadastrar, ou veem a equipe
+// de toda a rede junta quando nenhum prestador está selecionado.
 export default function Equipe() {
   const [user, setUser] = useState<any>(null);
   const [providers, setProviders] = useState<any[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [ownProviderId, setOwnProviderId] = useState<number | null>(null);
+  const [allContacts, setAllContacts] = useState<any[]>([]);
+  const [loadingAll, setLoadingAll] = useState(false);
 
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
+  const showCrossView = isAdmin && !selectedProviderId;
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -548,6 +557,29 @@ export default function Equipe() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const loadAllContacts = () => {
+    setLoadingAll(true);
+    fetchApi('/provider-contacts')
+      .then(setAllContacts)
+      .catch(console.error)
+      .finally(() => setLoadingAll(false));
+  };
+
+  useEffect(() => {
+    if (showCrossView) loadAllContacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCrossView]);
+
+  const handleDeleteFromCrossView = async (id: number) => {
+    if (!window.confirm('Remover este contato da equipe?')) return;
+    try {
+      await fetchApi(`/provider-contacts/${id}`, { method: 'DELETE' });
+      loadAllContacts();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao remover contato');
+    }
+  };
 
   const activeProviderId = isAdmin ? (selectedProviderId || null) : ownProviderId;
 
@@ -577,21 +609,78 @@ export default function Equipe() {
         </div>
       )}
 
-      <ProviderContactsPanel
-        providerId={activeProviderId}
-        hideProviderColumn={!isAdmin || !!selectedProviderId}
-        canEdit={!isAdmin || !!selectedProviderId}
-      />
+      {showCrossView ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          {loadingAll ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00995D]"></div>
+            </div>
+          ) : allContacts.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Users className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-1">Nenhum contato cadastrado</h3>
+              <p className="text-gray-500">Selecione um prestador acima para cadastrar contatos.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-100 text-sm text-gray-500">
+                    <th className="pb-3 font-medium">Nome</th>
+                    <th className="pb-3 font-medium">Cargo/Função</th>
+                    <th className="pb-3 font-medium">Registro Conselho</th>
+                    <th className="pb-3 font-medium">Contato</th>
+                    <th className="pb-3 font-medium">CPF</th>
+                    <th className="pb-3 font-medium">Prestador</th>
+                    <th className="pb-3 font-medium text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {allContacts.map((c) => (
+                    <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="py-3 font-medium text-gray-800">{c.name}</td>
+                      <td className="py-3 text-gray-600">{c.position || '-'}</td>
+                      <td className="py-3 text-gray-600">{c.council_registry || '-'}</td>
+                      <td className="py-3 text-gray-600">
+                        <div className="flex flex-col gap-0.5">
+                          {c.email && <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-gray-400" />{c.email}</span>}
+                          {c.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-gray-400" />{c.phone}</span>}
+                          {!c.email && !c.phone && '-'}
+                        </div>
+                      </td>
+                      <td className="py-3 text-gray-600 font-mono text-xs">{c.cpf || '-'}</td>
+                      <td className="py-3 text-gray-600">{c.provider_name || '-'}</td>
+                      <td className="py-3 text-right">
+                        <button
+                          onClick={() => handleDeleteFromCrossView(c.id)}
+                          className="text-red-500 hover:text-red-700 p-1"
+                          title="Remover contato"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <ProviderContactsPanel providerId={activeProviderId} hideProviderColumn canEdit />
+      )}
     </div>
   );
 }
 ```
 
-Note: previously, when an admin viewed "Todos os prestadores" (no `selectedProviderId`), `Equipe.tsx` called `GET /api/provider-contacts` with no `provider_id` and got every contact across all providers with a `provider_name` column. `ProviderContactsPanel` only supports a single `providerId`; to preserve the "view all" behavior we pass `providerId={null}` in that case, which renders an empty list rather than the old cross-provider list. This is an intentional, small behavior narrowing — flag it to the user after implementation, but do not silently keep the old cross-provider query embedded in the shared component, since `ProviderDetail.tsx` (Task 5) must never receive an unbounded list.
+This is a straight port of the original cross-view table markup/behavior (including the always-visible delete button), just split out from the single-provider case, which now goes through `ProviderContactsPanel`.
 
 - [ ] **Step 3: Manual verification**
 
-Log in as a `prestador`/`cooperado` user, go to `/equipe` — expected: same behavior as before (own contacts list, can add/remove). Log in as `admin`, go to `/equipe`, pick a provider from the dropdown — expected: that provider's contacts show, "Novo Contato" button enabled. Deselect (choose "Todos os prestadores...") — expected: empty state ("Nenhum contato cadastrado"), "Novo Contato" button disabled.
+Log in as a `prestador`/`cooperado` user, go to `/equipe` — expected: same behavior as before (own contacts list, can add/remove). Log in as `admin`, go to `/equipe` with no provider selected ("Todos os prestadores...") — expected: a single table listing contacts from every provider, with a "Prestador" column, and each row deletable. Delete one — expected: it disappears and the list still shows the rest. Now pick a specific provider from the dropdown — expected: view switches to that provider's contacts only (no "Prestador" column), "Novo Contato" button enabled, add/remove works.
 
 - [ ] **Step 4: Commit**
 
@@ -933,7 +1022,7 @@ git commit -m "feat: add Equipe/Contatos and Documentos e Qualificação tabs to
 - **Spec coverage:** Rota própria ✅ (Task 2), 4 abas ✅ (Tasks 4-5), somente-leitura em Dados Cadastrais/Unidades ✅ (Task 4, no form/save controls), Equipe/Contatos editável reaproveitando `Equipe.tsx` ✅ (Task 3-5), resumo+links para Documentos/Qualificação ✅ (Task 5), backend endpoint com o shape documentado ✅ (Task 1), 403/404/empty/network-error handling ✅ (Task 4).
 - **Placeholder scan:** none — every step has literal code, exact file paths/line anchors, and concrete manual-verification instructions (no automated test infra exists for HTTP routes in this repo, consistent with the spec's "Testes" section).
 - **Type consistency:** `provider.id`/`provider.locations`/`provider.certifications`/`provider.summary.*` field names are identical between Task 1's response shape and Tasks 4-5's usage. `ProviderContactsPanel`'s prop names (`providerId`, `hideProviderColumn`, `canEdit`) are identical across Task 3 (Equipe.tsx usage) and Task 5 (ProviderDetail.tsx usage).
-- **Known, accepted narrowing:** Task 3 changes `Equipe.tsx`'s "admin, no provider selected" state from showing all contacts across all providers to showing an empty list. This is called out explicitly in Task 3, Step 2, so it's a visible decision rather than a silent regression — flag it to the user during review since it wasn't explicitly discussed in brainstorming.
+- **Cross-provider view preserved:** confirmed with the user that `Equipe.tsx`'s "Todos os prestadores" read-only, cross-provider contact table (with delete) must survive the refactor. Task 3 keeps that view as its own block inside `Equipe.tsx` (not folded into `ProviderContactsPanel`, which only models a single `providerId`), so no behavior is lost.
 
 ---
 

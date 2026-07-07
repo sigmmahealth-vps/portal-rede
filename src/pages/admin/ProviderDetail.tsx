@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchApi } from '../../lib/api';
+import ProviderContactsPanel from './ProviderContactsPanel';
 import { ArrowLeft, Building2, Users, FileText, ClipboardCheck } from 'lucide-react';
 
 const TABS = [
@@ -182,6 +183,70 @@ export default function ProviderDetail() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'equipe' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-800">Equipe/Contatos</h2>
+              <ProviderContactsPanel providerId={provider.id} hideProviderColumn canEdit />
+            </div>
+          )}
+
+          {activeTab === 'documentos' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-800">Documentos e Qualificação</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <p className="text-sm text-gray-500 font-medium">Documentos Pendentes</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary.documents_pending}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <p className="text-sm text-gray-500 font-medium">Documentos Vencidos</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary.documents_expired}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <p className="text-sm text-gray-500 font-medium">Total de Documentos</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary.documents_total}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <p className="text-sm text-gray-500 font-medium">Certificações</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary.certifications_total}</p>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <p className="text-sm font-medium text-gray-700 mb-1">Última Submissão de Qualificação</p>
+                {provider.summary.last_qualification_submission ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-800">
+                    <ClipboardCheck className="w-4 h-4 text-gray-400" />
+                    <span>{provider.summary.last_qualification_submission.cycle_title}</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                      {provider.summary.last_qualification_submission.status}
+                    </span>
+                    <span className="text-gray-500">
+                      {new Date(provider.summary.last_qualification_submission.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">Nenhuma submissão de qualificação registrada.</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href={`/documentos?provider_id=${provider.id}`}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  Ver documentos completos
+                </a>
+                <a
+                  href={`/auditorias?provider_id=${provider.id}`}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  Ver qualificação completa
+                </a>
+              </div>
             </div>
           )}
         </div>

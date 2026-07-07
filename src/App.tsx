@@ -30,6 +30,7 @@ import EsqueciSenha from './pages/EsqueciSenha';
 import DefinirSenha from './pages/DefinirSenha';
 import PoliticaPrivacidade from './pages/PoliticaPrivacidade';
 import MeusDados from './pages/MeusDados';
+import ProviderDetail from './pages/admin/ProviderDetail';
 
 export default function App() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="qualificacao" element={<Qualificacao />} />
           <Route path="pesquisa" element={<Pesquisa />} />
           <Route path="admin" element={<Admin />} />
+          <Route path="admin/prestadores/:id" element={<ProviderDetail />} />
           <Route path="credenciamento" element={<Credenciamento />} />
           <Route path="equipe" element={<Equipe />} />
           <Route path="tabelas" element={<Tabelas />} />

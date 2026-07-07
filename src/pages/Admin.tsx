@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
@@ -68,6 +69,7 @@ const PRESTADORES_MOCK = [
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('prestadores');
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [user, setUser] = useState<any>(null);
   
@@ -400,7 +402,11 @@ export default function Admin() {
                 </thead>
                 <tbody className="text-sm">
                   {providers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.cnpj.includes(searchTerm) || (p.code && p.code.includes(searchTerm))).map((prestador) => (
-                    <tr key={prestador.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <tr
+                      key={prestador.id}
+                      onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
+                      className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                    >
                       <td className="py-4 font-medium text-gray-800">{prestador.name}</td>
                       <td className="py-4 text-gray-600">{prestador.cnpj}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
@@ -416,7 +422,7 @@ export default function Admin() {
                         </span>
                       </td>
                       <td className="py-4 text-right">
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600">
+                        <button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600">
                           <MoreVertical className="w-5 h-5" />
                         </button>
                       </td>

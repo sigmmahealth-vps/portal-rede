@@ -136,6 +136,45 @@ export function buildLocations(row: RawRow, code: string): ParsedLocation[] {
   return out;
 }
 
+/** Converte Date (cellDates) ou 'DD/MM/YYYY' em 'YYYY-MM-DD'; senão null. */
+function toISODate(v: unknown): string | null {
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(clean(v));
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
+/** Um campo "presente" (ignora vazio, N/NÃO/0). */
+function isPresent(s: string): boolean {
+  const u = s.toUpperCase();
+  return !!s && u !== 'N' && u !== 'NAO' && u !== 'NÃO' && u !== '0';
+}
+
+/** Extrai certificações acadêmicas, ISO 9001 e acreditação de uma linha. */
+export function buildCertifications(row: RawRow): ParsedCertification[] {
+  const out: ParsedCertification[] = [];
+  const iso = val(row, H.iso);
+  if (isPresent(iso)) out.push({ kind: 'iso_9001', title: iso, issuer: null, level: null, issued_date: null, expiry_date: null });
+
+  const nivel = val(row, H.nivelAcred);
+  const inst = val(row, H.instAcred);
+  const dataAcred = toISODate(row[H.dataAcred]);
+  if (isPresent(nivel) || isPresent(inst) || dataAcred) {
+    out.push({
+      kind: 'acreditacao', title: null, issuer: inst || null, level: nivel || null,
+      issued_date: dataAcred, expiry_date: toISODate(row[H.validAcred]),
+    });
+  }
+
+  const academic: Array<[string, ParsedCertification['kind']]> = [
+    [H.mestrado, 'mestrado'], [H.pos, 'pos_graduacao'], [H.doutorado, 'doutorado'],
+  ];
+  for (const [key, kind] of academic) {
+    const v = val(row, key);
+    if (isPresent(v)) out.push({ kind, title: v, issuer: null, level: null, issued_date: null, expiry_date: null });
+  }
+  return out;
+}
+
 /** Zera CNPJ/CPF repetidos entre prestadores distintos (índice único parcial). */
 function dedupeDocs(providers: ParsedProvider[], warnings: string[]): void {
   const seenCnpj = new Map<string, string>();
@@ -203,7 +242,7 @@ export function parseProviders(rows: RawRow[]): ParseResult {
       roteiro_cod: val(first, H.roteiroCod) || null,
       roteiro_confianca: val(first, H.roteiroConf) || null,
       locations: buildLocations(first, code),
-      certifications: [],
+      certifications: buildCertifications(first),
     });
   }
 

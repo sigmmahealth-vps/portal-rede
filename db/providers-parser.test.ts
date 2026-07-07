@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseProviders, normalizeDoc, parseAddress, buildLocations, type RawRow } from './providers-parser.js';
+import { parseProviders, normalizeDoc, parseAddress, buildLocations, buildCertifications, type RawRow } from './providers-parser.js';
 
 function row(over: Record<string, unknown> = {}): RawRow {
   return {
@@ -105,4 +105,27 @@ test('parseProviders preenche locations do prestador', () => {
   ]);
   assert.equal(providers[0].locations.length, 1);
   assert.equal(providers[0].locations[0].label, 'Comercial');
+});
+
+test('buildCertifications só gera linha quando o campo tem conteúdo', () => {
+  assert.equal(buildCertifications(row()).length, 0); // ISO/acreditação/pós vazios
+  const certs = buildCertifications(row({
+    'ISO': 'ISO 9001:2015',
+    'Nivel Acreditação': 'Nível 2', 'Instituição Acreditadora': 'ONA',
+    'Data Acreditação': '10/03/2024', 'Validade Acreditação': '10/03/2026',
+    'Preferencias Mestrado': 'Mestrado em Cardiologia',
+  }));
+  const iso = certs.find((c) => c.kind === 'iso_9001')!;
+  assert.equal(iso.title, 'ISO 9001:2015');
+  const acr = certs.find((c) => c.kind === 'acreditacao')!;
+  assert.equal(acr.issuer, 'ONA');
+  assert.equal(acr.level, 'Nível 2');
+  assert.equal(acr.issued_date, '2024-03-10');
+  assert.equal(acr.expiry_date, '2026-03-10');
+  assert.ok(certs.some((c) => c.kind === 'mestrado' && c.title === 'Mestrado em Cardiologia'));
+});
+
+test('parseProviders preenche certifications do prestador', () => {
+  const { providers } = parseProviders([row({ 'Preferencias Doutorado': 'Doutorado em Saúde' })]);
+  assert.ok(providers[0].certifications.some((c) => c.kind === 'doutorado'));
 });

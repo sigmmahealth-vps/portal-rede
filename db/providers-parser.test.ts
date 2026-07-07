@@ -129,3 +129,12 @@ test('parseProviders preenche certifications do prestador', () => {
   const { providers } = parseProviders([row({ 'Preferencias Doutorado': 'Doutorado em Saúde' })]);
   assert.ok(providers[0].certifications.some((c) => c.kind === 'doutorado'));
 });
+
+test('toISODate (via buildCertifications) converte Date sem shift de fuso', () => {
+  const certs = buildCertifications(row({
+    'Nivel Acreditação': 'Nível 2',
+    'Data Acreditação': new Date(2024, 2, 10), // 10/03/2024 no horário local
+  }));
+  const acr = certs.find((c) => c.kind === 'acreditacao')!;
+  assert.equal(acr.issued_date, '2024-03-10');
+});

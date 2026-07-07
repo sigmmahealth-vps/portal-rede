@@ -138,7 +138,12 @@ export function buildLocations(row: RawRow, code: string): ParsedLocation[] {
 
 /** Converte Date (cellDates) ou 'DD/MM/YYYY' em 'YYYY-MM-DD'; senão null. */
 function toISODate(v: unknown): string | null {
-  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, '0');
+    const d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(clean(v));
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 }

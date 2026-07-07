@@ -84,7 +84,7 @@ export default function ProviderDetail() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">{provider.name}</h1>
           <span className={`inline-block mt-1 px-2.5 py-1 rounded-full text-xs font-medium ${
-            provider.status === 'Ativo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            String(provider.status).toLowerCase() === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
           }`}>
             {provider.status || '-'}
           </span>

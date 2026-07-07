@@ -414,8 +414,8 @@ export default function Admin() {
                       <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>
                       <td className="py-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                          prestador.status === 'Ativo' 
-                            ? 'bg-green-100 text-green-700' 
+                          String(prestador.status).toLowerCase() === 'ativo'
+                            ? 'bg-green-100 text-green-700'
                             : 'bg-red-100 text-red-700'
                         }`}>
                           {prestador.status}

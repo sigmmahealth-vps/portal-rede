@@ -138,7 +138,7 @@ export default function ProviderDetail() {
           {activeTab === 'unidades' && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Unidades de Atendimento</h2>
-              {provider.locations.length === 0 ? (
+              {!provider.locations?.length ? (
                 <p className="text-gray-500 text-center py-12">Nenhuma unidade cadastrada.</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -153,7 +153,7 @@ export default function ProviderDetail() {
                       </tr>
                     </thead>
                     <tbody className="text-sm">
-                      {provider.locations.map((loc: any) => (
+                      {(provider.locations ?? []).map((loc: any) => (
                         <tr key={loc.id} className="border-b border-gray-50">
                           <td className="py-3 font-medium text-gray-800">{loc.label || '-'}</td>
                           <td className="py-3 text-gray-600">
@@ -199,25 +199,25 @@ export default function ProviderDetail() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-sm text-gray-500 font-medium">Documentos Pendentes</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary.documents_pending}</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.documents_pending ?? 0}</p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-sm text-gray-500 font-medium">Documentos Vencidos</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary.documents_expired}</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.documents_expired ?? 0}</p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-sm text-gray-500 font-medium">Total de Documentos</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary.documents_total}</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.documents_total ?? 0}</p>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-sm text-gray-500 font-medium">Certificações</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary.certifications_total}</p>
+                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.certifications_total ?? 0}</p>
                 </div>
               </div>
 
               <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                 <p className="text-sm font-medium text-gray-700 mb-1">Última Submissão de Qualificação</p>
-                {provider.summary.last_qualification_submission ? (
+                {provider.summary?.last_qualification_submission ? (
                   <div className="flex items-center gap-2 text-sm text-gray-800">
                     <ClipboardCheck className="w-4 h-4 text-gray-400" />
                     <span>{provider.summary.last_qualification_submission.cycle_title}</span>
@@ -234,18 +234,18 @@ export default function ProviderDetail() {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <a
-                  href={`/documentos?provider_id=${provider.id}`}
+                <button
+                  onClick={() => navigate(`/documentos?provider_id=${provider.id}`)}
                   className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
                 >
                   Ver documentos completos
-                </a>
-                <a
-                  href={`/auditorias?provider_id=${provider.id}`}
+                </button>
+                <button
+                  onClick={() => navigate(`/auditorias?provider_id=${provider.id}`)}
                   className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
                 >
                   Ver qualificação completa
-                </a>
+                </button>
               </div>
             </div>
           )}

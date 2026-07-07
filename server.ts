@@ -1262,7 +1262,7 @@ async function startServer() {
         [providerId]
       );
       const { rows: docStatusRows } = await query(
-        'SELECT status, COUNT(*)::int AS count FROM documents WHERE provider_id = $1 GROUP BY status',
+        'SELECT lower(status) AS status, COUNT(*)::int AS count FROM documents WHERE provider_id = $1 GROUP BY lower(status)',
         [providerId]
       );
       const { rows: lastSubmissionRows } = await query(

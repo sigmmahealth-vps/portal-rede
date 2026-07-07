@@ -3,6 +3,7 @@
 // em local, use um arquivo .env — nunca comite credenciais).
 import { Pool, types } from 'pg';
 import 'dotenv/config';
+import { pickDatabaseUrl } from './resolveDbUrl.js';
 
 // Colunas `date` (OID 1082) chegam por padrão como Date em meia-noite LOCAL, e
 // ao serializar em JSON viram UTC — o que desloca a data em 1 dia conforme o
@@ -11,9 +12,14 @@ import 'dotenv/config';
 // timestamptz (created_at, OID 1184) NÃO é afetado.
 types.setTypeParser(1082, (value) => value);
 
-const connectionString = process.env.DATABASE_URL;
+// Resolve por APP_ENV (DATABASE_URL_DEV/HOMOLOG/PROD), com fallback p/ DATABASE_URL.
+const connectionString = pickDatabaseUrl();
 if (!connectionString) {
-  throw new Error('DATABASE_URL não definida. Configure-a no ambiente ou no .env local.');
+  const appEnv = process.env.APP_ENV?.trim();
+  const hint = appEnv
+    ? `APP_ENV=${appEnv} — defina DATABASE_URL_${appEnv.toUpperCase()} (ou DATABASE_URL) no .env.`
+    : 'Defina APP_ENV + DATABASE_URL_<AMBIENTE>, ou DATABASE_URL, no .env.';
+  throw new Error(`Sem connection string do Postgres. ${hint}`);
 }
 
 // Railway expõe o Postgres atrás de um proxy TLS; habilitamos SSL sem exigir CA local.

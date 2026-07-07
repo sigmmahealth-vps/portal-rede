@@ -1240,6 +1240,70 @@ async function startServer() {
     }
   });
 
+  app.get('/api/providers/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const providerId = req.params.id;
+      const { rows: providerRows } = await query('SELECT * FROM providers WHERE id = $1', [providerId]);
+      const provider = providerRows[0] as any;
+      if (!provider) {
+        return res.status(404).json({ error: 'Prestador não encontrado' });
+      }
+
+      const { rows: locations } = await query(
+        'SELECT * FROM provider_locations WHERE provider_id = $1 ORDER BY is_primary DESC, id ASC',
+        [providerId]
+      );
+      const { rows: certifications } = await query(
+        'SELECT * FROM provider_certifications WHERE provider_id = $1 ORDER BY issued_date DESC NULLS LAST, id DESC',
+        [providerId]
+      );
+      const { rows: docStatusRows } = await query(
+        'SELECT status, COUNT(*)::int AS count FROM documents WHERE provider_id = $1 GROUP BY status',
+        [providerId]
+      );
+      const { rows: lastSubmissionRows } = await query(
+        `SELECT qs.id, qs.status, qs.created_at, qc.title AS cycle_title
+           FROM qualification_submissions qs
+           JOIN qualification_cycles qc ON qc.id = qs.cycle_id
+          WHERE qs.provider_id = $1
+          ORDER BY qs.created_at DESC
+          LIMIT 1`,
+        [providerId]
+      );
+
+      const documentsTotal = docStatusRows.reduce((sum: number, r: any) => sum + r.count, 0);
+      const documentsPending = docStatusRows.find((r: any) => r.status === 'pendente')?.count ?? 0;
+      const documentsExpired = docStatusRows.find((r: any) => r.status === 'vencido')?.count ?? 0;
+
+      res.json({
+        ...provider,
+        locations,
+        certifications,
+        summary: {
+          documents_pending: documentsPending,
+          documents_expired: documentsExpired,
+          documents_total: documentsTotal,
+          certifications_total: certifications.length,
+          last_qualification_submission: lastSubmissionRows[0]
+            ? {
+                id: lastSubmissionRows[0].id,
+                cycle_title: lastSubmissionRows[0].cycle_title,
+                status: lastSubmissionRows[0].status,
+                created_at: lastSubmissionRows[0].created_at,
+              }
+            : null,
+        },
+      });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Qualification Scripts
   app.get('/api/qualification-scripts', authenticate, async (req: any, res) => {
     try {

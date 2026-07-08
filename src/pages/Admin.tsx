@@ -58,9 +58,12 @@ const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) 
   { key: 'outros', label: 'Outros', icon: Users, match: () => true },
 ];
 
+// Remove lixo de pontuação nas pontas ("- Jacinto Machado", ", Criciúma") e colapsa espaços.
+const cleanCity = (c: unknown) =>
+  String(c ?? '').replace(/^[\s\-–—,.]+|[\s\-–—,.]+$/g, '').replace(/\s+/g, ' ').trim();
 // Normaliza cidade p/ chave de filtro (sem acento, maiúsculas) — funde "CRICIUMA" e "Criciúma".
 const normCity = (c: unknown) =>
-  String(c ?? '').normalize('NFD').replace(/\p{M}/gu, '').trim().toUpperCase();
+  cleanCity(c).normalize('NFD').replace(/\p{M}/gu, '').toUpperCase();
 const titleCase = (s: string) =>
   s.toLowerCase().replace(/\b[\p{L}]/gu, (m) => m.toUpperCase());
 const bucketKey = (t: unknown) =>
@@ -312,10 +315,10 @@ export default function Admin() {
   const municipios = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of providers) {
-      const raw = String(p.cidade || '').trim();
-      if (!raw) continue;
-      const key = normCity(raw);
-      if (!map.has(key)) map.set(key, titleCase(raw));
+      const nome = cleanCity(p.cidade);
+      if (!nome) continue;
+      const key = normCity(nome);
+      if (!map.has(key)) map.set(key, titleCase(nome));
     }
     return Array.from(map, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [providers]);
@@ -344,7 +347,7 @@ export default function Admin() {
     const header = ['Nome', 'CNPJ', 'Código', 'Tipo (SGU)', 'Município', 'UF', 'Nível Qualificação', 'Status'];
     const linhas = filteredProviders.map((p) => [
       p.name, p.cnpj, p.code, p.provider_type,
-      p.cidade ? titleCase(String(p.cidade)) : '', p.uf, p.qualification_level, p.status,
+      titleCase(cleanCity(p.cidade)), p.uf, p.qualification_level, p.status,
     ]);
     const esc = (v: any) => {
       const s = String(v ?? '');
@@ -504,8 +507,8 @@ export default function Admin() {
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>
                       <td className="py-4 text-gray-600">
-                        {prestador.cidade
-                          ? `${titleCase(String(prestador.cidade))}${prestador.uf ? '/' + String(prestador.uf).toUpperCase() : ''}`
+                        {cleanCity(prestador.cidade)
+                          ? `${titleCase(cleanCity(prestador.cidade))}${prestador.uf ? '/' + String(prestador.uf).toUpperCase() : ''}`
                           : '-'}
                       </td>
                       <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>

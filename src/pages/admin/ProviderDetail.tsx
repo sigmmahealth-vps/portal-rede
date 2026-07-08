@@ -4,7 +4,7 @@ import { fetchApi } from '../../lib/api';
 import ProviderContactsPanel from './ProviderContactsPanel';
 import ProviderAccessTab from './ProviderAccessTab';
 import ProviderAuditTab from './ProviderAuditTab';
-import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw, Phone } from 'lucide-react';
+import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw, Phone, Pencil } from 'lucide-react';
 
 const TABS = [
   { id: 'cadastrais', label: 'Dados Cadastrais', icon: Building2 },
@@ -37,6 +37,94 @@ function Group({ title, icon: Icon, children }: { title: string; icon: any; chil
         <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
       </div>
       <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">{children}</dl>
+    </div>
+  );
+}
+
+function EditableRT({
+  providerId,
+  value,
+  canEdit,
+  onChange,
+}: {
+  providerId: number | string;
+  value: string | null;
+  canEdit: boolean;
+  onChange: (v: string | null) => void;
+}): ReactElement {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      const d = await fetchApi(`/providers/${providerId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ responsavel_tecnico: draft }),
+      });
+      onChange(d.responsavel_tecnico ?? null);
+      setEditing(false);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="sm:col-span-2">
+      <dt className="text-xs font-medium text-gray-500">Responsável técnico</dt>
+      {editing ? (
+        <div className="mt-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Nome — CRM/UF 00000"
+              autoFocus
+              className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
+            />
+            <button
+              onClick={save}
+              disabled={saving}
+              className="rounded-lg bg-[#00995D] px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#007A4A] disabled:opacity-50"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(false);
+                setDraft(value ?? '');
+                setErr(null);
+              }}
+              className="rounded-lg px-2 py-1.5 text-sm text-gray-500 transition-colors hover:text-gray-700"
+            >
+              Cancelar
+            </button>
+          </div>
+          {err && <p className="mt-1 text-xs text-red-600">{err}</p>}
+        </div>
+      ) : (
+        <dd className="mt-0.5 flex items-center gap-2 text-sm">
+          <span className={value ? 'text-gray-800' : 'text-gray-400'}>{value || '—'}</span>
+          {canEdit && (
+            <button
+              onClick={() => {
+                setDraft(value ?? '');
+                setEditing(true);
+              }}
+              className="text-gray-400 transition-colors hover:text-[#00995D]"
+              title="Editar responsável técnico"
+              aria-label="Editar responsável técnico"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </dd>
+      )}
     </div>
   );
 }
@@ -193,8 +281,13 @@ export default function ProviderDetail() {
   );
 
   const contactLoc = (provider.locations ?? []).find((l: any) => l.phone || l.email) ?? provider.locations?.[0];
-  const rt = provider.responsavel_tecnico;
-  const rtLabel = rt ? [rt.name, rt.council_registry].filter(Boolean).join(' — ') : null;
+  const canEditProvider = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}').role === 'admin';
+    } catch {
+      return false;
+    }
+  })();
 
   // Unidades: apenas endereços comerciais (exclui Residencial). Título: Sede Principal / Filial N.
   let filialSeq = 0;
@@ -280,7 +373,12 @@ export default function ProviderDetail() {
               <Group title="Contato" icon={Phone}>
                 <Field label="Telefone" value={contactLoc?.phone} />
                 <Field label="E-mail" value={contactLoc?.email} />
-                <Field label="Responsável técnico" value={rtLabel} className="sm:col-span-2" />
+                <EditableRT
+                  providerId={provider.id}
+                  value={provider.responsavel_tecnico ?? null}
+                  canEdit={canEditProvider}
+                  onChange={(v) => setProvider((p: any) => ({ ...p, responsavel_tecnico: v }))}
+                />
               </Group>
 
               <Group title="Classificação na rede" icon={Layers}>

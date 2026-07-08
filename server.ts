@@ -1286,14 +1286,6 @@ async function startServer() {
         [providerId]
       );
 
-      const { rows: rtRows } = await query(
-        `SELECT name, position, council_registry, phone, email
-           FROM provider_contacts
-          WHERE provider_id = $1 AND is_active IS NOT FALSE AND position ILIKE '%respons%'
-          ORDER BY id ASC LIMIT 1`,
-        [providerId],
-      );
-
       const documentsTotal = docStatusRows.reduce((sum: number, r: any) => sum + r.count, 0);
       const documentsPending = docStatusRows.find((r: any) => r.status === 'pendente')?.count ?? 0;
       const documentsExpired = docStatusRows.find((r: any) => r.status === 'vencido')?.count ?? 0;
@@ -1302,7 +1294,6 @@ async function startServer() {
         ...provider,
         locations,
         certifications,
-        responsavel_tecnico: rtRows[0] ?? null,
         summary: {
           documents_pending: documentsPending,
           documents_expired: documentsExpired,
@@ -1320,6 +1311,31 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Atualiza campos editáveis do prestador (por ora, responsável técnico). Só admin.
+  app.patch('/api/providers/:id', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      if (!('responsavel_tecnico' in (req.body ?? {}))) {
+        return res.status(400).json({ error: 'Nada para atualizar.' });
+      }
+      const raw = req.body.responsavel_tecnico;
+      const rt = raw === null ? null : (String(raw).trim() || null);
+      const { rows } = await query(
+        'UPDATE providers SET responsavel_tecnico = $1 WHERE id = $2 RETURNING id, responsavel_tecnico',
+        [rt, req.params.id],
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
+      await auditLog({
+        query, userId: req.user.id, action: 'provider_updated',
+        meta: { provider_id: Number(req.params.id), field: 'responsavel_tecnico' },
+        ip: hashClientIp(req),
+      });
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error('PATCH /providers/:id:', err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -436,48 +436,47 @@ export default function Admin() {
           <div className="space-y-6">
             <RedeOverview rede={rede} loading={loading} />
 
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
-                <span className="text-xs font-medium text-gray-500">Buscar</span>
-                <span className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Nome, CNPJ ou código..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
-                  />
-                </span>
-              </label>
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nome, CNPJ ou código..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
+                />
+              </div>
 
-              <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter}
-                options={[{ value: 'all', label: 'Todos' }, { value: 'ativo', label: 'Ativos' }, { value: 'inativo', label: 'Inativos' }]} />
+              <div className="flex flex-wrap items-end gap-3">
+                <FilterSelect className="w-full min-[480px]:w-36" label="Status" value={statusFilter} onChange={setStatusFilter}
+                  options={[{ value: 'all', label: 'Todos' }, { value: 'ativo', label: 'Ativos' }, { value: 'inativo', label: 'Inativos' }]} />
 
-              <FilterSelect label="Tipo (SGU)" value={tipoFilter} onChange={setTipoFilter}
-                options={[{ value: 'all', label: 'Todos' }, ...rede.composicao.map((c) => ({ value: c.key, label: c.label }))]} />
+                <FilterSelect className="w-full min-[480px]:w-44" label="Tipo (SGU)" value={tipoFilter} onChange={setTipoFilter}
+                  options={[{ value: 'all', label: 'Todos' }, ...rede.composicao.map((c) => ({ value: c.key, label: c.label }))]} />
 
-              <FilterSelect label="Município" value={municipioFilter} onChange={setMunicipioFilter}
-                options={[{ value: 'all', label: 'Todos' }, ...municipios.map((m) => ({ value: m.key, label: m.label }))]} />
+                <FilterSelect className="w-full min-[480px]:w-52" label="Município" value={municipioFilter} onChange={setMunicipioFilter}
+                  options={[{ value: 'all', label: 'Todos' }, ...municipios.map((m) => ({ value: m.key, label: m.label }))]} />
 
-              <div className="ml-auto flex items-end gap-2">
-                {filtrosAtivos && (
+                <div className="flex w-full items-center gap-2 min-[480px]:ml-auto min-[480px]:w-auto">
+                  {filtrosAtivos && (
+                    <button
+                      onClick={limparFiltros}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+                    >
+                      <X className="h-4 w-4" />
+                      Limpar
+                    </button>
+                  )}
                   <button
-                    onClick={limparFiltros}
-                    className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+                    onClick={exportarCSV}
+                    disabled={filteredProviders.length === 0}
+                    className="ml-auto flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 min-[480px]:ml-0"
                   >
-                    <X className="h-4 w-4" />
-                    Limpar
+                    <Download className="h-4 w-4" />
+                    Exportar
                   </button>
-                )}
-                <button
-                  onClick={exportarCSV}
-                  disabled={filteredProviders.length === 0}
-                  className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Download className="h-4 w-4" />
-                  Exportar
-                </button>
+                </div>
               </div>
             </div>
 
@@ -1540,14 +1539,16 @@ function FilterSelect({
   value,
   onChange,
   options,
+  className = '',
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  className?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className={`flex flex-col gap-1 ${className}`}>
       <span className="text-xs font-medium text-gray-500">{label}</span>
       <div className="relative">
         <select

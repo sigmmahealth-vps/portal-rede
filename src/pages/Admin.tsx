@@ -12,7 +12,8 @@ import {
   Image as ImageIcon,
   Search,
   Plus,
-  Filter,
+  Download,
+  ChevronDown,
   MoreVertical,
   Building2,
   Stethoscope,
@@ -57,6 +58,14 @@ const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) 
   { key: 'outros', label: 'Outros', icon: Users, match: () => true },
 ];
 
+// Normaliza cidade p/ chave de filtro (sem acento, maiúsculas) — funde "CRICIUMA" e "Criciúma".
+const normCity = (c: unknown) =>
+  String(c ?? '').normalize('NFD').replace(/\p{M}/gu, '').trim().toUpperCase();
+const titleCase = (s: string) =>
+  s.toLowerCase().replace(/\b[\p{L}]/gu, (m) => m.toUpperCase());
+const bucketKey = (t: unknown) =>
+  TYPE_BUCKETS.find((b) => b.match(String(t ?? '').toUpperCase()))!.key;
+
 const PRESTADORES_MOCK = [
   { id: 1, nome: 'Dr. Carlos Eduardo Silva', tipo: 'Médico Cooperado', especialidade: 'Cardiologia', status: 'Ativo' },
   { id: 2, nome: 'Dra. Ana Paula Mendes', tipo: 'Médico Cooperado', especialidade: 'Pediatria', status: 'Ativo' },
@@ -72,6 +81,9 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState('prestadores');
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [tipoFilter, setTipoFilter] = useState('all');
+  const [municipioFilter, setMunicipioFilter] = useState('all');
   const [user, setUser] = useState<any>(null);
   
   const [providers, setProviders] = useState<any[]>([]);
@@ -296,6 +308,58 @@ export default function Admin() {
     return { total, ativos, inativos: total - ativos, composicao };
   }, [providers]);
 
+  // Lista de municípios (localização primária), fundindo duplicatas de caixa/acento.
+  const municipios = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of providers) {
+      const raw = String(p.cidade || '').trim();
+      if (!raw) continue;
+      const key = normCity(raw);
+      if (!map.has(key)) map.set(key, titleCase(raw));
+    }
+    return Array.from(map, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+  }, [providers]);
+
+  const filteredProviders = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return providers.filter((p) => {
+      if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.code || ''}`.toLowerCase().includes(q)) return false;
+      if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) return false;
+      if (tipoFilter !== 'all' && bucketKey(p.provider_type) !== tipoFilter) return false;
+      if (municipioFilter !== 'all' && normCity(p.cidade) !== municipioFilter) return false;
+      return true;
+    });
+  }, [providers, searchTerm, statusFilter, tipoFilter, municipioFilter]);
+
+  const filtrosAtivos = statusFilter !== 'all' || tipoFilter !== 'all' || municipioFilter !== 'all' || searchTerm.trim() !== '';
+
+  const limparFiltros = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setTipoFilter('all');
+    setMunicipioFilter('all');
+  };
+
+  const exportarCSV = () => {
+    const header = ['Nome', 'CNPJ', 'Código', 'Tipo (SGU)', 'Município', 'UF', 'Nível Qualificação', 'Status'];
+    const linhas = filteredProviders.map((p) => [
+      p.name, p.cnpj, p.code, p.provider_type,
+      p.cidade ? titleCase(String(p.cidade)) : '', p.uf, p.qualification_level, p.status,
+    ]);
+    const esc = (v: any) => {
+      const s = String(v ?? '');
+      return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [header, ...linhas].map((r) => r.map(esc).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `prestadores_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (user && !isAdmin) {
     return (
       <div className="max-w-7xl mx-auto space-y-6 text-center py-12">
@@ -369,21 +433,49 @@ export default function Admin() {
           <div className="space-y-6">
             <RedeOverview rede={rede} loading={loading} />
 
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-              <div className="relative w-full md:w-96">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="Buscar prestador, clínica ou médico..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00995D]/20 focus:border-[#00995D]"
-                />
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
+                <span className="text-xs font-medium text-gray-500">Buscar</span>
+                <span className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Nome, CNPJ ou código..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
+                  />
+                </span>
+              </label>
+
+              <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter}
+                options={[{ value: 'all', label: 'Todos' }, { value: 'ativo', label: 'Ativos' }, { value: 'inativo', label: 'Inativos' }]} />
+
+              <FilterSelect label="Tipo (SGU)" value={tipoFilter} onChange={setTipoFilter}
+                options={[{ value: 'all', label: 'Todos' }, ...rede.composicao.map((c) => ({ value: c.key, label: c.label }))]} />
+
+              <FilterSelect label="Município" value={municipioFilter} onChange={setMunicipioFilter}
+                options={[{ value: 'all', label: 'Todos' }, ...municipios.map((m) => ({ value: m.key, label: m.label }))]} />
+
+              <div className="ml-auto flex items-end gap-2">
+                {filtrosAtivos && (
+                  <button
+                    onClick={limparFiltros}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+                  >
+                    <X className="h-4 w-4" />
+                    Limpar
+                  </button>
+                )}
+                <button
+                  onClick={exportarCSV}
+                  disabled={filteredProviders.length === 0}
+                  className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar
+                </button>
               </div>
-              <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors w-full md:w-auto">
-                <Filter className="w-5 h-5" />
-                <span>Filtros</span>
-              </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -394,13 +486,14 @@ export default function Admin() {
                     <th className="pb-3 font-medium">CNPJ</th>
                     <th className="pb-3 font-medium">Código</th>
                     <th className="pb-3 font-medium">Tipo (SGU)</th>
+                    <th className="pb-3 font-medium">Município</th>
                     <th className="pb-3 font-medium">Nível Qualificação</th>
                     <th className="pb-3 font-medium">Status</th>
                     <th className="pb-3 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {providers.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.cnpj.includes(searchTerm) || (p.code && p.code.includes(searchTerm))).map((prestador) => (
+                  {filteredProviders.map((prestador) => (
                     <tr
                       key={prestador.id}
                       onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
@@ -410,6 +503,11 @@ export default function Admin() {
                       <td className="py-4 text-gray-600">{prestador.cnpj}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>
+                      <td className="py-4 text-gray-600">
+                        {prestador.cidade
+                          ? `${titleCase(String(prestador.cidade))}${prestador.uf ? '/' + String(prestador.uf).toUpperCase() : ''}`
+                          : '-'}
+                      </td>
                       <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>
                       <td className="py-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -427,17 +525,22 @@ export default function Admin() {
                       </td>
                     </tr>
                   ))}
-                  {providers.length === 0 && !loading && (
+                  {filteredProviders.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-gray-500">Nenhum prestador encontrado.</td>
+                      <td colSpan={8} className="py-8 text-center text-gray-500">
+                        {providers.length === 0 ? 'Nenhum prestador encontrado.' : 'Nenhum prestador corresponde aos filtros.'}
+                      </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
-            
+
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-              <p>Mostrando {providers.length} prestadores</p>
+              <p>
+                Mostrando <span className="font-medium text-gray-700">{filteredProviders.length.toLocaleString('pt-BR')}</span>
+                {filteredProviders.length !== providers.length && <> de {providers.length.toLocaleString('pt-BR')}</>} prestadores
+              </p>
             </div>
           </div>
         )}
@@ -1426,6 +1529,36 @@ function RedeOverviewSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-gray-500">{label}</span>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-9 text-sm text-gray-800 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      </div>
+    </label>
   );
 }
 

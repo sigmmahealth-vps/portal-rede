@@ -1204,7 +1204,18 @@ async function startServer() {
     try {
       const { role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: providers } = await query('SELECT id, name, cnpj, sgu_code AS code, provider_group, provider_type, area_atuacao, qualification_level, status FROM providers ORDER BY name ASC');
+        const { rows: providers } = await query(`
+          SELECT p.id, p.name, p.cnpj, p.sgu_code AS code, p.provider_group, p.provider_type,
+                 p.area_atuacao, p.qualification_level, p.status,
+                 loc.cidade, loc.uf
+          FROM providers p
+          LEFT JOIN LATERAL (
+            SELECT cidade, uf FROM provider_locations pl
+            WHERE pl.provider_id = p.id
+            ORDER BY pl.is_primary DESC NULLS LAST, pl.id ASC
+            LIMIT 1
+          ) loc ON true
+          ORDER BY p.name ASC`);
         res.json(providers);
       } else {
         res.status(403).json({ error: 'Unauthorized' });

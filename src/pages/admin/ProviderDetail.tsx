@@ -289,15 +289,15 @@ export default function ProviderDetail() {
     }
   })();
 
-  // Unidades: apenas endereços comerciais (exclui Residencial). Título: Sede Principal / Filial N.
-  let filialSeq = 0;
-  const unidades = (provider.locations ?? [])
-    .filter((l: any) => String(l.label ?? '').toLowerCase() !== 'residencial')
-    .map((loc: any) => {
-      const named = loc.label && !['comercial', 'residencial'].includes(String(loc.label).toLowerCase());
-      const title = named ? loc.label : loc.is_primary ? 'Sede Principal' : `Filial ${(filialSeq += 1)}`;
-      return { loc, title };
-    });
+  // Unidades: apenas endereços comerciais (o residencial nunca aparece nesta tela).
+  // Um prestador pode ter mais de um comercial — numeramos só quando há mais de um.
+  const isResidencial = (l: any) =>
+    String(l.label ?? '').toLowerCase() === 'residencial' || /-RES$/i.test(String(l.sgu_location_code ?? ''));
+  const comerciais = (provider.locations ?? []).filter((l: any) => !isResidencial(l));
+  const unidades = comerciais.map((loc: any, i: number) => ({
+    loc,
+    title: comerciais.length > 1 ? `Unidade ${i + 1}` : 'Unidade',
+  }));
   const docStatus = docStatusFor(provider.summary);
 
   return (

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState, Fragment, type ReactNode, type ReactElement } from 'react';
+import { useNavigate, useParams, type NavigateFunction } from 'react-router-dom';
 import { fetchApi } from '../../lib/api';
 import ProviderContactsPanel from './ProviderContactsPanel';
 import ProviderAccessTab from './ProviderAccessTab';
@@ -52,6 +52,90 @@ function formatDoc(v?: string | null): string {
   if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
   return v ?? '';
+}
+
+// Situação de documentos — consolidada por prestador (não há status por local).
+function docStatusFor(summary: any): { label: string; cls: string } {
+  const s = summary ?? {};
+  if ((s.documents_expired ?? 0) > 0) return { label: 'Vencido', cls: 'bg-red-100 text-red-700' };
+  if ((s.documents_pending ?? 0) > 0) return { label: 'Pendente', cls: 'bg-amber-100 text-amber-700' };
+  if ((s.documents_total ?? 0) > 0) return { label: 'Regular', cls: 'bg-green-100 text-green-700' };
+  return { label: '—', cls: 'bg-gray-100 text-gray-500' };
+}
+
+const QUAL_CLS: Record<string, string> = { A: 'text-green-700', B: 'text-amber-600', C: 'text-gray-600' };
+
+function UnitCard({
+  title,
+  loc,
+  qualLevel,
+  docStatus,
+  providerId,
+  navigate,
+}: {
+  title: string;
+  loc: any;
+  qualLevel?: string | null;
+  docStatus: { label: string; cls: string };
+  providerId: number | string;
+  navigate: NavigateFunction;
+}): ReactElement {
+  const addr = [loc.logradouro, loc.numero].filter(Boolean).join(', ');
+  const line =
+    [addr, loc.cidade ? `${loc.cidade}${loc.uf ? '/' + loc.uf : ''}` : ''].filter(Boolean).join(' - ') ||
+    'Endereço não informado';
+  const actions: [string, string][] = [
+    ['Auditorias', `/auditorias?provider_id=${providerId}`],
+    ['Qualificações', `/qualificacao?provider_id=${providerId}`],
+    ['Planos de Ação', `/qualificacao?provider_id=${providerId}`],
+    ['Documentos', `/documentos?provider_id=${providerId}`],
+  ];
+  return (
+    <div className="rounded-xl border border-gray-200 p-4 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#00995D]/10 text-[#00995D]">
+              <Building2 className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-gray-900">{title}</h3>
+              {loc.sgu_location_code && <p className="font-mono text-xs text-gray-400">{loc.sgu_location_code}</p>}
+            </div>
+          </div>
+          <p className="mt-2.5 flex items-start gap-1.5 text-sm text-gray-600">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+            <span>{line}</span>
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-8 sm:justify-end">
+          <div>
+            <p className="text-xs text-gray-500">Nível Qualif.</p>
+            <p className={`mt-1 text-lg font-bold leading-none ${qualLevel ? QUAL_CLS[qualLevel] ?? 'text-gray-700' : 'text-gray-300'}`}>
+              {qualLevel || '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Documentos</p>
+            <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${docStatus.cls}`}>
+              {docStatus.label}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+        {actions.map(([label, to]) => (
+          <button
+            key={label}
+            onClick={() => navigate(to)}
+            className="rounded-lg bg-[#00995D]/5 px-3 py-1.5 text-xs font-medium text-[#00713f] transition-colors hover:bg-[#00995D]/10"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function ProviderDetail() {
@@ -111,6 +195,17 @@ export default function ProviderDetail() {
   const contactLoc = (provider.locations ?? []).find((l: any) => l.phone || l.email) ?? provider.locations?.[0];
   const rt = provider.responsavel_tecnico;
   const rtLabel = rt ? [rt.name, rt.council_registry].filter(Boolean).join(' — ') : null;
+
+  // Unidades: apenas endereços comerciais (exclui Residencial). Título: Sede Principal / Filial N.
+  let filialSeq = 0;
+  const unidades = (provider.locations ?? [])
+    .filter((l: any) => String(l.label ?? '').toLowerCase() !== 'residencial')
+    .map((loc: any) => {
+      const named = loc.label && !['comercial', 'residencial'].includes(String(loc.label).toLowerCase());
+      const title = named ? loc.label : loc.is_primary ? 'Sede Principal' : `Filial ${(filialSeq += 1)}`;
+      return { loc, title };
+    });
+  const docStatus = docStatusFor(provider.summary);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -229,52 +324,38 @@ export default function ProviderDetail() {
           )}
 
           {activeTab === 'unidades' && (
-            <div className="space-y-6">
-              <h2 className="text-lg font-bold text-gray-800">Unidades de Atendimento</h2>
-              {!provider.locations?.length ? (
-                <p className="text-gray-500 text-center py-12">Nenhuma unidade cadastrada.</p>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-bold text-gray-800">Unidades de Atendimento</h2>
+                {unidades.length > 0 && (
+                  <span className="text-sm text-gray-500">
+                    {unidades.length} {unidades.length === 1 ? 'local vinculado' : 'locais vinculados'} (SGU 2.0)
+                  </span>
+                )}
+              </div>
+              {unidades.length === 0 ? (
+                <p className="py-12 text-center text-gray-500">Nenhuma unidade comercial cadastrada.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-sm text-gray-500">
-                        <th className="pb-3 font-medium">Local</th>
-                        <th className="pb-3 font-medium">Endereço</th>
-                        <th className="pb-3 font-medium">Contato</th>
-                        <th className="pb-3 font-medium">Finalidade</th>
-                        <th className="pb-3 font-medium">Ativo</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-sm">
-                      {(provider.locations ?? []).map((loc: any) => (
-                        <tr key={loc.id} className="border-b border-gray-50">
-                          <td className="py-3 font-medium text-gray-800">{loc.label || '-'}</td>
-                          <td className="py-3 text-gray-600">
-                            {[loc.logradouro, loc.numero, loc.complemento, loc.bairro, loc.cidade, loc.uf].filter(Boolean).join(', ') || '-'}
-                          </td>
-                          <td className="py-3 text-gray-600">
-                            <div className="flex flex-col gap-0.5">
-                              {loc.phone && <span>{loc.phone}</span>}
-                              {loc.email && <span>{loc.email}</span>}
-                              {!loc.phone && !loc.email && '-'}
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <div className="flex flex-wrap gap-1">
-                              {loc.is_primary && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Principal</span>}
-                              {loc.in_medical_guide && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Guia Médico</span>}
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${loc.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                              {loc.active ? 'Ativo' : 'Inativo'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <div className="space-y-4">
+                    {unidades.map(({ loc, title }: { loc: any; title: string }) => (
+                      <Fragment key={loc.id}>
+                        <UnitCard
+                          title={title}
+                          loc={loc}
+                          qualLevel={provider.qualification_level}
+                          docStatus={docStatus}
+                          providerId={provider.id}
+                          navigate={navigate}
+                        />
+                      </Fragment>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Apenas endereços comerciais. Nível de qualificação e situação de documentos são consolidados por
+                    prestador.
+                  </p>
+                </>
               )}
             </div>
           )}

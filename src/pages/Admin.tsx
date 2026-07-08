@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
@@ -18,6 +18,7 @@ import {
   Stethoscope,
   Microscope,
   Activity,
+  Hospital,
   UserPlus,
   Settings,
   ClipboardList,
@@ -45,15 +46,15 @@ const TABS = [
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
 
-// Dados fictícios baseados nas informações fornecidas
-const STATS = [
-  { label: 'Total de Prestadores', value: '669', icon: Building2, color: 'bg-blue-500' },
-  { label: 'Médicos Cooperados', value: '456', icon: Stethoscope, color: 'bg-[#00995D]' },
-  { label: 'Médicos Credenciados', value: '35', icon: UserPlus, color: 'bg-teal-500' },
-  { label: 'Recursos Próprios', value: '25', icon: Activity, color: 'bg-orange-500' },
-  { label: 'Clínicas Médicas', value: '39', icon: Building2, color: 'bg-indigo-500' },
-  { label: 'Prof. Não Médicos e Clin. Multi', value: '74', icon: Users, color: 'bg-purple-500' },
-  { label: 'Laboratórios/Anátomos', value: '20', icon: Microscope, color: 'bg-pink-500' },
+// Categorias reais de prestador (provider_type vem como texto livre do SGU;
+// casamos por palavra-chave para tolerar variações de grafia/acentuação).
+const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) => boolean }[] = [
+  { key: 'clinica', label: 'Clínicas', icon: Building2, match: (t) => t.includes('CLINICA') },
+  { key: 'medico', label: 'Médicos', icon: Stethoscope, match: (t) => t.includes('MEDICO') },
+  { key: 'lab', label: 'Laboratórios', icon: Microscope, match: (t) => t.includes('LABORAT') },
+  { key: 'hospital', label: 'Hospitais', icon: Hospital, match: (t) => t.includes('HOSPITAL') },
+  { key: 'diag', label: 'Centros de Diagnóstico', icon: Activity, match: (t) => t.includes('CENTRO') || t.includes('DIAGN') },
+  { key: 'outros', label: 'Outros', icon: Users, match: () => true },
 ];
 
 const PRESTADORES_MOCK = [
@@ -277,6 +278,24 @@ export default function Admin() {
 
   const uniqueGroups = Array.from(new Set(providers.map(p => p.provider_group).filter(Boolean)));
 
+  // Estatísticas reais da rede, computadas dos prestadores já carregados (sem chamada extra).
+  const rede = useMemo(() => {
+    const total = providers.length;
+    let ativos = 0;
+    const counts: Record<string, number> = {};
+    for (const p of providers) {
+      if (String(p.status).toLowerCase() === 'ativo') ativos++;
+      const t = String(p.provider_type || '').toUpperCase();
+      const bucket = TYPE_BUCKETS.find(b => b.match(t))!;
+      counts[bucket.key] = (counts[bucket.key] || 0) + 1;
+    }
+    const composicao = TYPE_BUCKETS
+      .map(b => ({ key: b.key, label: b.label, icon: b.icon, count: counts[b.key] || 0 }))
+      .filter(b => b.count > 0)
+      .sort((a, b) => b.count - a.count);
+    return { total, ativos, inativos: total - ativos, composicao };
+  }, [providers]);
+
   if (user && !isAdmin) {
     return (
       <div className="max-w-7xl mx-auto space-y-6 text-center py-12">
@@ -348,27 +367,7 @@ export default function Admin() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         {activeTab === 'prestadores' && (
           <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-              <h2 className="text-lg font-bold text-gray-800">Visão Geral da Rede (Janeiro a Outubro de 2025)</h2>
-            </div>
-            
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              {STATS.map((stat, index) => {
-                const Icon = stat.icon;
-                return (
-                  <div key={index} className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex items-center gap-4">
-                    <div className={`p-3 rounded-lg text-white ${stat.color}`}>
-                      <Icon className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 font-medium">{stat.label}</p>
-                      <p className="text-2xl font-bold text-gray-800">{stat.value}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <RedeOverview rede={rede} loading={loading} />
 
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
               <div className="relative w-full md:w-96">
@@ -1290,6 +1289,142 @@ export default function Admin() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface RedeStats {
+  total: number;
+  ativos: number;
+  inativos: number;
+  composicao: { key: string; label: string; icon: any; count: number }[];
+}
+
+function RedeOverview({ rede, loading }: { rede: RedeStats; loading: boolean }) {
+  const nf = (n: number) => n.toLocaleString('pt-BR');
+  const pct = (n: number) => (rede.total ? (n / rede.total) * 100 : 0);
+  const pctLabel = (n: number) => {
+    const p = pct(n);
+    if (p > 0 && p < 1) return '<1%';
+    return `${Math.round(p)}%`;
+  };
+
+  if (loading && rede.total === 0) return <RedeOverviewSkeleton />;
+
+  if (rede.total === 0) {
+    return (
+      <div className="rounded-2xl border border-gray-100 bg-gray-50 px-6 py-10 text-center">
+        <Building2 className="mx-auto mb-3 h-9 w-9 text-gray-300" />
+        <p className="text-sm text-gray-500">Nenhum prestador cadastrado ainda.</p>
+      </div>
+    );
+  }
+
+  const pctAtivos = Math.round(pct(rede.ativos));
+
+  return (
+    <section aria-labelledby="rede-overview">
+      <div className="mb-4 flex items-baseline justify-between gap-4">
+        <h2 id="rede-overview" className="text-lg font-bold text-gray-800">Visão Geral da Rede</h2>
+        <span className="hidden text-sm text-gray-400 sm:inline">Atualizado a partir do cadastro atual</span>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        {/* Total + situação cadastral */}
+        <div className="grid items-stretch md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="border-b border-gray-100 p-6 md:border-b-0 md:border-r">
+            <div className="flex items-center gap-2 text-[#00995D]">
+              <Building2 className="h-4 w-4" />
+              <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">Total de prestadores</span>
+            </div>
+            <div className="mt-2 text-4xl font-bold tabular-nums text-gray-900">{nf(rede.total)}</div>
+            <p className="mt-1 text-sm text-gray-500">Rede credenciada da Unimed Criciúma</p>
+          </div>
+
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">Situação cadastral</span>
+              <span className="text-sm font-semibold text-[#00995D]">{pctAtivos}% ativos</span>
+            </div>
+            <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
+              <div
+                className="bg-[#00995D] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                style={{ width: `${pctAtivos}%` }}
+              />
+              <div
+                className="bg-gray-300 transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                style={{ width: `${100 - pctAtivos}%` }}
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+              <span className="flex items-center gap-2 text-gray-600">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#00995D]" />
+                Ativos <b className="tabular-nums text-gray-900">{nf(rede.ativos)}</b>
+              </span>
+              <span className="flex items-center gap-2 text-gray-600">
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+                Inativos <b className="tabular-nums text-gray-900">{nf(rede.inativos)}</b>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Composição por tipo */}
+        <div className="border-t border-gray-100 p-6">
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">Composição da rede</h3>
+          <ul className="space-y-3.5">
+            {rede.composicao.map((row) => {
+              const Icon = row.icon;
+              return (
+                <li key={row.key} className="flex items-center gap-3 sm:gap-4">
+                  <div className="flex w-32 shrink-0 items-center gap-2.5 sm:w-52">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#00995D]/10 text-[#00995D]">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="truncate text-sm font-medium text-gray-700">{row.label}</span>
+                  </div>
+                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-[#00995D] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                      style={{ width: `${Math.max(pct(row.count), 1.5)}%` }}
+                    />
+                  </div>
+                  <div className="w-16 shrink-0 text-right tabular-nums sm:w-24">
+                    <span className="text-sm font-semibold text-gray-900">{nf(row.count)}</span>
+                    <span className="ml-1.5 hidden text-xs text-gray-400 sm:inline">{pctLabel(row.count)}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RedeOverviewSkeleton() {
+  return (
+    <div className="animate-pulse overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <div className="grid md:grid-cols-2">
+        <div className="border-b border-gray-100 p-6 md:border-b-0 md:border-r">
+          <div className="h-3 w-32 rounded bg-gray-100" />
+          <div className="mt-3 h-9 w-24 rounded bg-gray-100" />
+        </div>
+        <div className="p-6">
+          <div className="h-3 w-32 rounded bg-gray-100" />
+          <div className="mt-3 h-2.5 w-full rounded-full bg-gray-100" />
+        </div>
+      </div>
+      <div className="space-y-3.5 border-t border-gray-100 p-6">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center gap-4">
+            <div className="h-8 w-40 rounded bg-gray-100" />
+            <div className="h-2.5 flex-1 rounded-full bg-gray-100" />
+            <div className="h-4 w-12 rounded bg-gray-100" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

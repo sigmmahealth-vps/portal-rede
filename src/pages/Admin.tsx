@@ -481,7 +481,7 @@ export default function Admin() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse [&_td]:pr-6 [&_th]:pr-6 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_th]:whitespace-nowrap">
                 <thead>
                   <tr className="border-b border-gray-100 text-sm text-gray-500">
                     <th className="pb-3 font-medium">Nome</th>

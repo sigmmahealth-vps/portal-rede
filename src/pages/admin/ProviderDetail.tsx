@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchApi } from '../../lib/api';
 import ProviderContactsPanel from './ProviderContactsPanel';
 import ProviderAccessTab from './ProviderAccessTab';
 import ProviderAuditTab from './ProviderAuditTab';
-import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin } from 'lucide-react';
+import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw } from 'lucide-react';
 
 const TABS = [
   { id: 'cadastrais', label: 'Dados Cadastrais', icon: Building2 },
@@ -17,17 +17,41 @@ const TABS = [
 
 type TabId = typeof TABS[number]['id'];
 
-function fieldGrid(pairs: Array<[string, string | null | undefined]>) {
+function Field({ label, value, mono, className = '' }: { label: string; value?: ReactNode; mono?: boolean; className?: string }) {
+  const empty = value === null || value === undefined || value === '';
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-      {pairs.map(([label, value]) => (
-        <div key={label}>
-          <p className="text-xs font-medium text-gray-500 uppercase">{label}</p>
-          <p className="text-sm text-gray-800 mt-0.5">{value || '-'}</p>
-        </div>
-      ))}
+    <div className={className}>
+      <dt className="text-xs font-medium text-gray-500">{label}</dt>
+      <dd className={`mt-0.5 text-sm ${empty ? 'text-gray-400' : 'text-gray-800'} ${mono && !empty ? 'font-mono' : ''}`}>
+        {empty ? '—' : value}
+      </dd>
     </div>
   );
+}
+
+function Group({ title, icon: Icon, children }: { title: string; icon: any; children: ReactNode }) {
+  return (
+    <div className="border-t border-gray-100 pt-6 first:border-t-0 first:pt-0">
+      <div className="mb-4 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-[#00995D]" />
+        <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+      </div>
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">{children}</dl>
+    </div>
+  );
+}
+
+function pessoaLabel(pt?: string | null): string | null {
+  if (pt === 'PJ') return 'Pessoa jurídica (PJ)';
+  if (pt === 'PF') return 'Pessoa física (PF)';
+  return pt ?? null;
+}
+
+function formatDoc(v?: string | null): string {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  return v ?? '';
 }
 
 export default function ProviderDetail() {
@@ -79,6 +103,10 @@ export default function ProviderDetail() {
       </div>
     );
   }
+
+  const specialties: string[] = (provider.specialties ?? []).filter(
+    (s: string) => s && !['N', '0', 'NAO', 'NÃO'].includes(String(s).toUpperCase()),
+  );
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -137,20 +165,56 @@ export default function ProviderDetail() {
           {activeTab === 'cadastrais' && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Dados Cadastrais</h2>
-              {fieldGrid([
-                ['Nome / Razão Social', provider.name],
-                ['Nome Fantasia', provider.trade_name],
-                ['Tipo de Pessoa', provider.person_type],
-                [provider.person_type === 'PF' ? 'CPF' : 'CNPJ', provider.person_type === 'PF' ? provider.cpf : provider.cnpj],
-                ['Registro no Conselho', provider.council_registry],
-                ['Tipo de Prestador (SGU)', provider.provider_type],
-                ['Área de Atuação', provider.area_atuacao],
-                ['Grupo', provider.provider_group],
-                ['Nível de Qualificação', provider.qualification_level],
-                ['Código SGU', provider.sgu_code],
-                ['Última Sincronização SGU', provider.sgu_synced_at ? new Date(provider.sgu_synced_at).toLocaleString('pt-BR') : null],
-                ['Especialidades', Array.isArray(provider.specialties) && provider.specialties.length > 0 ? provider.specialties.join(', ') : null],
-              ])}
+
+              <Group title="Identificação" icon={User}>
+                <Field label="Nome / razão social" value={provider.name} />
+                <Field label="Nome fantasia" value={provider.trade_name} />
+                <Field label="Tipo de pessoa" value={pessoaLabel(provider.person_type)} />
+                <Field
+                  label={provider.person_type === 'PF' ? 'CPF' : 'CNPJ'}
+                  value={formatDoc(provider.person_type === 'PF' ? provider.cpf : provider.cnpj)}
+                  mono
+                />
+                <Field label="Registro no conselho" value={provider.council_registry} />
+              </Group>
+
+              <Group title="Classificação na rede" icon={Layers}>
+                <Field label="Tipo de prestador (SGU)" value={provider.provider_type} />
+                <Field label="Grupo" value={provider.provider_group} />
+                <Field label="Área de atuação" value={provider.area_atuacao} />
+                <Field
+                  label="Nível de qualificação"
+                  value={
+                    provider.qualification_level ? (
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        Nível {provider.qualification_level}
+                      </span>
+                    ) : null
+                  }
+                />
+                <div className="sm:col-span-2">
+                  <dt className="text-xs font-medium text-gray-500">Especialidades</dt>
+                  {specialties.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {specialties.map((s) => (
+                        <span key={s} className="rounded-md bg-[#00995D]/10 px-2 py-1 text-xs font-medium text-[#00713f]">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <dd className="mt-0.5 text-sm text-gray-400">—</dd>
+                  )}
+                </div>
+              </Group>
+
+              <Group title="Integração SGU" icon={RefreshCw}>
+                <Field label="Código SGU" value={provider.sgu_code} mono />
+                <Field
+                  label="Última sincronização"
+                  value={provider.sgu_synced_at ? new Date(provider.sgu_synced_at).toLocaleString('pt-BR') : null}
+                />
+              </Group>
             </div>
           )}
 

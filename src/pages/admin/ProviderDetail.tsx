@@ -148,7 +148,7 @@ export default function ProviderDetail() {
                         <th className="pb-3 font-medium">Local</th>
                         <th className="pb-3 font-medium">Endereço</th>
                         <th className="pb-3 font-medium">Contato</th>
-                        <th className="pb-3 font-medium">Selos</th>
+                        <th className="pb-3 font-medium">Finalidade</th>
                         <th className="pb-3 font-medium">Ativo</th>
                       </tr>
                     </thead>

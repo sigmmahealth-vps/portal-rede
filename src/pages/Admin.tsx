@@ -481,7 +481,17 @@ export default function Admin() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse [&_td]:pr-6 [&_th]:pr-6 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_th]:whitespace-nowrap">
+              <table className="w-full min-w-[820px] table-fixed text-left border-collapse [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_td]:align-top [&_th]:align-bottom">
+                <colgroup>
+                  <col className="w-[22%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[7%]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-gray-100 text-sm text-gray-500">
                     <th className="pb-3 font-medium">Nome</th>
@@ -501,7 +511,7 @@ export default function Admin() {
                       onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
                       className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
                     >
-                      <td className="py-4 font-medium text-gray-800">{prestador.name}</td>
+                      <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
                       <td className="py-4 text-gray-600">{prestador.cnpj}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>

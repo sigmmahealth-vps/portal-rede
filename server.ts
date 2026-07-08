@@ -1315,6 +1315,144 @@ async function startServer() {
     }
   });
 
+  // === Gestão de Acessos do prestador (Tela 4 da spec) — acesso único, foco LGPD ===
+  const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado'];
+
+  async function findProviderUser(providerId: string) {
+    const { rows } = await query(
+      `SELECT id, name, email, role, is_active, last_login_at, last_login_ip, invite_status
+         FROM users
+        WHERE provider_id = $1 AND role = ANY($2)
+        ORDER BY id ASC LIMIT 1`,
+      [providerId, PROVIDER_ACCESS_ROLES],
+    );
+    return rows[0] ?? null;
+  }
+
+  app.get('/api/providers/:id/access', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { rows: provRows } = await query('SELECT id, name FROM providers WHERE id = $1', [req.params.id]);
+      if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
+      const user = await findProviderUser(req.params.id);
+      res.json({ exists: !!user, provider_name: provRows[0].name, user });
+    } catch (err: any) {
+      console.error('GET /providers/:id/access:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Cria (se não existe) ou atualiza o acesso único do prestador. Só admin.
+  app.post('/api/providers/:id/access', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const providerId = req.params.id;
+      const email = String(req.body?.email ?? '').trim().toLowerCase();
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        return res.status(400).json({ error: 'E-mail inválido.' });
+      }
+      if (password && password.length < 8) {
+        return res.status(400).json({ error: 'A senha deve ter ao menos 8 caracteres.' });
+      }
+      const { rows: provRows } = await query('SELECT id, name FROM providers WHERE id = $1', [providerId]);
+      if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
+
+      const existing = await findProviderUser(providerId);
+      try {
+        if (existing) {
+          if (password) {
+            const pwHash = await bcrypt.hash(password, 10);
+            await query(`UPDATE users SET email = $1, password = $2, invite_status = 'accepted' WHERE id = $3`, [email, pwHash, existing.id]);
+          } else {
+            await query('UPDATE users SET email = $1 WHERE id = $2', [email, existing.id]);
+          }
+          await auditLog({
+            query, userId: req.user.id, action: 'provider_access_updated',
+            meta: { provider_id: Number(providerId), user_id: existing.id, password_changed: !!password },
+            ip: hashClientIp(req),
+          });
+        } else {
+          if (!password) return res.status(400).json({ error: 'Defina uma senha para criar o acesso do prestador.' });
+          const pwHash = await bcrypt.hash(password, 10);
+          const { rows: created } = await query(
+            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
+             VALUES ($1, $2, $3, 'prestador', $4, true, 'accepted') RETURNING id`,
+            [provRows[0].name, email, pwHash, providerId],
+          );
+          await auditLog({
+            query, userId: req.user.id, action: 'provider_access_created',
+            meta: { provider_id: Number(providerId), user_id: created[0].id },
+            ip: hashClientIp(req),
+          });
+        }
+      } catch (e: any) {
+        if (e?.code === '23505') return res.status(409).json({ error: 'Este e-mail já está em uso por outro usuário.' });
+        throw e;
+      }
+      const user = await findProviderUser(providerId);
+      res.json({ exists: !!user, user });
+    } catch (err: any) {
+      console.error('POST /providers/:id/access:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Dispara e-mail de redefinição de senha para o acesso do prestador. Só admin.
+  app.post('/api/providers/:id/access/send-reset', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const user = await findProviderUser(req.params.id);
+      if (!user) return res.status(404).json({ error: 'Este prestador ainda não tem acesso cadastrado.' });
+      if (!user.is_active) return res.status(400).json({ error: 'Usuário inativo.' });
+
+      await query(`UPDATE password_setup_tokens SET used_at = now() WHERE user_id = $1 AND kind = 'reset' AND used_at IS NULL`, [user.id]);
+      const token = generateToken();
+      const tokenHash = await hashToken(token);
+      const expiresAt = expirationFor('reset');
+      await query(`INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at) VALUES ($1, $2, 'reset', $3)`, [user.id, tokenHash, expiresAt]);
+      const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
+      await mailer.sendPasswordReset(user.email, `${appUrl}/definir-senha?token=${token}`);
+      await auditLog({
+        query, userId: req.user.id, action: 'password_reset_requested',
+        meta: { provider_id: Number(req.params.id), user_id: user.id, by_admin: true },
+        ip: hashClientIp(req),
+      });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /providers/:id/access/send-reset:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Trilha de Histórico e Auditoria do prestador (Tela 5 da spec).
+  app.get('/api/providers/:id/audit', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { rows: userRows } = await query('SELECT id FROM users WHERE provider_id = $1', [req.params.id]);
+      const userIds = userRows.map((r: any) => r.id);
+      const { rows: events } = await query(
+        `SELECT al.id, al.action, al.success, al.ip_hash, al.created_at,
+                u.name AS actor_name, u.email AS actor_email
+           FROM access_logs al
+           LEFT JOIN users u ON u.id = al.user_id
+          WHERE al.user_id = ANY($1::int[])
+             OR al.meta->>'provider_id' = $2
+          ORDER BY al.created_at DESC
+          LIMIT 100`,
+        [userIds.length ? userIds : [-1], String(req.params.id)],
+      );
+      res.json({ events });
+    } catch (err: any) {
+      console.error('GET /providers/:id/audit:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Qualification Scripts
   app.get('/api/qualification-scripts', authenticate, async (req: any, res) => {
     try {

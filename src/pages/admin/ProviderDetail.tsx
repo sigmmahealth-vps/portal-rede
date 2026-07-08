@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchApi } from '../../lib/api';
 import ProviderContactsPanel from './ProviderContactsPanel';
-import { ArrowLeft, Building2, Users, FileText, ClipboardCheck } from 'lucide-react';
+import ProviderAccessTab from './ProviderAccessTab';
+import ProviderAuditTab from './ProviderAuditTab';
+import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin } from 'lucide-react';
 
 const TABS = [
   { id: 'cadastrais', label: 'Dados Cadastrais', icon: Building2 },
   { id: 'unidades', label: 'Unidades de Atendimento', icon: Building2 },
   { id: 'equipe', label: 'Equipe/Contatos', icon: Users },
   { id: 'documentos', label: 'Documentos e Qualificação', icon: FileText },
+  { id: 'acessos', label: 'Gestão de Acessos', icon: KeyRound },
+  { id: 'historico', label: 'Histórico e Auditoria', icon: History },
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
@@ -78,17 +82,32 @@ export default function ProviderDetail() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/admin')} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500">
+      <div className="flex items-start gap-4">
+        <button onClick={() => navigate('/admin')} className="mt-1 p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500">
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">{provider.name}</h1>
-          <span className={`inline-block mt-1 px-2.5 py-1 rounded-full text-xs font-medium ${
-            String(provider.status).toLowerCase() === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-          }`}>
-            {provider.status || '-'}
-          </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-800">{provider.name}</h1>
+            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
+              String(provider.status).toLowerCase() === 'ativo' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            }`}>
+              {provider.status || '-'}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+            {provider.sgu_code && (
+              <span>Código SGU: <span className="font-medium text-gray-700">{provider.sgu_code}</span></span>
+            )}
+            {provider.provider_type && <span>{provider.provider_type}</span>}
+            {provider.locations?.[0]?.cidade && (
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5" />
+                {provider.locations[0].cidade}
+                {provider.locations[0].uf ? `/${provider.locations[0].uf}` : ''}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -247,6 +266,20 @@ export default function ProviderDetail() {
                   Ver qualificação completa
                 </button>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'acessos' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-800">Gestão de Acessos</h2>
+              <ProviderAccessTab providerId={provider.id} />
+            </div>
+          )}
+
+          {activeTab === 'historico' && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-800">Histórico e Auditoria</h2>
+              <ProviderAuditTab providerId={provider.id} />
             </div>
           )}
         </div>

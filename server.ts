@@ -1286,6 +1286,14 @@ async function startServer() {
         [providerId]
       );
 
+      const { rows: rtRows } = await query(
+        `SELECT name, position, council_registry, phone, email
+           FROM provider_contacts
+          WHERE provider_id = $1 AND is_active IS NOT FALSE AND position ILIKE '%respons%'
+          ORDER BY id ASC LIMIT 1`,
+        [providerId],
+      );
+
       const documentsTotal = docStatusRows.reduce((sum: number, r: any) => sum + r.count, 0);
       const documentsPending = docStatusRows.find((r: any) => r.status === 'pendente')?.count ?? 0;
       const documentsExpired = docStatusRows.find((r: any) => r.status === 'vencido')?.count ?? 0;
@@ -1294,6 +1302,7 @@ async function startServer() {
         ...provider,
         locations,
         certifications,
+        responsavel_tecnico: rtRows[0] ?? null,
         summary: {
           documents_pending: documentsPending,
           documents_expired: documentsExpired,

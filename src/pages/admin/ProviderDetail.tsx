@@ -4,7 +4,7 @@ import { fetchApi } from '../../lib/api';
 import ProviderContactsPanel from './ProviderContactsPanel';
 import ProviderAccessTab from './ProviderAccessTab';
 import ProviderAuditTab from './ProviderAuditTab';
-import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw, Phone } from 'lucide-react';
 
 const TABS = [
   { id: 'cadastrais', label: 'Dados Cadastrais', icon: Building2 },
@@ -108,6 +108,10 @@ export default function ProviderDetail() {
     (s: string) => s && !['N', '0', 'NAO', 'NÃO'].includes(String(s).toUpperCase()),
   );
 
+  const contactLoc = (provider.locations ?? []).find((l: any) => l.phone || l.email) ?? provider.locations?.[0];
+  const rt = provider.responsavel_tecnico;
+  const rtLabel = rt ? [rt.name, rt.council_registry].filter(Boolean).join(' — ') : null;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex items-start gap-4">
@@ -176,6 +180,12 @@ export default function ProviderDetail() {
                   mono
                 />
                 <Field label="Registro no conselho" value={provider.council_registry} />
+              </Group>
+
+              <Group title="Contato" icon={Phone}>
+                <Field label="Telefone" value={contactLoc?.phone} />
+                <Field label="E-mail" value={contactLoc?.email} />
+                <Field label="Responsável técnico" value={rtLabel} className="sm:col-span-2" />
               </Group>
 
               <Group title="Classificação na rede" icon={Layers}>

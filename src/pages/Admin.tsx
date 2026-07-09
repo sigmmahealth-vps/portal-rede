@@ -297,9 +297,11 @@ export default function Admin() {
   const rede = useMemo(() => {
     const total = providers.length;
     let ativos = 0;
+    let atualizadoEm: string | null = null;
     const counts: Record<string, number> = {};
     for (const p of providers) {
       if (String(p.status).toLowerCase() === 'ativo') ativos++;
+      if (p.sgu_synced_at && (!atualizadoEm || p.sgu_synced_at > atualizadoEm)) atualizadoEm = p.sgu_synced_at;
       const t = String(p.provider_type || '').toUpperCase();
       const bucket = TYPE_BUCKETS.find(b => b.match(t))!;
       counts[bucket.key] = (counts[bucket.key] || 0) + 1;
@@ -308,7 +310,7 @@ export default function Admin() {
       .map(b => ({ key: b.key, label: b.label, icon: b.icon, count: counts[b.key] || 0 }))
       .filter(b => b.count > 0)
       .sort((a, b) => b.count - a.count);
-    return { total, ativos, inativos: total - ativos, composicao };
+    return { total, ativos, inativos: total - ativos, composicao, atualizadoEm };
   }, [providers]);
 
   // Lista de municípios (localização primária), fundindo duplicatas de caixa/acento.
@@ -1413,6 +1415,7 @@ interface RedeStats {
   ativos: number;
   inativos: number;
   composicao: { key: string; label: string; icon: any; count: number }[];
+  atualizadoEm: string | null;
 }
 
 function RedeOverview({ rede, loading }: { rede: RedeStats; loading: boolean }) {
@@ -1441,7 +1444,11 @@ function RedeOverview({ rede, loading }: { rede: RedeStats; loading: boolean }) 
     <section aria-labelledby="rede-overview">
       <div className="mb-4 flex items-baseline justify-between gap-4">
         <h2 id="rede-overview" className="text-lg font-bold text-gray-800">Visão Geral da Rede</h2>
-        <span className="hidden text-sm text-gray-400 sm:inline">Atualizado a partir do cadastro atual</span>
+        <span className="hidden text-sm text-gray-400 sm:inline">
+          {rede.atualizadoEm
+            ? `Atualizado em ${new Date(rede.atualizadoEm).toLocaleDateString('pt-BR')}`
+            : 'Atualizado a partir do cadastro atual'}
+        </span>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">

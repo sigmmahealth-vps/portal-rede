@@ -184,7 +184,11 @@ export default function PrestadorView({ user }: { user: any }) {
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold text-secondary-900">{inst.script_title}</h3>
-                <p className="mt-1 text-xs text-gray-500">Enviado em: {new Date(inst.started_at).toLocaleDateString()}</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {inst.status === 'finalizado'
+                    ? `Enviado em: ${new Date(inst.completed_at || inst.started_at).toLocaleDateString()}`
+                    : `Iniciado em: ${new Date(inst.started_at).toLocaleDateString()}`}
+                </p>
               </div>
               {inst.status === 'finalizado' && inst.seal ? (
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-800">

@@ -26,6 +26,10 @@ import {
 } from 'recharts';
 import AuditorView from './AuditorView'; // Admins can probably toggle to Auditor view
 
+const SEAL_COLORS: Record<string, string> = {
+  'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
+};
+
 export default function GestorDashboard({ user }: { user: any }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -141,7 +145,7 @@ export default function GestorDashboard({ user }: { user: any }) {
                  </div>
                  <div>
                    <p className="text-sm text-gray-500 font-medium">Não Conformidades</p>
-                   <p className="text-2xl font-bold text-gray-900">12</p>
+                   <p className="text-2xl font-bold text-gray-900">{data.non_conformities}</p>
                  </div>
                </div>
              </div>
@@ -152,13 +156,7 @@ export default function GestorDashboard({ user }: { user: any }) {
               <h3 className="text-lg font-bold text-gray-900 mb-4">Evolução do Nível de Conformidade</h3>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[
-                    { name: 'Jan', media: 65 },
-                    { name: 'Fev', media: 68 },
-                    { name: 'Mar', media: 72 },
-                    { name: 'Abr', media: 75 },
-                    { name: 'Mai', media: 76 }
-                  ]}>
+                  <LineChart data={data.evolution || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} />
                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} domain={[0, 100]} />
@@ -175,12 +173,7 @@ export default function GestorDashboard({ user }: { user: any }) {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={[
-                        { name: 'Ouro', value: 10, color: '#FCD34D' },
-                        { name: 'Prata', value: 30, color: '#9CA3AF' },
-                        { name: 'Bronze', value: 20, color: '#B45309' },
-                        { name: 'Não Qualificado', value: 40, color: '#EF4444' }
-                      ]}
+                      data={data.seal_distribution || []}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -188,13 +181,8 @@ export default function GestorDashboard({ user }: { user: any }) {
                       paddingAngle={5}
                       dataKey="value"
                     >
-                      {[
-                        { name: 'Ouro', value: 10, color: '#FCD34D' },
-                        { name: 'Prata', value: 30, color: '#9CA3AF' },
-                        { name: 'Bronze', value: 20, color: '#B45309' },
-                        { name: 'Não Qualificado', value: 40, color: '#EF4444' }
-                      ].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      {(data.seal_distribution || []).map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={SEAL_COLORS[entry.name] || '#CBD5E1'} />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -223,24 +211,19 @@ export default function GestorDashboard({ user }: { user: any }) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="p-4"><div className="w-8 h-8 rounded bg-yellow-100 text-yellow-700 font-bold flex items-center justify-center">1º</div></td>
-                    <td className="p-4 font-medium text-gray-900">CardioClin Especialidades</td>
-                    <td className="p-4 font-bold text-emerald-600">98%</td>
-                    <td className="p-4"><span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold uppercase tracking-wide">Ouro</span></td>
-                  </tr>
-                  <tr className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="p-4"><div className="w-8 h-8 rounded bg-gray-100 text-gray-700 font-bold flex items-center justify-center">2º</div></td>
-                    <td className="p-4 font-medium text-gray-900">Hospital São José</td>
-                    <td className="p-4 font-bold text-emerald-600">95%</td>
-                    <td className="p-4"><span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold uppercase tracking-wide">Ouro</span></td>
-                  </tr>
-                  <tr className="hover:bg-gray-50">
-                    <td className="p-4"><div className="w-8 h-8 rounded bg-orange-100 text-orange-700 font-bold flex items-center justify-center">3º</div></td>
-                    <td className="p-4 font-medium text-gray-900">Clínica de Fisioterapia Movimento</td>
-                    <td className="p-4 font-bold text-emerald-600">91%</td>
-                    <td className="p-4"><span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold uppercase tracking-wide">Ouro</span></td>
-                  </tr>
+                  {(data.ranking || []).map((r: any, i: number) => (
+                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="p-4"><div className="w-8 h-8 rounded bg-gray-100 text-gray-700 font-bold flex items-center justify-center">{i + 1}º</div></td>
+                      <td className="p-4 font-medium text-gray-900">{r.provider}</td>
+                      <td className="p-4 font-bold text-emerald-600">{r.score}%</td>
+                      <td className="p-4">{r.seal
+                        ? <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold uppercase tracking-wide">{r.seal}</span>
+                        : <span className="text-gray-400 text-xs">—</span>}</td>
+                    </tr>
+                  ))}
+                  {(!data.ranking || data.ranking.length === 0) && (
+                    <tr><td colSpan={4} className="p-6 text-center text-gray-400 text-sm">Nenhuma avaliação finalizada ainda.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>

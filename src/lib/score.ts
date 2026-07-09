@@ -18,6 +18,10 @@ export function computeScore(
     if (a?.answer_value === 'na') continue;
     const pts = Number(q.max_score) || 0;
     maxPossible += pts;
+    // ponytail: 'sim' pontua o peso cheio porque todo critério é sim_nao hoje
+    // (sim ⇒ score_obtained === max_score). Quando o parser passar a emitir tipos
+    // ≠ sim_nao (ver marcador em roteiro-parser.ts), esta soma precisa passar a ler
+    // o score_obtained real do answer — senão diverge do que o auditor/dashboard esperam.
     if (a?.answer_value === 'sim') score += pts;
   }
   const percentual = maxPossible > 0 ? (score / maxPossible) * 100 : 0;

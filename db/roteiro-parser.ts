@@ -185,6 +185,9 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
     const maxScore = num(row[h.colMax]) ?? 0;
     const weight = num(row[h.colCons]) ?? maxScore;
     const classCell = h.colClass >= 0 ? clean(row[h.colClass]) : '';
+    // ponytail: hoje S/DL/E/C só alimenta `dimension`; o tipo de resposta é sempre
+    // tratado como sim_nao no import. Adiado: ler a coluna "Tipo" e emitir o tipo real
+    // (numerico/data/texto/upload/DL) — ver spec 5.4.3.3 e docs/superpowers/specs/2026-07-09-qualificacao-admin-prestador-design.md.
     const markMatch = text.match(/"\s*(DL|S|C|E)\s*"/i);
     const dimension = classCell ? mapClass(classCell) : markMatch ? mapClass(markMatch[1]) : null;
     questions.push({

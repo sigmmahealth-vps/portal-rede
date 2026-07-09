@@ -2676,6 +2676,8 @@ async function startServer() {
           for (const q of parsed.questions) {
             const sectionId = q.sectionTmp != null ? idByTmp.get(q.sectionTmp) ?? null : null;
             if (sectionId == null) continue;
+            // ponytail: type fixo em 'sim_nao' — todo roteiro atual é conformidade + evidência.
+            // Adiado: derivar o type do "Tipo" (S/DL/E/C) quando o parser passar a lê-lo.
             await client.query(
               `INSERT INTO eval_questions
                  (section_id, code, text, legislation, type, weight, max_score, dimension,

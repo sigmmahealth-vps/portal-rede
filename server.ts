@@ -3006,11 +3006,42 @@ async function startServer() {
 
       const { rows: instancesByStatus } = await query("SELECT status, COUNT(*) as count FROM eval_instances GROUP BY status");
 
+      const { rows: ncRows } = await query(
+        'SELECT COUNT(*)::int AS count FROM eval_answers WHERE is_non_compliant = true'
+      );
+
+      const { rows: sealRows } = await query(`
+        SELECT COALESCE(seal, 'Não Qualificado') AS name, COUNT(*)::int AS value
+        FROM eval_instances WHERE status = 'finalizado'
+        GROUP BY COALESCE(seal, 'Não Qualificado')
+      `);
+
+      const { rows: rankingRows } = await query(`
+        SELECT COALESCE(p.trade_name, p.name) AS provider, ROUND(ei.percentual)::int AS score, ei.seal
+        FROM eval_instances ei
+        JOIN providers p ON p.id = ei.provider_id
+        WHERE ei.status = 'finalizado'
+        ORDER BY ei.percentual DESC
+        LIMIT 10
+      `);
+
+      const { rows: evoRows } = await query(`
+        SELECT to_char(date_trunc('month', completed_at), 'YYYY-MM') AS name,
+               ROUND(AVG(percentual))::int AS media
+        FROM eval_instances
+        WHERE status = 'finalizado' AND completed_at IS NOT NULL
+        GROUP BY 1 ORDER BY 1
+      `);
+
       res.json({
         total: (totalRows[0] as any).count,
         approved: (approvedRows[0] as any).count,
         avg_score: (avgRows[0] as any).avg || 0,
-        by_status: instancesByStatus
+        by_status: instancesByStatus,
+        non_conformities: (ncRows[0] as any).count,
+        seal_distribution: sealRows,
+        ranking: rankingRows,
+        evolution: evoRows
       });
     } catch (err: any) {
       console.error(err);

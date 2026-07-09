@@ -59,6 +59,23 @@ export default function GestorDashboard({ user }: { user: any }) {
     }
   };
 
+  const exportRankingCsv = () => {
+    const rows = data?.ranking || [];
+    const headers = ['Colocacao', 'Prestador', 'Score', 'Selo'];
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((r: any, i: number) =>
+        [i + 1, `"${(r.provider || '').replace(/"/g, '""')}"`, r.score, r.seal || ''].join(',')),
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'ranking_qualificacao.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (viewMode === 'auditor') {
     return (
       <div>
@@ -83,9 +100,9 @@ export default function GestorDashboard({ user }: { user: any }) {
           <p className="text-sm text-gray-500">Visão Estratégica da Rede Prestadora - RN 630</p>
         </div>
         <div className="flex gap-3">
-          <button 
+          <button
             className="btn btn-outline"
-            onClick={() => {}}
+            onClick={exportRankingCsv}
           >
             Exportar Relatório
           </button>

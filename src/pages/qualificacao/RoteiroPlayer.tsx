@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../../lib/api';
 import { computeScore } from '../../lib/score';
 import {
@@ -96,6 +96,32 @@ const DIM_STYLES: Record<string, string> = {
 const dimClass = (d?: string | null) =>
   (d && DIM_STYLES[d]) || 'bg-gray-100 text-gray-600 border-gray-200';
 
+const SECTION_RE = /^\s*se[çc][ãa]o\s+\d/i;
+
+/**
+ * Grupos de navegação do stepper = as macro-seções do roteiro.
+ * Alguns roteiros têm um grupo-raiz acima das seções (ex.: "INFRAESTRUTURA E
+ * PROCESSOS" > SEÇÃO 1/2/3). Quando existem nós nomeados "SEÇÃO N", eles são os
+ * grupos; senão, caímos nas raízes que têm critérios. Sempre com critérios na subárvore.
+ */
+function computeStepGroups(sections: Section[], questions: Question[]): Section[] {
+  const childrenByParent = new Map<number | null, Section[]>();
+  for (const s of sections) {
+    const k = s.parent_section_id ?? null;
+    const arr = childrenByParent.get(k);
+    if (arr) arr.push(s); else childrenByParent.set(k, [s]);
+  }
+  const secWithQ = new Set(questions.map(q => q.section_id));
+  const subtreeHasQ = (id: number): boolean =>
+    secWithQ.has(id) || (childrenByParent.get(id) ?? []).some(c => subtreeHasQ(c.id));
+
+  const named = sections.filter(s => SECTION_RE.test(s.name) && subtreeHasQ(s.id));
+  const groups = named.length
+    ? named
+    : (childrenByParent.get(null) ?? []).filter(s => subtreeHasQ(s.id));
+  return [...groups].sort((a, b) => a.order_index - b.order_index);
+}
+
 function CardSkeleton() {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-6">
@@ -135,10 +161,18 @@ export default function RoteiroPlayer({
 
   // Real instance ID (if we started a new one)
   const [currentInstanceId, setCurrentInstanceId] = useState<number | null>(instanceId || null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadScript();
   }, [scriptId]);
+
+  // Seleciona a primeira macro-seção ao carregar (ou se a seleção sair de sincronia).
+  useEffect(() => {
+    if (!sections.length) return;
+    const groups = computeStepGroups(sections, questions);
+    setActiveSectionId(prev => (prev && groups.some(g => g.id === prev)) ? prev : (groups[0]?.id ?? null));
+  }, [sections, questions]);
 
   const loadScript = async () => {
     setLoading(true);
@@ -173,9 +207,7 @@ export default function RoteiroPlayer({
 
       setSections(visibleSections);
       setQuestions(allQuestions);
-
-      const firstRoot = visibleSections.find((s: Section) => !s.parent_section_id) || visibleSections[0];
-      if (firstRoot) setActiveSectionId(firstRoot.id);
+      // A seleção da primeira macro-seção é feita no useEffect (computeStepGroups).
 
       if (instanceId) {
         const instanceData = await fetchApi(`/eval/instances/${instanceId}`);
@@ -290,11 +322,11 @@ export default function RoteiroPlayer({
       if (!goToNext) {
         alert('Progresso salvo com sucesso!');
       } else {
-        const roots = sections.filter(s => !s.parent_section_id);
+        const roots = computeStepGroups(sections, questions);
         const currentIndex = roots.findIndex(s => s.id === activeSectionId);
         if (currentIndex !== -1 && currentIndex < roots.length - 1) {
           setActiveSectionId(roots[currentIndex + 1].id);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         } else if (currentIndex === roots.length - 1) {
           const pend = pendingItems();
           if (pend.length > 0) {
@@ -360,7 +392,8 @@ export default function RoteiroPlayer({
     return ids;
   };
 
-  const rootSections = childrenByParent.get(null) ?? [];
+  // Grupos do stepper = macro-seções (SEÇÃO 1/2/3), não o grupo-raiz que às vezes as envolve.
+  const rootSections = computeStepGroups(sections, questions);
   const activeRootIndex = rootSections.findIndex(s => s.id === activeSectionId);
   const activeRoot = rootSections[activeRootIndex] ?? rootSections[0];
   const isLastRoot = activeRootIndex === rootSections.length - 1;
@@ -401,10 +434,13 @@ export default function RoteiroPlayer({
   ] as const;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
+    // Painel de trabalho: cobre a área de conteúdo (abaixo do topo do portal, à direita do menu).
+    // Cabeçalho e rail ficam fixos; o scroll é interno, só nos itens.
+    <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#f4f4f4] lg:left-20">
 
-      {/* Cabeçalho fixo: pina no topo do scroll enquanto os itens rolam. */}
-      <div className="sticky top-0 z-20 border-b border-gray-200 bg-[#f4f4f4] pb-4">
+      {/* Cabeçalho fixo (fora do scroll) */}
+      <header className="shrink-0 border-b border-gray-200 bg-[#f4f4f4]">
+        <div className="mx-auto w-full max-w-7xl px-4 pb-4 pt-3 sm:px-6">
         <button
           onClick={onClose}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-emerald-700"
@@ -439,23 +475,28 @@ export default function RoteiroPlayer({
             Salvar e continuar depois
           </button>
         </div>
-      </div>
-
-      {/* Resumo de progresso (mobile — o rail vira faixa no topo) */}
-      {!loading && (
-        <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 lg:hidden">
-          <Donut value={progressPct} size={60} stroke={7} />
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Progresso</p>
-            <p className="text-sm font-semibold text-secondary-900">
-              {answeredCount} de {questions.length} critérios
-            </p>
-            <p className="text-xs text-gray-500">respondidos</p>
-          </div>
         </div>
-      )}
+      </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {/* Corpo com scroll — só os itens rolam; cabeçalho e rail ficam fixos. */}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
+
+          {/* Resumo de progresso (mobile — o rail vira faixa no topo) */}
+          {!loading && (
+            <div className="mb-6 flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 lg:hidden">
+              <Donut value={progressPct} size={60} stroke={7} />
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Progresso</p>
+                <p className="text-sm font-semibold text-secondary-900">
+                  {answeredCount} de {questions.length} critérios
+                </p>
+                <p className="text-xs text-gray-500">respondidos</p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
 
         {/* Conteúdo principal */}
         <main className="min-w-0 space-y-6">
@@ -665,7 +706,7 @@ export default function RoteiroPlayer({
           {!loading && !emptyGroup && (
             <div className="flex items-center justify-between border-t border-gray-200 pt-4">
               <button
-                onClick={() => { if (activeRootIndex > 0) { setActiveSectionId(rootSections[activeRootIndex - 1].id); window.scrollTo({ top: 0, behavior: 'smooth' }); } }}
+                onClick={() => { if (activeRootIndex > 0) { setActiveSectionId(rootSections[activeRootIndex - 1].id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); } }}
                 disabled={activeRootIndex <= 0}
                 className="inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40"
               >
@@ -685,8 +726,8 @@ export default function RoteiroPlayer({
 
         {/* Rail de progresso (desktop) — fixo enquanto os itens rolam. */}
         <aside className="hidden lg:block">
-          {/* top-[7rem] ≈ altura do cabeçalho fixo; rola internamente se houver muitas seções. */}
-          <div className="sticky top-[7rem] max-h-[calc(100dvh-9rem)] space-y-4 overflow-y-auto pr-1">
+          {/* Fixo no topo do corpo com scroll; rola internamente se houver muitas seções. */}
+          <div className="sticky top-0 max-h-[calc(100vh-10rem)] space-y-4 overflow-y-auto pr-1">
             <p className="px-1 text-sm font-bold text-secondary-900">{script?.title || 'Roteiro de Qualificação'}</p>
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="flex items-center gap-4">
@@ -708,7 +749,7 @@ export default function RoteiroPlayer({
                 return (
                   <button
                     key={sec.id}
-                    onClick={() => { setActiveSectionId(sec.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    onClick={() => { setActiveSectionId(sec.id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
                       isActive ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'hover:bg-gray-50'
                     }`}
@@ -732,6 +773,8 @@ export default function RoteiroPlayer({
             </nav>
           </div>
         </aside>
+          </div>
+        </div>
       </div>
     </div>
   );

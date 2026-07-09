@@ -224,6 +224,11 @@ export default function RoteiroPlayer({
           setActiveSectionId(rootSections[currentIndex + 1].id);
           window.scrollTo(0, 0);
         } else if (currentIndex === rootSections.length - 1) {
+          const pend = pendingItems();
+          if (pend.length > 0) {
+            alert(`Há ${pend.length} critério(s) pendente(s) (sem resposta, evidência ou justificativa). Complete-os antes de finalizar.`);
+            return;
+          }
           if (confirm('Deseja concluir a avaliação? Ela será enviada para análise.')) {
             await finishEvaluation(instId);
           }
@@ -306,6 +311,16 @@ export default function RoteiroPlayer({
     const answeredCount = Object.keys(answers).length;
     return questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
   };
+
+  // Pendência = critério sem resposta; ou evidência obrigatória sem arquivo (exceto N/A);
+  // ou N/A sem justificativa.
+  const pendingItems = () => questions.filter(q => {
+    const a = answers[q.id];
+    if (!a?.answer_value) return true;
+    if (a.answer_value === 'na') return !a.provider_observation?.trim();
+    if (q.evidence_required && !a.file_url) return true;
+    return false;
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
@@ -414,6 +429,11 @@ export default function RoteiroPlayer({
                                     {q.max_score > 0 && (
                                       <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-100">
                                         {q.max_score} pts
+                                      </span>
+                                    )}
+                                    {pendingItems().some(pq => pq.id === q.id) && (
+                                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700 border border-amber-200">
+                                        Pendente
                                       </span>
                                     )}
                                   </div>

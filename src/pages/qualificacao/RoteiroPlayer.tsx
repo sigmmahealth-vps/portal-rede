@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from '../../lib/api';
+import { computeScore } from '../../lib/score';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, AlertCircle, Search, Save, X } from 'lucide-react';
 
 interface Question {
@@ -31,6 +32,7 @@ interface Answer {
   file?: File | null;
   file_url?: string;
   is_na?: boolean;
+  provider_observation?: string;
 }
 
 export default function RoteiroPlayer({ 
@@ -128,6 +130,13 @@ export default function RoteiroPlayer({
     }));
   };
 
+  const handleObservationChange = (questionId: number, value: string) => {
+    setAnswers(prev => ({
+      ...prev,
+      [questionId]: { ...prev[questionId], provider_observation: value },
+    }));
+  };
+
   const handleFileUpload = async (questionId: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -192,6 +201,7 @@ export default function RoteiroPlayer({
         question_id: parseInt(qId),
         answer_value: answers[parseInt(qId)].answer_value,
         score_obtained: answers[parseInt(qId)].score_obtained,
+        provider_observation: answers[parseInt(qId)].provider_observation || null,
         is_non_compliant: (answers[parseInt(qId)].answer_value === 'nao' || answers[parseInt(qId)].answer_value === 'NAO') ? 1 : 0
       }));
 
@@ -225,20 +235,8 @@ export default function RoteiroPlayer({
   };
 
   const finishEvaluation = async (instId: number) => {
-    let totalScore = 0;
-    let maxScore = 0;
-    
-    questions.forEach(q => {
-      // numeric do Postgres chega como string ("10.00"); coerção evita concatenação.
-      const pts = Number(q.max_score) || 0;
-      maxScore += pts;
-      if (answers[q.id]?.answer_value === 'sim') {
-        totalScore += pts;
-      }
-    });
+    const { score: totalScore, maxPossible: maxScore, percentual } = computeScore(questions, answers);
 
-    const percentual = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
-    
     try {
       await fetchApi(`/eval/instances/${instId}/status`, {
         method: 'PUT',
@@ -437,9 +435,35 @@ export default function RoteiroPlayer({
                                       NÃO
                                     </label>
                                     <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer font-medium text-sm transition-all ${ans?.answer_value === 'na' ? 'bg-gray-100 border-gray-400 text-gray-800 ring-1 ring-gray-400' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                                      <input type="radio" name={`q_${q.id}`} className="hidden" checked={ans?.answer_value === 'na'} onChange={() => handleAnswerChange(q.id, 'na', q.max_score)} />
+                                      <input type="radio" name={`q_${q.id}`} className="hidden" checked={ans?.answer_value === 'na'} onChange={() => handleAnswerChange(q.id, 'na', 0)} />
                                       N/A
                                     </label>
+                                  </div>
+                                )}
+
+                                {ans?.answer_value === 'na' && (
+                                  <div className="mt-3">
+                                    <label className="text-sm font-bold text-gray-700 block mb-1">
+                                      Justificativa (obrigatória para "Não se aplica")
+                                    </label>
+                                    <textarea
+                                      value={ans?.provider_observation || ''}
+                                      onChange={(e) => handleObservationChange(q.id, e.target.value)}
+                                      className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+                                      rows={2}
+                                      placeholder="Explique por que este critério não se aplica ao seu estabelecimento."
+                                    />
+                                  </div>
+                                )}
+                                {ans?.answer_value && ans.answer_value !== 'na' && (
+                                  <div className="mt-3">
+                                    <label className="text-xs font-semibold text-gray-500 block mb-1">Observação (opcional)</label>
+                                    <textarea
+                                      value={ans?.provider_observation || ''}
+                                      onChange={(e) => handleObservationChange(q.id, e.target.value)}
+                                      className="w-full border border-gray-200 rounded-lg p-2 text-sm"
+                                      rows={2}
+                                    />
                                   </div>
                                 )}
 

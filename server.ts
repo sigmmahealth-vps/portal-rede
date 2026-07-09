@@ -2753,7 +2753,18 @@ async function startServer() {
 
   app.get('/api/eval/scripts', authenticate, async (req: any, res) => {
     try {
-      const { rows: scripts } = await query('SELECT * FROM eval_scripts ORDER BY created_at DESC');
+      const { role, provider_id } = req.user;
+      // Prestador/cooperado só enxerga o roteiro do seu tipo (providers.eval_script_id);
+      // admin/auditoria gerenciam todos.
+      // ponytail: filtra pelo eval_script_id fixado no match; se o roteiro for reversionado,
+      // resolver p/ versão vigente por source_file. Hoje há 1 versão por roteiro.
+      const scripts = (role === 'prestador' || role === 'cooperado')
+        ? (await query(
+            `SELECT s.* FROM eval_scripts s
+             JOIN providers p ON p.eval_script_id = s.id
+             WHERE p.id = $1
+             ORDER BY s.created_at DESC`, [provider_id])).rows
+        : (await query('SELECT * FROM eval_scripts ORDER BY created_at DESC')).rows;
 
       // Maior versão por source_file → define a vigência ("is_current").
       const maxBySource = new Map<string, number>();

@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from '../../lib/api';
 import { computeScore } from '../../lib/score';
-import { Check, ChevronLeft, ChevronRight, UploadCloud, AlertCircle, Search, Save, X } from 'lucide-react';
+import {
+  Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
+  AlertTriangle, MessageSquarePlus, Save, Loader2, Paperclip,
+} from 'lucide-react';
 
 interface Question {
   id: number;
@@ -35,14 +38,89 @@ interface Answer {
   provider_observation?: string;
 }
 
-export default function RoteiroPlayer({ 
-  scriptId, 
-  instanceId, 
+// --- Peças de UI --------------------------------------------------------------
+
+/** Donut de progresso com o percentual no centro. */
+function Donut({ value, size = 76, stroke = 8 }: { value: number; size?: number; stroke?: number }) {
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const pct = Math.min(100, Math.max(0, value));
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#00995d" strokeWidth={stroke}
+          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)}
+          className="transition-[stroke-dashoffset] duration-500 ease-out"
+        />
+      </svg>
+      <span className="absolute inset-0 grid place-items-center text-sm font-bold text-secondary-900">
+        {Math.round(pct)}%
+      </span>
+    </div>
+  );
+}
+
+/** Indicador de seção no stepper: anel de fração, ou ✓ quando completa. */
+function MiniRing({ done, total, active }: { done: number; total: number; active: boolean }) {
+  const complete = total > 0 && done >= total;
+  if (complete) {
+    return (
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-500 text-white">
+        <Check className="h-4 w-4" strokeWidth={3} />
+      </span>
+    );
+  }
+  const size = 28, stroke = 3, r = (size - stroke) / 2, circ = 2 * Math.PI * r;
+  const value = total > 0 ? done / total : 0;
+  return (
+    <span className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={active ? '#00995d' : '#9ca3af'}
+          strokeWidth={stroke} strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - value)}
+          className="transition-[stroke-dashoffset] duration-500 ease-out"
+        />
+      </svg>
+    </span>
+  );
+}
+
+const DIM_STYLES: Record<string, string> = {
+  'Segurança': 'bg-sky-50 text-sky-700 border-sky-200',
+  'Conforto': 'bg-violet-50 text-violet-700 border-violet-200',
+  'Experiência do Cliente': 'bg-amber-50 text-amber-700 border-amber-200',
+};
+const dimClass = (d?: string | null) =>
+  (d && DIM_STYLES[d]) || 'bg-gray-100 text-gray-600 border-gray-200';
+
+function CardSkeleton() {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-6">
+      <div className="animate-pulse space-y-4">
+        <div className="flex gap-2">
+          <div className="h-5 w-12 rounded bg-gray-200" />
+          <div className="h-5 w-24 rounded bg-gray-200" />
+        </div>
+        <div className="h-4 w-3/4 rounded bg-gray-200" />
+        <div className="h-9 w-56 rounded-xl bg-gray-100" />
+      </div>
+    </div>
+  );
+}
+
+// --- Componente principal -----------------------------------------------------
+
+export default function RoteiroPlayer({
+  scriptId,
+  instanceId,
   onClose,
-  providerId
-}: { 
-  scriptId: number; 
-  instanceId?: number; 
+  providerId,
+}: {
+  scriptId: number;
+  instanceId?: number;
   onClose: () => void;
   providerId: number;
 }) {
@@ -51,9 +129,10 @@ export default function RoteiroPlayer({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
+  const [obsOpen, setObsOpen] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
+
   // Real instance ID (if we started a new one)
   const [currentInstanceId, setCurrentInstanceId] = useState<number | null>(instanceId || null);
 
@@ -127,8 +206,8 @@ export default function RoteiroPlayer({
       [questionId]: {
         ...prev[questionId],
         answer_value: value,
-        score_obtained: score
-      }
+        score_obtained: score,
+      },
     }));
   };
 
@@ -143,15 +222,14 @@ export default function RoteiroPlayer({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Actually upload it now, or keep it in state. Better to upload it if we have an instance ID.
-    // If no instance ID, we must create one.
+    // Precisamos de uma instância p/ anexar; cria sob demanda se ainda não existe.
     let instId = currentInstanceId;
     if (!instId) {
       try {
         const { id } = await fetchApi('/eval/instances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: scriptId, provider_id: providerId })
+          body: JSON.stringify({ script_id: scriptId, provider_id: providerId }),
         });
         instId = id;
         setCurrentInstanceId(id);
@@ -170,15 +248,11 @@ export default function RoteiroPlayer({
     try {
       const res = await fetchApi(`/eval/instances/${instId}/evidence`, {
         method: 'POST',
-        body: formData
+        body: formData,
       });
-      
       setAnswers(prev => ({
         ...prev,
-        [questionId]: {
-          ...prev[questionId],
-          file_url: res.url
-        }
+        [questionId]: { ...prev[questionId], file_url: res.url },
       }));
     } catch (err) {
       alert('Erro ao fazer upload da evidência');
@@ -193,37 +267,35 @@ export default function RoteiroPlayer({
         const { id } = await fetchApi('/eval/instances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: scriptId, provider_id: providerId })
+          body: JSON.stringify({ script_id: scriptId, provider_id: providerId }),
         });
         instId = id;
         setCurrentInstanceId(id);
       }
 
-      // Format answers
       const answersArray = Object.keys(answers).map(qId => ({
         question_id: parseInt(qId),
         answer_value: answers[parseInt(qId)].answer_value,
         score_obtained: answers[parseInt(qId)].score_obtained,
         provider_observation: answers[parseInt(qId)].provider_observation || null,
-        is_non_compliant: (answers[parseInt(qId)].answer_value === 'nao' || answers[parseInt(qId)].answer_value === 'NAO') ? 1 : 0
+        is_non_compliant: (answers[parseInt(qId)].answer_value === 'nao' || answers[parseInt(qId)].answer_value === 'NAO') ? 1 : 0,
       }));
 
       await fetchApi(`/eval/instances/${instId}/answers`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: answersArray })
+        body: JSON.stringify({ answers: answersArray }),
       });
-      
+
       if (!goToNext) {
         alert('Progresso salvo com sucesso!');
       } else {
-        // Move to next section
-        const rootSections = sections.filter(s => !s.parent_section_id);
-        const currentIndex = rootSections.findIndex(s => s.id === activeSectionId);
-        if (currentIndex !== -1 && currentIndex < rootSections.length - 1) {
-          setActiveSectionId(rootSections[currentIndex + 1].id);
-          window.scrollTo(0, 0);
-        } else if (currentIndex === rootSections.length - 1) {
+        const roots = sections.filter(s => !s.parent_section_id);
+        const currentIndex = roots.findIndex(s => s.id === activeSectionId);
+        if (currentIndex !== -1 && currentIndex < roots.length - 1) {
+          setActiveSectionId(roots[currentIndex + 1].id);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (currentIndex === roots.length - 1) {
           const pend = pendingItems();
           if (pend.length > 0) {
             alert(`Há ${pend.length} critério(s) pendente(s) (sem resposta, evidência ou justificativa). Complete-os antes de finalizar.`);
@@ -244,17 +316,16 @@ export default function RoteiroPlayer({
 
   const finishEvaluation = async (instId: number) => {
     const { score: totalScore, maxPossible: maxScore, percentual } = computeScore(questions, answers);
-
     try {
       await fetchApi(`/eval/instances/${instId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           status: 'pendente', // Enviado para auditoria
           score: totalScore,
           max_possible_score: maxScore,
-          percentual: percentual
-        })
+          percentual: percentual,
+        }),
       });
       alert('Avaliação concluída e enviada com sucesso!');
       onClose();
@@ -263,11 +334,10 @@ export default function RoteiroPlayer({
     }
   };
 
-  if (loading) return <div className="p-8 text-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto"></div></div>;
+  // --- Cálculos de árvore/estado (independem do estado de loading) -------------
 
   // Os roteiros têm hierarquia de profundidade variável (grupo → seção → subseção → critério).
-  // order_index é relativo aos irmãos, então a ordem correta só emerge andando a árvore —
-  // não dá para confiar no ORDER BY plano do endpoint.
+  // order_index é relativo aos irmãos, então a ordem correta só emerge andando a árvore.
   const childrenByParent = new Map<number | null, Section[]>();
   for (const s of sections) {
     const key = s.parent_section_id ?? null;
@@ -283,7 +353,6 @@ export default function RoteiroPlayer({
   }
   for (const arr of questionsBySection.values()) arr.sort((a, b) => a.order_index - b.order_index);
 
-  // IDs de toda a subárvore de uma seção (ela + descendentes), p/ contagem no stepper.
   const descendantSectionIds = (rootId: number): number[] => {
     const ids: number[] = [];
     const walk = (id: number) => { ids.push(id); for (const c of childrenByParent.get(id) ?? []) walk(c.id); };
@@ -294,8 +363,8 @@ export default function RoteiroPlayer({
   const rootSections = childrenByParent.get(null) ?? [];
   const activeRootIndex = rootSections.findIndex(s => s.id === activeSectionId);
   const activeRoot = rootSections[activeRootIndex] ?? rootSections[0];
+  const isLastRoot = activeRootIndex === rootSections.length - 1;
 
-  // Lista achatada (DFS) das seções do grupo ativo, cada uma com sua profundidade p/ estilo.
   const renderList: { section: Section; depth: number }[] = [];
   if (activeRoot) {
     const walk = (id: number, depth: number) => {
@@ -307,10 +376,9 @@ export default function RoteiroPlayer({
     walk(activeRoot.id, 0);
   }
 
-  const calculateProgress = () => {
-    const answeredCount = Object.keys(answers).length;
-    return questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
-  };
+  const isAnswered = (q: Question) => !!answers[q.id]?.answer_value;
+  const answeredCount = questions.filter(isAnswered).length;
+  const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
   // Pendência = critério sem resposta; ou evidência obrigatória sem arquivo (exceto N/A);
   // ou N/A sem justificativa.
@@ -321,265 +389,341 @@ export default function RoteiroPlayer({
     if (q.evidence_required && !a.file_url) return true;
     return false;
   });
+  // ponytail: um Set por render (não por card) — evita o O(n²) de chamar pendingItems() no map.
+  const pendingSet = new Set(pendingItems().map(q => q.id));
+
+  const emptyGroup = renderList.every(r => (questionsBySection.get(r.section.id)?.length ?? 0) === 0);
+
+  const answerOptions = [
+    { v: 'sim', label: 'Sim', on: 'bg-emerald-500 text-white shadow-sm', score: (q: Question) => Number(q.max_score) || 0 },
+    { v: 'nao', label: 'Não', on: 'bg-red-500 text-white shadow-sm', score: () => 0 },
+    { v: 'na', label: 'N/A', on: 'bg-gray-600 text-white shadow-sm', score: () => 0 },
+  ] as const;
 
   return (
-    <div className="fixed inset-0 z-50 bg-gray-900/50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
-      <div className="bg-gray-50 flex flex-col w-full max-w-6xl h-full rounded-2xl shadow-2xl overflow-hidden">
-        
-        {/* Header */}
-        <div className="bg-white px-6 py-4 border-b border-gray-200 flex justify-between items-center shrink-0">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">{script?.title}</h2>
-            <div className="flex items-center gap-4 mt-2">
-              <span className="text-sm font-medium text-gray-500">
-                Progresso: {calculateProgress()}%
-              </span>
-              <div className="h-2 w-48 bg-gray-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-emerald-500 transition-all duration-500" 
-                  style={{ width: `${calculateProgress()}%` }}
-                ></div>
-              </div>
-            </div>
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
+
+      {/* Cabeçalho: voltar, breadcrumb, título, salvar-depois */}
+      <div>
+        <button
+          onClick={onClose}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-emerald-700"
+        >
+          <ArrowLeft className="h-4 w-4" /> Voltar aos meus roteiros
+        </button>
+
+        <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0">
+            <nav className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <span>Qualificação</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className="max-w-[18rem] truncate">{script?.title || 'Roteiro'}</span>
+              {activeRoot && (
+                <>
+                  <ChevronRight className="h-3 w-3" />
+                  <span className="max-w-[18rem] truncate text-emerald-700">{activeRoot.name}</span>
+                </>
+              )}
+            </nav>
+            <h1 className="mt-1 text-pretty text-2xl font-bold text-secondary-900">
+              {activeRoot?.name || script?.title || 'Roteiro de Qualificação'}
+            </h1>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600">
-            <X className="w-6 h-6" />
+
+          <button
+            onClick={() => saveProgress(false)}
+            disabled={saving || loading}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Salvar e continuar depois
           </button>
         </div>
+      </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar / Stepper */}
-          <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto shrink-0 hidden md:block p-4">
-            <nav className="space-y-2">
-              {rootSections.map((sec, idx) => {
+      {/* Resumo de progresso (mobile — o rail vira faixa no topo) */}
+      {!loading && (
+        <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 lg:hidden">
+          <Donut value={progressPct} size={60} stroke={7} />
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Progresso</p>
+            <p className="text-sm font-semibold text-secondary-900">
+              {answeredCount} de {questions.length} critérios
+            </p>
+            <p className="text-xs text-gray-500">respondidos</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+
+        {/* Conteúdo principal */}
+        <main className="min-w-0 space-y-6">
+          {loading ? (
+            <>
+              <CardSkeleton />
+              <CardSkeleton />
+              <CardSkeleton />
+            </>
+          ) : emptyGroup ? (
+            <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-20 text-center">
+              <p className="mx-auto max-w-md text-sm text-gray-500">
+                Esta seção é de registro qualitativo — não há critérios para o prestador pontuar neste roteiro.
+              </p>
+            </div>
+          ) : (
+            renderList.map(({ section: renderSec, depth }) => {
+              const secQuestions = questionsBySection.get(renderSec.id) ?? [];
+              const showHeader = depth >= 1;
+              if (secQuestions.length === 0 && !showHeader) return null;
+
+              return (
+                <section key={renderSec.id} className="space-y-4">
+                  {showHeader && (depth === 1 ? (
+                    <h2 className="text-pretty border-b border-gray-200 pb-2 text-lg font-bold text-secondary-900">
+                      {renderSec.name}
+                    </h2>
+                  ) : (
+                    <h3 className="pt-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      {renderSec.name}
+                    </h3>
+                  ))}
+
+                  {secQuestions.map(q => {
+                    const ans = answers[q.id];
+                    const value = ans?.answer_value;
+                    const isNao = value === 'nao';
+                    const isNa = value === 'na';
+                    const answered = !!value;
+                    const pending = pendingSet.has(q.id);
+                    const required = q.evidence_required || q.is_eliminatory;
+                    const showObs = isNa || obsOpen[q.id] || ans?.provider_observation !== undefined;
+
+                    return (
+                      <article
+                        key={q.id}
+                        className={`rounded-2xl border bg-white p-5 shadow-sm transition-shadow sm:p-6 ${
+                          isNao ? 'border-red-200' : 'border-gray-200 hover:shadow-md'
+                        }`}
+                      >
+                        {/* Linha de meta: código + dimensão + status */}
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {q.code && (
+                              <span className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs font-bold text-gray-700">
+                                {q.code}
+                              </span>
+                            )}
+                            {q.dimension && (
+                              <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${dimClass(q.dimension)}`}>
+                                {q.dimension}
+                              </span>
+                            )}
+                            {/* ponytail: badge DL acende quando o parser passar a emitir type='DL' (adiado). */}
+                            {q.type === 'DL' && (
+                              <span className="rounded border border-secondary-200 bg-secondary-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary-700">
+                                DL — Documentação Legal
+                              </span>
+                            )}
+                            {q.is_eliminatory && (
+                              <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-700">
+                                Eliminatório
+                              </span>
+                            )}
+                          </div>
+
+                          {answered && !pending ? (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                              <Check className="h-3.5 w-3.5" strokeWidth={3} /> Respondido
+                            </span>
+                          ) : (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                              <span className="h-2.5 w-2.5 rounded-full border-2 border-amber-500" /> Pendente
+                            </span>
+                          )}
+                        </div>
+
+                        <h4 className="text-pretty text-base font-medium leading-snug text-secondary-900">
+                          {q.text}
+                        </h4>
+                        {q.legislation && (
+                          <p className="mt-1.5 text-xs font-medium text-gray-400">
+                            {q.legislation}
+                          </p>
+                        )}
+                        {q.guidance && (
+                          <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                            <span className="font-semibold text-gray-600">Evidência esperada: </span>{q.guidance}
+                          </p>
+                        )}
+
+                        {/* Banner de obrigatoriedade */}
+                        {pending && required && (
+                          <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                            Este critério é obrigatório{q.evidence_required ? ' e exige evidência anexada.' : '.'}
+                          </div>
+                        )}
+
+                        {/* Resposta segmentada Sim / Não / N/A */}
+                        {q.type === 'sim_nao' && (
+                          <div className="mt-4 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1" role="group" aria-label="Resposta">
+                            {answerOptions.map(opt => {
+                              const selected = value === opt.v;
+                              return (
+                                <button
+                                  key={opt.v}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() => handleAnswerChange(q.id, opt.v, opt.score(q))}
+                                  className={`rounded-lg px-5 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                                    selected ? opt.on : 'text-gray-600 hover:text-gray-900'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Não conformidade */}
+                        {isNao && (
+                          <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2.5">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                            <p className="text-xs text-red-700">
+                              <span className="font-semibold">Não conformidade identificada.</span> Este item entrará no plano de ação após a análise.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Observação / Justificativa */}
+                        {isNa ? (
+                          <div className="mt-4">
+                            <label className="mb-1 block text-sm font-semibold text-secondary-900">
+                              Justificativa <span className="font-normal text-red-600">(obrigatória para “Não se aplica”)</span>
+                            </label>
+                            <textarea
+                              value={ans?.provider_observation || ''}
+                              onChange={(e) => handleObservationChange(q.id, e.target.value)}
+                              rows={2}
+                              placeholder="Explique por que este critério não se aplica ao seu estabelecimento."
+                              className="w-full rounded-lg border border-gray-300 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+                            />
+                          </div>
+                        ) : showObs ? (
+                          <div className="mt-4">
+                            <label className="mb-1 block text-xs font-semibold text-gray-500">Observação (opcional)</label>
+                            <textarea
+                              value={ans?.provider_observation || ''}
+                              onChange={(e) => handleObservationChange(q.id, e.target.value)}
+                              rows={2}
+                              className="w-full rounded-lg border border-gray-200 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setObsOpen(prev => ({ ...prev, [q.id]: true }))}
+                            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 transition-colors hover:text-emerald-800"
+                          >
+                            <MessageSquarePlus className="h-4 w-4" /> Adicionar observação
+                          </button>
+                        )}
+
+                        {/* Evidência */}
+                        {q.evidence_required && !isNa && (
+                          <div className="mt-4 border-t border-gray-100 pt-4">
+                            <p className="mb-2 text-sm font-semibold text-secondary-900">Evidência obrigatória</p>
+                            {ans?.file_url ? (
+                              <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5">
+                                <span className="inline-flex items-center gap-2 text-sm font-medium text-emerald-700">
+                                  <Paperclip className="h-4 w-4" /> Evidência anexada
+                                </span>
+                                <label className="cursor-pointer text-xs font-semibold text-emerald-700 underline-offset-2 hover:underline">
+                                  Substituir
+                                  <input type="file" className="hidden" onChange={(e) => handleFileUpload(q.id, e)} accept=".pdf,.jpg,.jpeg,.png" />
+                                </label>
+                              </div>
+                            ) : (
+                              <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50/40 hover:text-emerald-700">
+                                <UploadCloud className="h-5 w-5" />
+                                Anexar arquivo (PDF, JPG ou PNG · até 20 MB)
+                                <input type="file" className="hidden" onChange={(e) => handleFileUpload(q.id, e)} accept=".pdf,.jpg,.jpeg,.png" />
+                              </label>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </section>
+              );
+            })
+          )}
+
+          {/* Navegação entre seções */}
+          {!loading && !emptyGroup && (
+            <div className="flex items-center justify-between border-t border-gray-200 pt-4">
+              <button
+                onClick={() => { if (activeRootIndex > 0) { setActiveSectionId(rootSections[activeRootIndex - 1].id); window.scrollTo({ top: 0, behavior: 'smooth' }); } }}
+                disabled={activeRootIndex <= 0}
+                className="inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" /> Anterior
+              </button>
+              <button
+                onClick={() => saveProgress(true)}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {isLastRoot ? (<>Finalizar avaliação <Check className="h-4 w-4" strokeWidth={3} /></>) : (<>Próxima etapa <ChevronRight className="h-4 w-4" /></>)}
+              </button>
+            </div>
+          )}
+        </main>
+
+        {/* Rail de progresso (desktop) */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-6 space-y-4">
+            <div className="rounded-2xl border border-gray-200 bg-white p-5">
+              <div className="flex items-center gap-4">
+                <Donut value={progressPct} />
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Progresso</p>
+                  <p className="text-sm font-semibold text-secondary-900">{answeredCount} de {questions.length}</p>
+                  <p className="text-xs text-gray-500">critérios respondidos</p>
+                </div>
+              </div>
+            </div>
+
+            <nav className="space-y-1 rounded-2xl border border-gray-200 bg-white p-2">
+              {rootSections.map(sec => {
                 const isActive = sec.id === activeSectionId;
-                // Count questions inside this section or sub-sections
-                const secFamilyIds = descendantSectionIds(sec.id);
-                const secQs = questions.filter(q => secFamilyIds.includes(q.section_id));
-                const qsAnswered = secQs.filter(q => answers[q.id]).length;
-                const isComplete = secQs.length > 0 && qsAnswered === secQs.length;
-
+                const famIds = descendantSectionIds(sec.id);
+                const secQs = questions.filter(q => famIds.includes(q.section_id));
+                const done = secQs.filter(isAnswered).length;
                 return (
                   <button
                     key={sec.id}
-                    onClick={() => setActiveSectionId(sec.id)}
-                    className={`w-full text-left p-3 rounded-xl flex flex-col gap-1 transition-all ${
-                      isActive 
-                        ? 'bg-emerald-50 border border-emerald-200' 
-                        : 'hover:bg-gray-50 border border-transparent'
+                    onClick={() => { setActiveSectionId(sec.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                      isActive ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className={`text-sm font-bold ${isActive ? 'text-emerald-800' : 'text-gray-700'}`}>
+                    <MiniRing done={done} total={secQs.length} active={isActive} />
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate text-sm font-semibold ${isActive ? 'text-emerald-800' : 'text-secondary-900'}`}>
                         {sec.name}
                       </span>
-                      {isComplete && <Check className="w-4 h-4 text-emerald-500 shrink-0" />}
-                    </div>
-                    <span className="text-xs text-gray-500 font-medium">
-                      {qsAnswered} / {secQs.length} respondidas
+                      <span className={`block text-xs ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>{done}/{secQs.length} critérios</span>
                     </span>
                   </button>
                 );
               })}
             </nav>
           </div>
-
-          {/* Main Content Area */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50 relative">
-            <div className="max-w-3xl mx-auto space-y-8 pb-24">
-              
-              {renderList.map(({ section: renderSec, depth }) => {
-                const secQuestions = questionsBySection.get(renderSec.id) ?? [];
-                const showHeader = depth >= 1;
-                if (secQuestions.length === 0 && !showHeader) return null;
-
-                return (
-                  <div key={renderSec.id} className="space-y-6">
-                    {showHeader && (depth === 1 ? (
-                      <h3 className="text-lg font-bold text-gray-800 pb-2 border-b border-gray-200">
-                        {renderSec.name}
-                      </h3>
-                    ) : (
-                      <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide pt-1">
-                        {renderSec.name}
-                      </h4>
-                    ))}
-
-                    {secQuestions.length > 0 && (
-                    <div className="space-y-6">
-                      {secQuestions.map(q => {
-                        const ans = answers[q.id];
-                        const isNonCompliant = ans?.answer_value === 'nao';
-                        
-                        return (
-                          <div key={q.id} className={`bg-white rounded-xl shadow-sm border p-6 transition-all ${isNonCompliant ? 'border-red-200 bg-red-50/10' : 'border-gray-200 hover:shadow-md'}`}>
-                            <div className="flex items-start gap-4">
-                              <div className="px-2 min-w-10 h-10 shrink-0 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-xs">
-                                {q.code || '+'}
-                              </div>
-                              <div className="flex-1 space-y-4">
-                                <div>
-                                  <h4 className="text-base font-medium text-gray-900">{q.text}</h4>
-                                  <div className="flex flex-wrap items-center gap-2 mt-2">
-                                    {q.dimension && (
-                                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-sky-50 text-sky-700 border border-sky-100">
-                                        {q.dimension}
-                                      </span>
-                                    )}
-                                    {q.max_score > 0 && (
-                                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-100">
-                                        {q.max_score} pts
-                                      </span>
-                                    )}
-                                    {pendingItems().some(pq => pq.id === q.id) && (
-                                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700 border border-amber-200">
-                                        Pendente
-                                      </span>
-                                    )}
-                                  </div>
-                                  {q.legislation && (
-                                    <p className="text-xs text-gray-500 mt-1 font-mono uppercase tracking-wide">Ref: {q.legislation}</p>
-                                  )}
-                                  {q.guidance && (
-                                    <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                                      <span className="font-semibold text-gray-600">Evidência: </span>{q.guidance}
-                                    </p>
-                                  )}
-                                </div>
-                                
-                                {q.type === 'sim_nao' && (
-                                  <div className="flex flex-wrap items-center gap-3">
-                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer font-medium text-sm transition-all ${ans?.answer_value === 'sim' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-1 ring-emerald-500 pt' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                                      <input type="radio" name={`q_${q.id}`} className="hidden" checked={ans?.answer_value === 'sim'} onChange={() => handleAnswerChange(q.id, 'sim', q.max_score)} />
-                                      SIM
-                                    </label>
-                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer font-medium text-sm transition-all ${ans?.answer_value === 'nao' ? 'bg-red-50 border-red-500 text-red-700 ring-1 ring-red-500' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                                      <input type="radio" name={`q_${q.id}`} className="hidden" checked={ans?.answer_value === 'nao'} onChange={() => handleAnswerChange(q.id, 'nao', 0)} />
-                                      NÃO
-                                    </label>
-                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer font-medium text-sm transition-all ${ans?.answer_value === 'na' ? 'bg-gray-100 border-gray-400 text-gray-800 ring-1 ring-gray-400' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                                      <input type="radio" name={`q_${q.id}`} className="hidden" checked={ans?.answer_value === 'na'} onChange={() => handleAnswerChange(q.id, 'na', 0)} />
-                                      N/A
-                                    </label>
-                                  </div>
-                                )}
-
-                                {ans?.answer_value === 'na' && (
-                                  <div className="mt-3">
-                                    <label className="text-sm font-bold text-gray-700 block mb-1">
-                                      Justificativa (obrigatória para "Não se aplica")
-                                    </label>
-                                    <textarea
-                                      value={ans?.provider_observation || ''}
-                                      onChange={(e) => handleObservationChange(q.id, e.target.value)}
-                                      className="w-full border border-gray-300 rounded-lg p-2 text-sm"
-                                      rows={2}
-                                      placeholder="Explique por que este critério não se aplica ao seu estabelecimento."
-                                    />
-                                  </div>
-                                )}
-                                {ans?.answer_value && ans.answer_value !== 'na' && (
-                                  <div className="mt-3">
-                                    <label className="text-xs font-semibold text-gray-500 block mb-1">Observação (opcional)</label>
-                                    <textarea
-                                      value={ans?.provider_observation || ''}
-                                      onChange={(e) => handleObservationChange(q.id, e.target.value)}
-                                      className="w-full border border-gray-200 rounded-lg p-2 text-sm"
-                                      rows={2}
-                                    />
-                                  </div>
-                                )}
-
-                                {isNonCompliant && (
-                                  <div className="bg-red-50 p-3 rounded-lg border border-red-100 flex items-start gap-3">
-                                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                                    <div>
-                                      <p className="text-sm font-bold text-red-800">Não conformidade identificada</p>
-                                      <p className="text-xs text-red-600 mt-1">Isso exigirá um plano de ação após a conclusão.</p>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {q.evidence_required && ans?.answer_value !== 'na' && (
-                                  <div className="mt-4 pt-4 border-t border-gray-100">
-                                    <label className="text-sm font-bold text-gray-700 block mb-2 flex items-center gap-2">
-                                      Evidência Obrigatória {q.is_eliminatory && <span className="px-2 py-0.5 rounded text-[10px] uppercase bg-red-100 text-red-700">Eliminatório</span>}
-                                    </label>
-                                    {ans?.file_url ? (
-                                       <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 px-4 py-3 rounded-lg text-sm font-medium border border-emerald-100">
-                                         <Check className="w-5 h-5" /> 
-                                         Evidência Anexada com Sucesso
-                                       </div>
-                                    ) : (
-                                      <div className="flex items-center gap-4">
-                                        <label className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer">
-                                          <UploadCloud className="w-4 h-4" />
-                                          Anexar Arquivo (PDF, JPG)
-                                          <input type="file" className="hidden" onChange={(e) => handleFileUpload(q.id, e)} accept=".pdf,.jpg,.jpeg,.png" />
-                                        </label>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {renderList.every(r => (questionsBySection.get(r.section.id)?.length ?? 0) === 0) && (
-                <div className="text-center py-24 text-gray-400">
-                  <p className="text-sm max-w-md mx-auto">
-                    Esta seção é de registro qualitativo (sem critérios pontuados neste roteiro).
-                  </p>
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-
-        {/* Footer Actions */}
-        <div className="bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between shrink-0">
-          <button 
-            onClick={() => saveProgress(false)}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            {saving ? <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div> : <Save className="w-4 h-4" />}
-            Salvar Rascunho
-          </button>
-
-          <div className="flex items-center gap-3">
-             <button
-                className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg disabled:opacity-50 flex items-center gap-1"
-                disabled={activeRootIndex === 0}
-                onClick={() => {
-                  if (activeRootIndex > 0) setActiveSectionId(rootSections[activeRootIndex - 1].id);
-                }}
-             >
-                <ChevronLeft className="w-4 h-4" /> Anterior
-             </button>
-             <button
-                onClick={() => saveProgress(true)}
-                disabled={saving}
-                className="px-6 py-2 bg-[#00995D] hover:bg-[#007A4A] text-white font-bold rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70"
-             >
-                {activeRootIndex === rootSections.length - 1 ? (
-                  <>Finalizar Avaliação <Check className="w-4 h-4" /></>
-                ) : (
-                  <>Próxima Etapa <ChevronRight className="w-4 h-4" /></>
-                )}
-             </button>
-          </div>
-        </div>
-
+        </aside>
       </div>
     </div>
   );

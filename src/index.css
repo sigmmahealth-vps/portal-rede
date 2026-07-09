@@ -91,3 +91,13 @@ body {
   background-color: #f8fafc;
   color: var(--color-secondary-900);
 }
+
+/* Acessibilidade: quem pede menos movimento não recebe transições/animações. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

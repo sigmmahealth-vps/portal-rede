@@ -35,6 +35,7 @@ function EmBreve({ icon: Icon, title, desc }: { icon: any; title: string; desc: 
 export default function PrestadorView({ user }: { user: any }) {
   const [scripts, setScripts] = useState<any[]>([]);
   const [instances, setInstances] = useState<any[]>([]);
+  const [providerName, setProviderName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('roteiros');
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number } | null>(null);
@@ -46,12 +47,14 @@ export default function PrestadorView({ user }: { user: any }) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [scriptsData, instancesData] = await Promise.all([
+      const [scriptsData, instancesData, providerData] = await Promise.all([
         fetchApi('/eval/scripts'),
         fetchApi('/eval/instances'),
+        fetchApi('/me/provider').catch(() => null),
       ]);
       setScripts(scriptsData);
       setInstances(instancesData);
+      setProviderName(providerData ? (providerData.trade_name || providerData.name) : null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -76,29 +79,43 @@ export default function PrestadorView({ user }: { user: any }) {
   const scriptsVigentes = scripts.filter((s: any) => s.is_current !== false);
   const inProgress = instances.find(i => !OPEN_STATES.includes(i.status));
   const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);
-  const firstName = (user?.name || '').split(' ')[0];
+  const displayName = providerName || (user?.name || '').split(' ')[0] || '';
+
+  // Progresso de preenchimento (respondidos / total), não o score — que só existe pós-auditoria.
+  const fillPct = (i: any) => {
+    const total = Number(i?.total_questions) || 0;
+    const answered = Number(i?.answered_count) || 0;
+    return total > 0 ? Math.round((answered / total) * 100) : 0;
+  };
 
   // --- Conteúdo por aba -------------------------------------------------------
 
   const inicioTab = (
     <div className="space-y-6">
       <div className="rounded-2xl border border-gray-200 bg-white p-6">
-        <h2 className="text-lg font-bold text-secondary-900">Olá{firstName ? `, ${firstName}` : ''}</h2>
+        <h2 className="text-lg font-bold text-secondary-900">Olá{displayName ? `, ${displayName}` : ''}</h2>
 
         {inProgress ? (
           <>
             <p className="mt-1 text-sm text-gray-500">Você tem uma qualificação em andamento.</p>
-            <div className="mt-4 flex flex-col gap-4 rounded-xl bg-emerald-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-secondary-900">{inProgress.script_title}</p>
-                <p className="text-sm font-medium text-emerald-700">{Number(inProgress.percentual).toFixed(0)}% respondido</p>
+            <div className="mt-4 rounded-xl bg-emerald-50/60 p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-secondary-900">{inProgress.script_title}</p>
+                  <p className="text-sm font-medium text-emerald-700">
+                    {fillPct(inProgress)}% respondido · {Number(inProgress.answered_count) || 0} de {Number(inProgress.total_questions) || 0} critérios
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id })}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
+                >
+                  <Clock className="h-4 w-4" /> Continuar avaliação
+                </button>
               </div>
-              <button
-                onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id })}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
-              >
-                <Clock className="h-4 w-4" /> Continuar avaliação
-              </button>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
+                <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out" style={{ width: `${fillPct(inProgress)}%` }} />
+              </div>
             </div>
           </>
         ) : lastSealed ? (
@@ -180,9 +197,9 @@ export default function PrestadorView({ user }: { user: any }) {
               )}
             </div>
             <div className="flex flex-col">
-              <span className="text-xs text-gray-500">Score</span>
-              <span className={Number(inst.percentual) >= 80 ? 'text-emerald-600' : 'text-amber-600'}>
-                {Number(inst.percentual).toFixed(0)}%
+              <span className="text-xs text-gray-500">{inst.status === 'finalizado' ? 'Score' : 'Progresso'}</span>
+              <span className={(inst.status === 'finalizado' ? Number(inst.percentual) : fillPct(inst)) >= 80 ? 'text-emerald-600' : 'text-amber-600'}>
+                {inst.status === 'finalizado' ? Number(inst.percentual).toFixed(0) : fillPct(inst)}%
               </span>
             </div>
           </div>

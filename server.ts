@@ -2847,11 +2847,29 @@ async function startServer() {
     }
   });
 
+  // Nome do prestador do próprio usuário logado (o /api/providers/:id é restrito a staff).
+  app.get('/api/me/provider', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id } = req.user;
+      if (!provider_id) return res.json(null);
+      const { rows } = await query('SELECT id, name, trade_name FROM providers WHERE id = $1', [provider_id]);
+      res.json(rows[0] || null);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/eval/instances', authenticate, async (req: any, res) => {
     try {
       const { provider_id, role } = req.user;
       const baseQuery = `
-        SELECT ei.*, s.title as script_title, p.name as provider_name
+        SELECT ei.*, s.title as script_title, p.name as provider_name,
+          (SELECT count(*)::int FROM eval_questions eq
+             JOIN eval_sections es ON eq.section_id = es.id
+            WHERE es.script_id = ei.script_id) AS total_questions,
+          (SELECT count(*)::int FROM eval_answers ea
+            WHERE ea.instance_id = ei.id AND ea.answer_value IS NOT NULL) AS answered_count
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id

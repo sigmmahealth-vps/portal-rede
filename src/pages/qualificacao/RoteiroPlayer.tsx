@@ -608,7 +608,7 @@ export default function RoteiroPlayer({
 
                         {/* Resposta segmentada Sim / Não / N/A */}
                         {q.type === 'sim_nao' && (
-                          <div className="mt-4 inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1" role="group" aria-label="Resposta">
+                          <div className="mt-4 flex w-fit rounded-xl border border-gray-200 bg-gray-50 p-1" role="group" aria-label="Resposta">
                             {answerOptions.map(opt => {
                               const selected = value === opt.v;
                               return (

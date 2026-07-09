@@ -358,7 +358,9 @@ export default function Layout() {
             <Outlet />
           ) : (
             <div className="max-w-7xl mx-auto flex flex-col xl:flex-row gap-6 pb-10">
-              <div className="flex-1 overflow-hidden">
+              {/* min-w-0 (não overflow-hidden): contém a largura do flex sem virar
+                  contexto de clipping, o que quebraria position: sticky dos filhos. */}
+              <div className="flex-1 min-w-0">
                 <Outlet />
               </div>
               <RightSidebar />

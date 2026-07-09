@@ -397,14 +397,14 @@ export default function RoteiroPlayer({
   const answerOptions = [
     { v: 'sim', label: 'Sim', on: 'bg-emerald-500 text-white shadow-sm', score: (q: Question) => Number(q.max_score) || 0 },
     { v: 'nao', label: 'Não', on: 'bg-red-500 text-white shadow-sm', score: () => 0 },
-    { v: 'na', label: 'N/A', on: 'bg-gray-600 text-white shadow-sm', score: () => 0 },
+    { v: 'na', label: 'Não se aplica', on: 'bg-gray-600 text-white shadow-sm', score: () => 0 },
   ] as const;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
 
-      {/* Cabeçalho: voltar, breadcrumb, título, salvar-depois */}
-      <div>
+      {/* Cabeçalho fixo: pina no topo do scroll enquanto os itens rolam. */}
+      <div className="sticky top-0 z-20 border-b border-gray-200 bg-[#f4f4f4] pb-4">
         <button
           onClick={onClose}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-emerald-700"
@@ -576,7 +576,7 @@ export default function RoteiroPlayer({
                                   type="button"
                                   aria-pressed={selected}
                                   onClick={() => handleAnswerChange(q.id, opt.v, opt.score(q))}
-                                  className={`rounded-lg px-5 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                                  className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
                                     selected ? opt.on : 'text-gray-600 hover:text-gray-900'
                                   }`}
                                 >
@@ -624,7 +624,7 @@ export default function RoteiroPlayer({
                         ) : (
                           <button
                             onClick={() => setObsOpen(prev => ({ ...prev, [q.id]: true }))}
-                            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 transition-colors hover:text-emerald-800"
+                            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700"
                           >
                             <MessageSquarePlus className="h-4 w-4" /> Adicionar observação
                           </button>
@@ -683,9 +683,11 @@ export default function RoteiroPlayer({
           )}
         </main>
 
-        {/* Rail de progresso (desktop) */}
+        {/* Rail de progresso (desktop) — fixo enquanto os itens rolam. */}
         <aside className="hidden lg:block">
-          <div className="sticky top-6 space-y-4">
+          {/* top-[7rem] ≈ altura do cabeçalho fixo; rola internamente se houver muitas seções. */}
+          <div className="sticky top-[7rem] max-h-[calc(100dvh-9rem)] space-y-4 overflow-y-auto pr-1">
+            <p className="px-1 text-sm font-bold text-secondary-900">{script?.title || 'Roteiro de Qualificação'}</p>
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="flex items-center gap-4">
                 <Donut value={progressPct} />
@@ -713,10 +715,16 @@ export default function RoteiroPlayer({
                   >
                     <MiniRing done={done} total={secQs.length} active={isActive} />
                     <span className="min-w-0 flex-1">
-                      <span className={`block truncate text-sm font-semibold ${isActive ? 'text-emerald-800' : 'text-secondary-900'}`}>
+                      <span className={`block text-sm font-semibold leading-tight ${isActive ? 'text-emerald-800' : 'text-secondary-900'}`}>
                         {sec.name}
                       </span>
-                      <span className={`block text-xs ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>{done}/{secQs.length} critérios</span>
+                      <span className={`mt-0.5 block text-xs ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>{done}/{secQs.length} critérios</span>
+                      <span className="mt-1.5 block h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                        <span
+                          className="block h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out"
+                          style={{ width: `${secQs.length ? (done / secQs.length) * 100 : 0}%` }}
+                        />
+                      </span>
                     </span>
                   </button>
                 );

@@ -2975,6 +2975,17 @@ async function startServer() {
         VALUES ($1, $2, $3, $4, $5, $6, $7)
       `, [providerId, 'qualificacao_evidencia', new Date().toISOString(), 'valido', fileUrl, req.user.id, instanceId]);
 
+      const questionId = req.body.question_id;
+      if (questionId) {
+        await query(`
+          INSERT INTO eval_answers (instance_id, question_id, evidence_url, evidence_status)
+          VALUES ($1, $2, $3, 'pendente')
+          ON CONFLICT (instance_id, question_id) DO UPDATE SET
+            evidence_url = excluded.evidence_url,
+            evidence_status = 'pendente'
+        `, [instanceId, questionId, fileUrl]);
+      }
+
       res.json({ success: true, url: fileUrl });
     } catch (err: any) {
       console.error(err);

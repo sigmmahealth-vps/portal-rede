@@ -106,6 +106,8 @@ export default function RoteiroPlayer({
             loadedAnswers[ans.question_id] = {
               answer_value: ans.answer_value,
               score_obtained: ans.score_obtained,
+              file_url: ans.evidence_url || undefined,
+              provider_observation: ans.provider_observation || undefined,
             };
           });
         }
@@ -163,7 +165,8 @@ export default function RoteiroPlayer({
     const formData = new FormData();
     formData.append('file', file);
     formData.append('provider_id', providerId.toString());
-    
+    formData.append('question_id', questionId.toString());
+
     try {
       const res = await fetchApi(`/eval/instances/${instId}/evidence`, {
         method: 'POST',

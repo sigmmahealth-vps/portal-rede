@@ -468,56 +468,17 @@ export default function ProviderDetail() {
           {activeTab === 'documentos' && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Documentos e Qualificação</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-500 font-medium">Documentos Pendentes</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.documents_pending ?? 0}</p>
+              <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-20 text-center">
+                <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600">
+                  <FileText className="h-7 w-7" />
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-500 font-medium">Documentos Vencidos</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.documents_expired ?? 0}</p>
-                </div>
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-500 font-medium">Total de Documentos</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.documents_total ?? 0}</p>
-                </div>
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                  <p className="text-sm text-gray-500 font-medium">Certificações</p>
-                  <p className="text-2xl font-bold text-gray-800">{provider.summary?.certifications_total ?? 0}</p>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                <p className="text-sm font-medium text-gray-700 mb-1">Última Submissão de Qualificação</p>
-                {provider.summary?.last_qualification_submission ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-800">
-                    <ClipboardCheck className="w-4 h-4 text-gray-400" />
-                    <span>{provider.summary.last_qualification_submission.cycle_title}</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                      {provider.summary.last_qualification_submission.status}
-                    </span>
-                    <span className="text-gray-500">
-                      {new Date(provider.summary.last_qualification_submission.created_at).toLocaleDateString('pt-BR')}
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">Nenhuma submissão de qualificação registrada.</p>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => navigate(`/documentos?provider_id=${provider.id}`)}
-                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-                >
-                  Ver documentos completos
-                </button>
-                <button
-                  onClick={() => navigate(`/auditorias?provider_id=${provider.id}`)}
-                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-                >
-                  Ver qualificação completa
-                </button>
+                <h3 className="text-lg font-bold text-gray-800">Documentos e Qualificação</h3>
+                <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">
+                  A consolidação de documentos e do histórico de qualificação deste prestador estará disponível aqui em breve.
+                </p>
+                <span className="mt-4 inline-block rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Em breve
+                </span>
               </div>
             </div>
           )}

@@ -66,6 +66,13 @@ const normCity = (c: unknown) =>
   cleanCity(c).normalize('NFD').replace(/\p{M}/gu, '').toUpperCase();
 const titleCase = (s: string) =>
   s.toLowerCase().replace(/\b[\p{L}]/gu, (m) => m.toUpperCase());
+// Máscara CNPJ (14 díg.) ou CPF (11 díg.); devolve o valor cru se não bater.
+const formatDoc = (v: unknown): string => {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  return String(v ?? '');
+};
 const bucketKey = (t: unknown) =>
   TYPE_BUCKETS.find((b) => b.match(String(t ?? '').toUpperCase()))!.key;
 
@@ -328,7 +335,7 @@ export default function Admin() {
   const filteredProviders = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return providers.filter((p) => {
-      if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.code || ''}`.toLowerCase().includes(q)) return false;
+      if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.cpf || ''} ${p.code || ''}`.toLowerCase().includes(q)) return false;
       if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) return false;
       if (tipoFilter !== 'all' && bucketKey(p.provider_type) !== tipoFilter) return false;
       if (municipioFilter !== 'all' && normCity(p.cidade) !== municipioFilter) return false;
@@ -346,9 +353,9 @@ export default function Admin() {
   };
 
   const exportarCSV = () => {
-    const header = ['Nome', 'CNPJ', 'Código', 'Tipo (SGU)', 'Município', 'UF', 'Nível Qualificação', 'Status'];
+    const header = ['Nome', 'CNPJ/CPF', 'Código', 'Tipo (SGU)', 'Município', 'UF', 'Nível Qualificação', 'Status'];
     const linhas = filteredProviders.map((p) => [
-      p.name, p.cnpj, p.code, p.provider_type,
+      p.name, formatDoc(p.cnpj || p.cpf), p.code, p.provider_type,
       titleCase(cleanCity(p.cidade)), p.uf, p.qualification_level, p.status,
     ]);
     const esc = (v: any) => {
@@ -497,7 +504,7 @@ export default function Admin() {
                 <thead>
                   <tr className="border-b border-gray-100 text-sm text-gray-500">
                     <th className="pb-3 font-medium">Nome</th>
-                    <th className="pb-3 font-medium">CNPJ</th>
+                    <th className="pb-3 font-medium">CNPJ/CPF</th>
                     <th className="pb-3 font-medium">Código</th>
                     <th className="pb-3 font-medium">Tipo (SGU)</th>
                     <th className="pb-3 font-medium">Município</th>
@@ -514,7 +521,7 @@ export default function Admin() {
                       className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
                     >
                       <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
-                      <td className="py-4 text-gray-600">{prestador.cnpj}</td>
+                      <td className="py-4 text-gray-600">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>
                       <td className="py-4 text-gray-600">

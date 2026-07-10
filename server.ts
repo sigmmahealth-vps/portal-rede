@@ -1205,7 +1205,7 @@ async function startServer() {
       const { role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
         const { rows: providers } = await query(`
-          SELECT p.id, p.name, p.cnpj, p.sgu_code AS code, p.provider_group, p.provider_type,
+          SELECT p.id, p.name, p.cnpj, p.cpf, p.sgu_code AS code, p.provider_group, p.provider_type,
                  p.area_atuacao, p.qualification_level, p.status, p.sgu_synced_at,
                  loc.cidade, loc.uf
           FROM providers p

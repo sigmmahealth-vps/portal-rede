@@ -186,8 +186,8 @@ export default function PrestadorView({ user }: { user: any }) {
                 <h3 className="truncate text-sm font-bold text-secondary-900">{inst.script_title}</h3>
                 <p className="mt-1 text-xs text-gray-500">
                   {inst.status === 'em_andamento'
-                    ? `Iniciado em: ${new Date(inst.started_at).toLocaleDateString()}`
-                    : `Enviado em: ${new Date(inst.completed_at || inst.started_at).toLocaleDateString()}`}
+                    ? `Iniciado em: ${new Date(inst.started_at).toLocaleDateString('pt-BR')}`
+                    : `Enviado em: ${new Date(inst.completed_at || inst.started_at).toLocaleDateString('pt-BR')}`}
                 </p>
               </div>
               {inst.status === 'finalizado' && inst.seal ? (

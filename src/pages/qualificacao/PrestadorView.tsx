@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import {
-  Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight,
+  Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye,
 } from 'lucide-react';
 import RoteiroPlayer from './RoteiroPlayer';
 
@@ -38,7 +38,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const [providerName, setProviderName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('roteiros');
-  const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number } | null>(null);
+  const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, readOnly?: boolean } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -67,6 +67,7 @@ export default function PrestadorView({ user }: { user: any }) {
       <RoteiroPlayer
         scriptId={activePlayer.scriptId}
         instanceId={activePlayer.instanceId}
+        readOnly={activePlayer.readOnly}
         providerId={user.provider_id}
         onClose={() => {
           setActivePlayer(null);
@@ -97,7 +98,11 @@ export default function PrestadorView({ user }: { user: any }) {
 
         {inProgress ? (
           <>
-            <p className="mt-1 text-sm text-gray-500">Você tem uma qualificação em andamento.</p>
+            <p className="mt-1 text-sm text-gray-500">
+              {inProgress.status === 'pendente'
+                ? 'Sua qualificação foi enviada e está aguardando auditoria.'
+                : 'Você tem uma qualificação em andamento.'}
+            </p>
             <div className="mt-4 rounded-xl bg-emerald-50/60 p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -107,10 +112,12 @@ export default function PrestadorView({ user }: { user: any }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id })}
+                  onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id, readOnly: inProgress.status === 'pendente' })}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
                 >
-                  <Clock className="h-4 w-4" /> Continuar avaliação
+                  {inProgress.status === 'pendente'
+                    ? (<><Eye className="h-4 w-4" /> Visualizar avaliação</>)
+                    : (<><Clock className="h-4 w-4" /> Continuar avaliação</>)}
                 </button>
               </div>
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
@@ -158,17 +165,20 @@ export default function PrestadorView({ user }: { user: any }) {
           <p className="text-sm text-gray-500">Nenhum roteiro disponível para o seu tipo de prestador.</p>
         ) : scriptsVigentes.map(s => {
           const existing = instances.find(i => i.script_id === s.id && !OPEN_STATES.includes(i.status));
+          const sent = existing?.status === 'pendente'; // enviado — só visualização
           return (
             <div key={s.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
               <h3 className="font-bold text-secondary-900">{s.title}</h3>
               <p className="mt-1 text-sm text-gray-500">{s.description}</p>
               <button
-                onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing?.id })}
+                onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing?.id, readOnly: sent })}
                 className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
               >
-                {existing
-                  ? (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)
-                  : (<><Play className="h-4 w-4" /> Iniciar Avaliação</>)}
+                {sent
+                  ? (<><Eye className="h-4 w-4" /> Visualizar Avaliação</>)
+                  : existing
+                    ? (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)
+                    : (<><Play className="h-4 w-4" /> Iniciar Avaliação</>)}
               </button>
             </div>
           );

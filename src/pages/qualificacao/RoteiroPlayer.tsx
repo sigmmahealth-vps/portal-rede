@@ -3,7 +3,7 @@ import { fetchApi } from '../../lib/api';
 import { computeScore } from '../../lib/score';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
-  AlertTriangle, MessageSquarePlus, Save, Loader2, Paperclip,
+  AlertTriangle, MessageSquarePlus, Save, Loader2, Paperclip, Eye,
 } from 'lucide-react';
 
 interface Question {
@@ -144,11 +144,13 @@ export default function RoteiroPlayer({
   instanceId,
   onClose,
   providerId,
+  readOnly = false,
 }: {
   scriptId: number;
   instanceId?: number;
   onClose: () => void;
   providerId: number;
+  readOnly?: boolean;
 }) {
   const [script, setScript] = useState<any>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -466,14 +468,20 @@ export default function RoteiroPlayer({
             </h1>
           </div>
 
-          <button
-            onClick={() => saveProgress(false)}
-            disabled={saving || loading}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Salvar e continuar depois
-          </button>
+          {readOnly ? (
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-semibold text-gray-500">
+              <Eye className="h-4 w-4" /> Somente leitura — avaliação enviada
+            </span>
+          ) : (
+            <button
+              onClick={() => saveProgress(false)}
+              disabled={saving || loading}
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Salvar e continuar depois
+            </button>
+          )}
         </div>
         </div>
       </header>
@@ -513,7 +521,8 @@ export default function RoteiroPlayer({
               </p>
             </div>
           ) : (
-            renderList.map(({ section: renderSec, depth }) => {
+            <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-6 border-0 p-0">
+            {renderList.map(({ section: renderSec, depth }) => {
               const secQuestions = questionsBySection.get(renderSec.id) ?? [];
               const showHeader = depth >= 1;
               if (secQuestions.length === 0 && !showHeader) return null;
@@ -699,7 +708,8 @@ export default function RoteiroPlayer({
                   })}
                 </section>
               );
-            })
+            })}
+            </fieldset>
           )}
 
           {/* Navegação entre seções */}
@@ -713,8 +723,14 @@ export default function RoteiroPlayer({
                 <ChevronLeft className="h-4 w-4" /> Anterior
               </button>
               <button
-                onClick={() => saveProgress(true)}
-                disabled={saving}
+                onClick={() => {
+                  if (readOnly) {
+                    if (!isLastRoot) { setActiveSectionId(rootSections[activeRootIndex + 1].id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }
+                  } else {
+                    saveProgress(true);
+                  }
+                }}
+                disabled={saving || (readOnly && isLastRoot)}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

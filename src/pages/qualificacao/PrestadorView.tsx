@@ -185,9 +185,9 @@ export default function PrestadorView({ user }: { user: any }) {
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold text-secondary-900">{inst.script_title}</h3>
                 <p className="mt-1 text-xs text-gray-500">
-                  {inst.status === 'finalizado'
-                    ? `Enviado em: ${new Date(inst.completed_at || inst.started_at).toLocaleDateString()}`
-                    : `Iniciado em: ${new Date(inst.started_at).toLocaleDateString()}`}
+                  {inst.status === 'em_andamento'
+                    ? `Iniciado em: ${new Date(inst.started_at).toLocaleDateString()}`
+                    : `Enviado em: ${new Date(inst.completed_at || inst.started_at).toLocaleDateString()}`}
                 </p>
               </div>
               {inst.status === 'finalizado' && inst.seal ? (
@@ -196,7 +196,7 @@ export default function PrestadorView({ user }: { user: any }) {
                 </span>
               ) : (
                 <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-600">
-                  {inst.status.replace('_', ' ')}
+                  {inst.status === 'pendente' ? 'Aguardando auditoria' : inst.status.replace('_', ' ')}
                 </span>
               )}
             </div>

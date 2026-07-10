@@ -2976,7 +2976,7 @@ async function startServer() {
       const now = new Date().toISOString();
       await query(`
         UPDATE eval_instances
-        SET status = $1, score = $2, max_possible_score = $3, percentual = $4, seal = $5, completed_at = CASE WHEN $6 = 'finalizado' THEN $7 ELSE completed_at END
+        SET status = $1, score = $2, max_possible_score = $3, percentual = $4, seal = $5, completed_at = CASE WHEN $6 IN ('pendente', 'finalizado') THEN $7 ELSE completed_at END
         WHERE id = $8
       `, [status, score || 0, max_possible_score || 0, percentual || 0, seal || null, status, now, req.params.id]);
 

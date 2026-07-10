@@ -492,8 +492,8 @@ export default function Admin() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] table-fixed text-left border-collapse [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_td]:align-top [&_th]:align-bottom">
                 <colgroup>
-                  <col className="w-[22%]" />
-                  <col className="w-[15%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[17%]" />
                   <col className="w-[10%]" />
                   <col className="w-[11%]" />
                   <col className="w-[13%]" />
@@ -521,7 +521,7 @@ export default function Admin() {
                       className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
                     >
                       <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
-                      <td className="py-4 text-gray-600">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
+                      <td className="py-4 text-gray-600 whitespace-nowrap">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>
                       <td className="py-4 text-gray-600">

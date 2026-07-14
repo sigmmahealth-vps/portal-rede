@@ -63,6 +63,9 @@ export class ResendMailer implements Mailer {
 export function createMailer(): Mailer {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.MAIL_FROM;
+  // ponytail: homolog não envia e-mail real — evita bounce→502 no login e não spamma testadores.
+  // O código do OTP sai no log (ConsoleMailer) e há código mestre fixo no verify-otp (ver auth/otp.ts).
+  if (process.env.APP_ENV === 'homolog') return new ConsoleMailer();
   if (apiKey && from) return new ResendMailer(apiKey, from);
   if (process.env.NODE_ENV === 'production') {
     console.error('FATAL: RESEND_API_KEY/MAIL_FROM ausentes em produção. Abortando boot.');

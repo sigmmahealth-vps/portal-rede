@@ -20,3 +20,10 @@ export function verifyOtp(code: string, hash: string): boolean {
 export function isOtpExpired(expiresAt: Date | string, now: Date): boolean {
   return new Date(expiresAt).getTime() <= now.getTime();
 }
+
+// ponytail: atalho de teste — código mestre fixo de 2FA, aceito SOMENTE em homolog.
+// O guard APP_ENV==='homolog' garante que nunca vale em prod (prod usa APP_ENV=prod/ausente).
+export const HOMOLOG_MASTER_OTP = '000000';
+export function isHomologMasterOtp(code: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.APP_ENV === 'homolog' && code === HOMOLOG_MASTER_OTP;
+}

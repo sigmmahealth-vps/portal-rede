@@ -59,3 +59,14 @@ test('endereços distintos viram múltiplas locations', () => {
   assert.equal(providers[0].locations.length, 2);
   assert.equal(providers[0].locations[1].sgu_location_code, '1000546-2');
 });
+
+test('CPF/CNPJ repetido entre códigos distintos é zerado no segundo, com aviso', () => {
+  const { providers, warnings } = parseTabela([
+    row({ 'Código do prestador': '1000546', 'Número do CPF e/ou CNJP': '352470968' }),
+    row({ 'Código do prestador': '1000999', 'Número do CPF e/ou CNJP': '352470968' }),
+  ]);
+  assert.equal(providers.length, 2);
+  const dup = providers.find((p) => p.sgu_code === '1000999')!;
+  assert.equal(dup.cpf, null);
+  assert.ok(warnings.length >= 1);
+});

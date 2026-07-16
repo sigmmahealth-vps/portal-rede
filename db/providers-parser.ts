@@ -180,8 +180,11 @@ export function buildCertifications(row: RawRow): ParsedCertification[] {
   return out;
 }
 
+/** Estrutural mínimo p/ dedupeDocs — permite reuso por outros parsers (ex.: tabela-parser). */
+export interface HasDocs { sgu_code: string; cnpj: string | null; cpf: string | null; }
+
 /** Zera CNPJ/CPF repetidos entre prestadores distintos (índice único parcial). */
-function dedupeDocs(providers: ParsedProvider[], warnings: string[]): void {
+export function dedupeDocs(providers: HasDocs[], warnings: string[]): void {
   const seenCnpj = new Map<string, string>();
   const seenCpf = new Map<string, string>();
   for (const p of providers) {

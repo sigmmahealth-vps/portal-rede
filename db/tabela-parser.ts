@@ -1,6 +1,6 @@
 // Parser da aba `tabela` de Prestadores Portal.xlsx (layout novo).
 // Agrega linhas por Código do prestador → 1 TabelaProvider (com N locations).
-import { clean, onlyDigits, type ParsedLocation } from './providers-parser.js';
+import { clean, onlyDigits, dedupeDocs, type ParsedLocation } from './providers-parser.js';
 import { selecionaRoteiro, type Confianca } from './roteiro-rule.js';
 
 export type TabelaRow = Record<string, unknown>;
@@ -128,5 +128,6 @@ export function parseTabela(rows: TabelaRow[]): { providers: TabelaProvider[]; w
       locations,
     });
   }
+  dedupeDocs(providers, warnings);
   return { providers, warnings };
 }

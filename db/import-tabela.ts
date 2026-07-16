@@ -9,7 +9,7 @@
 import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import XLSX from 'xlsx';
 import { parseTabela, type TabelaRow } from './tabela-parser.js';
 import { pickDatabaseUrl } from './resolveDbUrl.js';
@@ -20,8 +20,7 @@ const FILE = process.env.CADASTRO_FILE || path.resolve(PROJECT_ROOT, '..', 'Pres
 const SHEET = process.env.CADASTRO_SHEET || 'tabela';
 const DEV_HOST = 'reseau.proxy.rlwy.net';
 
-function assertDevHost(): void {
-  const url = pickDatabaseUrl();
+export function assertDevHost(url: string | undefined = pickDatabaseUrl()): void {
   const host = url ? new URL(url).host : '(vazio)';
   if (!url || !url.includes(DEV_HOST)) {
     throw new Error(`Trava de host: import-tabela só roda em DEV (${DEV_HOST}). Host atual: ${host}`);
@@ -134,7 +133,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

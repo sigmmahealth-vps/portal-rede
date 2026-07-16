@@ -1610,12 +1610,11 @@ function formatBRDate(iso?: string | null): string | null {
 
 function RevisaoBadge({ script }: { script: any }) {
   const vigente = script.is_current !== false;
+  const tone = vigente
+    ? 'bg-green-100 text-green-700'
+    : 'bg-gray-100 text-gray-700';
   return (
-    <span
-      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-        vigente ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-      }`}
-    >
+    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${tone}`}>
       Revisão {script.version ?? '?'} · {vigente ? 'vigente' : 'substituída'}
     </span>
   );

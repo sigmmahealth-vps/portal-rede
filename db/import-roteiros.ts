@@ -41,10 +41,14 @@ async function commitScript(parsed: ParsedScript): Promise<number> {
   return withTransaction(async (client) => {
     // idempotência: recarrega substituindo a versão anterior do mesmo arquivo
     await client.query('DELETE FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
+    const revisaoDate = parsed.revisaoDate ?? parsed.implantacaoDate;
+    if (!revisaoDate) {
+      throw new Error(`${parsed.sourceFile}: sem data de revisão nem de implantação — não é possível gravar revisao_date`);
+    }
     const { rows } = await client.query(
       `INSERT INTO eval_scripts (title, description, version, source_file, revisao_date, implantacao_date, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
-      [parsed.title, parsed.description, parsed.version, parsed.sourceFile, parsed.revisaoDate, parsed.implantacaoDate],
+      [parsed.title, parsed.description, parsed.version, parsed.sourceFile, revisaoDate, parsed.implantacaoDate],
     );
     const scriptId = rows[0].id as number;
 

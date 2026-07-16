@@ -17,7 +17,7 @@
     "db:backfill-ip-hash": "tsx db/backfill-ip-hash.ts",
     "db:import-roteiros": "tsx db/import-roteiros.ts",
     "db:import-providers": "tsx db/import-providers.ts",
-    "test": "node --import tsx --test db/roteiro-parser.test.ts auth/otp.test.ts auth/trustedDevice.test.ts auth/rateLimit.test.ts auth/mailer.test.ts auth/setupToken.test.ts auth/passwordPolicy.test.ts auth/auditLog.test.ts auth/ipHash.test.ts db/purgeExpiredLogs.test.ts db/providers-parser.test.ts db/resolveDbUrl.test.ts src/lib/score.test.ts db/roteiro-rule.test.ts"
+    "test": "node --import tsx --test db/roteiro-parser.test.ts auth/otp.test.ts auth/trustedDevice.test.ts auth/rateLimit.test.ts auth/mailer.test.ts auth/setupToken.test.ts auth/passwordPolicy.test.ts auth/auditLog.test.ts auth/ipHash.test.ts db/purgeExpiredLogs.test.ts db/providers-parser.test.ts db/resolveDbUrl.test.ts src/lib/score.test.ts db/roteiro-rule.test.ts db/tabela-parser.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

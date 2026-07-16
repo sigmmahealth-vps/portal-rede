@@ -99,7 +99,8 @@ export function parseTabela(rows: TabelaRow[]): { providers: TabelaProvider[]; w
       else cnpj = docDigits.padStart(14, '0').slice(-14);
     }
 
-    const status = clean(acc.row['Situação do prestador']).toUpperCase() === 'ATIVO' ? 'ativo' : 'inativo';
+    // situação cadastral: reflete o valor real da tabela (ATIVO/AFASTADO -> ativo/afastado).
+    const status = clean(acc.row['Situação do prestador']).toLowerCase() || 'inativo';
     const crm = onlyDigits(acc.row['CRM']);
     const council_registry = crm && crm !== '0' ? crm : null;
 

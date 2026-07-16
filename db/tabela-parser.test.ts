@@ -38,7 +38,7 @@ test('agrega linhas do mesmo código, junta especialidades e resolve roteiro', (
   assert.equal(p.locations[0].sgu_location_code, '1000546-1');
 });
 
-test('PJ pelo tipo, CNPJ pad p/ 14; AFASTADO vira inativo', () => {
+test('PJ pelo tipo, CNPJ pad p/ 14; AFASTADO vira afastado', () => {
   const { providers } = parseTabela([
     row({ 'Tipo de prestador': '05 - CLÍNICAS', 'Número do CPF e/ou CNJP': '15246302000111', 'Situação do prestador': 'AFASTADO', 'Grupo do Prestador': '6 - CLINICAS MEDICAS' }),
   ]);
@@ -46,7 +46,7 @@ test('PJ pelo tipo, CNPJ pad p/ 14; AFASTADO vira inativo', () => {
   assert.equal(p.person_type, 'PJ');
   assert.equal(p.cnpj, '15246302000111');
   assert.equal(p.cpf, null);
-  assert.equal(p.status, 'inativo');
+  assert.equal(p.status, 'afastado');
   assert.equal(p.roteiro_cod, 'FOR-006');
 });
 

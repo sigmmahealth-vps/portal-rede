@@ -149,3 +149,21 @@ test('parseWorkbook devolve version null quando não há revisão na planilha', 
   assert.equal(parsed.version, null);
   assert.equal(parsed.implantacaoDate, null);
 });
+
+test('Revisão em forma de data (sem número) não vira número de revisão', () => {
+  const aoa = [
+    ['ROTEIRO PARA AVALIAÇÃO DE QUALIFICAÇÃO', 'OPS-RED-FOR-024 Implantação: 30/09/2025 Revisão: 30/09/2025'],
+    ['GRUPO'],
+    ['ITEM', 'EVIDÊNCIA', 'PESO MÁXIMO', 'PESO À CONSIDERAR'],
+    ['SEÇÃO 1. Estrutura'],
+    ['1.1.1 Possui alvará?', '', '10', '8'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Roteiro');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const parsed = parseWorkbook(buf, 'OPS-RED-FOR-024 - Hospitais.xlsx');
+  assert.equal(parsed.version, null);
+  assert.equal(parsed.revisaoDate, null);
+  assert.equal(parsed.implantacaoDate, '2025-09-30');
+});

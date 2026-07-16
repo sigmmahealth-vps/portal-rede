@@ -130,7 +130,7 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
 
   const titleCell = rows[0]?.find((c) => /ROTEIRO PARA AVALIA/i.test(c)) ?? '';
   const metaCell = rows[0]?.find((c) => /OPS-?REDS?/i.test(c)) ?? '';
-  const revMatch = metaCell.match(/Revis[ãa]o:\s*(\d+)(?:\s+em\s+(\d{2})\/(\d{2})\/(\d{4}))?/i);
+  const revMatch = metaCell.match(/Revis[ãa]o:\s*(\d+)(?![\d/])(?:\s+em\s+(\d{2})\/(\d{2})\/(\d{4}))?/i);
   const revisao = revMatch?.[1] ?? null; // revisão é obrigatória; ausência = null (validado no import)
   // data "DD/MM/YYYY" → ISO "YYYY-MM-DD" (apenas quando presente)
   const revisaoDate = revMatch && revMatch[2] ? `${revMatch[4]}-${revMatch[3]}-${revMatch[2]}` : null;

@@ -58,6 +58,12 @@ const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) 
   { key: 'outros', label: 'Outros', icon: Users, match: () => true },
 ];
 
+// Rótulos (plural) das situações cadastrais vindas da base (status é o valor real: ativo/afastado/excluído).
+const STATUS_LABELS: Record<string, string> = {
+  ativo: 'Ativos', afastado: 'Afastados', excluído: 'Excluídos', excluido: 'Excluídos', inativo: 'Inativos',
+};
+const statusLabel = (s: string) => STATUS_LABELS[s] ?? (s ? s.charAt(0).toUpperCase() + s.slice(1) + 's' : s);
+
 // Remove lixo de pontuação nas pontas ("- Jacinto Machado", ", Criciúma") e colapsa espaços.
 const cleanCity = (c: unknown) =>
   String(c ?? '').replace(/^[\s\-–—,.]+|[\s\-–—,.]+$/g, '').replace(/\s+/g, ' ').trim();
@@ -306,8 +312,11 @@ export default function Admin() {
     let ativos = 0;
     let atualizadoEm: string | null = null;
     const counts: Record<string, number> = {};
+    const statusCounts: Record<string, number> = {};
     for (const p of providers) {
-      if (String(p.status).toLowerCase() === 'ativo') ativos++;
+      const st = String(p.status || '').toLowerCase();
+      if (st === 'ativo') ativos++;
+      if (st) statusCounts[st] = (statusCounts[st] || 0) + 1;
       if (p.sgu_synced_at && (!atualizadoEm || p.sgu_synced_at > atualizadoEm)) atualizadoEm = p.sgu_synced_at;
       const t = String(p.provider_type || '').toUpperCase();
       const bucket = TYPE_BUCKETS.find(b => b.match(t))!;
@@ -317,7 +326,10 @@ export default function Admin() {
       .map(b => ({ key: b.key, label: b.label, icon: b.icon, count: counts[b.key] || 0 }))
       .filter(b => b.count > 0)
       .sort((a, b) => b.count - a.count);
-    return { total, ativos, inativos: total - ativos, composicao, atualizadoEm };
+    // Opções do filtro Status = situações realmente presentes na base (ativo/afastado/excluído).
+    const statusOptions = Object.keys(statusCounts).sort()
+      .map((s) => ({ value: s, label: statusLabel(s) }));
+    return { total, ativos, afastados: total - ativos, composicao, atualizadoEm, statusOptions };
   }, [providers]);
 
   // Lista de municípios (localização primária), fundindo duplicatas de caixa/acento.
@@ -459,7 +471,7 @@ export default function Admin() {
 
               <div className="flex flex-wrap items-end gap-3">
                 <FilterSelect className="w-full min-[480px]:w-36" label="Status" value={statusFilter} onChange={setStatusFilter}
-                  options={[{ value: 'all', label: 'Todos' }, { value: 'ativo', label: 'Ativos' }, { value: 'inativo', label: 'Inativos' }]} />
+                  options={[{ value: 'all', label: 'Todos' }, ...rede.statusOptions]} />
 
                 <FilterSelect className="w-full min-[480px]:w-44" label="Tipo (SGU)" value={tipoFilter} onChange={setTipoFilter}
                   options={[{ value: 'all', label: 'Todos' }, ...rede.composicao.map((c) => ({ value: c.key, label: c.label }))]} />
@@ -1420,7 +1432,7 @@ export default function Admin() {
 interface RedeStats {
   total: number;
   ativos: number;
-  inativos: number;
+  afastados: number;
   composicao: { key: string; label: string; icon: any; count: number }[];
   atualizadoEm: string | null;
 }
@@ -1492,7 +1504,7 @@ function RedeOverview({ rede, loading }: { rede: RedeStats; loading: boolean }) 
               </span>
               <span className="flex items-center gap-2 text-gray-600">
                 <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
-                Inativos <b className="tabular-nums text-gray-900">{nf(rede.inativos)}</b>
+                Afastados <b className="tabular-nums text-gray-900">{nf(rede.afastados)}</b>
               </span>
             </div>
           </div>

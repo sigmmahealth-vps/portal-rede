@@ -1,6 +1,6 @@
 /**
  * Recarga de prestadores a partir da aba `tabela` de Prestadores Portal.xlsx.
- * Wipe total (TRUNCATE providers CASCADE) + reinserção, numa transação.
+ * Wipe total (DELETE FROM providers — preserva users via SET NULL) + reinserção, numa transação.
  * SOMENTE DEV (trava de host).
  *   tsx db/import-tabela.ts            # dry-run: relatório, não grava
  *   tsx db/import-tabela.ts --commit   # grava no Postgres de dev
@@ -86,7 +86,11 @@ async function main() {
   let nLoc = 0;
   try {
     await withTransaction(async (client) => {
-      await client.query('TRUNCATE providers RESTART IDENTITY CASCADE');
+      // NÃO usar TRUNCATE ... CASCADE: ele trunca por completo TODA tabela com FK
+      // para providers, ignorando o ON DELETE (chegou a apagar a tabela users inteira
+      // no homolog). DELETE dispara as ações por linha: users/announcements/trainings
+      // (SET NULL) são preservados; o resto (locations, eval_*, qualifications...) cascateia.
+      await client.query('DELETE FROM providers');
       for (const p of providers) {
         const evalScriptId = p.roteiro_cod ? scriptByCod.get(p.roteiro_cod) ?? null : null;
         if (p.roteiro_cod && evalScriptId == null) naoResolvidos.add(p.roteiro_cod);

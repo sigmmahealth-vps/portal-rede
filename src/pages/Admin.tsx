@@ -531,8 +531,8 @@ export default function Admin() {
                       <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
                       <td className="py-4 text-gray-600 whitespace-nowrap">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
-                      <td className="py-4 text-gray-600">{prestador.provider_group || '-'}</td>
-                      <td className="py-4 text-gray-600">
+                      <td className="py-4 text-gray-600 break-words">{prestador.provider_group || '-'}</td>
+                      <td className="py-4 text-gray-600 break-words">
                         {cleanCity(prestador.cidade)
                           ? `${titleCase(cleanCity(prestador.cidade))}${prestador.uf ? '/' + String(prestador.uf).toUpperCase() : ''}`
                           : '-'}

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   generateOtpCode, hashOtp, verifyOtp, isOtpExpired,
-  OTP_TTL_MS, OTP_MAX_ATTEMPTS, isHomologMasterOtp, HOMOLOG_MASTER_OTP,
+  OTP_TTL_MS, OTP_MAX_ATTEMPTS, isTestMasterOtp, TEST_MASTER_OTP,
 } from './otp.js';
 
 test('generateOtpCode retorna 6 dígitos numéricos', () => {
@@ -29,10 +29,11 @@ test('constantes expostas', () => {
   assert.equal(OTP_MAX_ATTEMPTS, 5);
 });
 
-test('isHomologMasterOtp: código mestre só vale em homolog', () => {
-  assert.equal(isHomologMasterOtp(HOMOLOG_MASTER_OTP, { APP_ENV: 'homolog' }), true);
-  assert.equal(isHomologMasterOtp('654321', { APP_ENV: 'homolog' }), false); // código errado
-  assert.equal(isHomologMasterOtp(HOMOLOG_MASTER_OTP, { APP_ENV: 'prod' }), false); // nunca em prod
-  assert.equal(isHomologMasterOtp(HOMOLOG_MASTER_OTP, { APP_ENV: 'dev' }), false);
-  assert.equal(isHomologMasterOtp(HOMOLOG_MASTER_OTP, {}), false); // APP_ENV ausente
+test('isTestMasterOtp: código mestre vale em dev e homolog, nunca em prod', () => {
+  assert.equal(isTestMasterOtp(TEST_MASTER_OTP, { APP_ENV: 'homolog' }), true);
+  assert.equal(isTestMasterOtp(TEST_MASTER_OTP, { APP_ENV: 'dev' }), true);
+  assert.equal(isTestMasterOtp('654321', { APP_ENV: 'homolog' }), false); // código errado
+  assert.equal(isTestMasterOtp('654321', { APP_ENV: 'dev' }), false);
+  assert.equal(isTestMasterOtp(TEST_MASTER_OTP, { APP_ENV: 'prod' }), false); // nunca em prod
+  assert.equal(isTestMasterOtp(TEST_MASTER_OTP, {}), false); // APP_ENV ausente
 });

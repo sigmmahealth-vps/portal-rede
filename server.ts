@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { query, pool, withTransaction } from './db/db.js';
 import { parseWorkbook } from './db/roteiro-parser.js';
-import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS, isHomologMasterOtp } from './auth/otp.js';
+import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS, isTestMasterOtp } from './auth/otp.js';
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
 import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
 import { createMailer } from './auth/mailer.js';
@@ -459,7 +459,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Usuário inativo' });
       }
       const codeStr = String(code ?? '');
-      if (!isHomologMasterOtp(codeStr) && !verifyOtp(codeStr, challenge.code_hash)) {
+      if (!isTestMasterOtp(codeStr) && !verifyOtp(codeStr, challenge.code_hash)) {
         await recordAccess(user.id, user.email, false, req);
         return res.status(401).json({ error: 'Código incorreto.' });
       }

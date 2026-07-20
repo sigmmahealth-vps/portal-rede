@@ -594,7 +594,12 @@ export default function RoteiroPlayer({
                         </div>
 
                         <h4 className="text-pretty text-base font-medium leading-snug text-secondary-900">
-                          {q.text}
+                          {(() => {
+                            // O q.text vem do SGU com "pergunta? explicação normativa" concatenada;
+                            // a normativa já aparece separada em q.legislation, então cortamos no ?.
+                            const i = q.text.indexOf('?');
+                            return i >= 0 ? q.text.slice(0, i + 1) : q.text;
+                          })()}
                         </h4>
                         {q.legislation && (
                           <p className="mt-1.5 text-xs font-medium text-gray-400">

@@ -1048,6 +1048,11 @@ async function startServer() {
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
         [providerId, String(name).trim(), position || null, email || null, phone || null, cpf || null, council_registry || null]
       );
+      await auditLog({
+        query, userId: req.user.id, action: 'provider_contact_created',
+        meta: { provider_id: Number(providerId), contact_id: rows[0].id, name: rows[0].name, position: rows[0].position },
+        ip: hashClientIp(req),
+      });
       res.json(rows[0]);
     } catch (err: any) {
       console.error(err);
@@ -1069,6 +1074,11 @@ async function startServer() {
         }
       }
       await query('DELETE FROM provider_contacts WHERE id = $1', [req.params.id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'provider_contact_deleted',
+        meta: { provider_id: Number(contact.provider_id), contact_id: Number(req.params.id) },
+        ip: hashClientIp(req),
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error(err);
@@ -1588,6 +1598,11 @@ async function startServer() {
       );
 
       const { rows: newDocRows } = await query('SELECT * FROM documents WHERE id = $1', [rows[0].id]);
+      await auditLog({
+        query, userId: user_id, action: 'document_uploaded',
+        meta: { provider_id: Number(targetProviderId), document_id: rows[0].id, type, filename: req.file?.originalname ?? null },
+        ip: hashClientIp(req),
+      });
       res.json(newDocRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -1621,6 +1636,11 @@ async function startServer() {
       await query('UPDATE documents SET type = $1, issue_date = $2, expiry_date = $3, file_url = $4 WHERE id = $5', [type, issue_date || null, expiry_date || null, file_url, id]);
 
       const { rows: updatedDocRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'document_updated',
+        meta: { provider_id: Number(doc.provider_id), document_id: Number(id), type, filename: req.file?.originalname ?? null },
+        ip: hashClientIp(req),
+      });
       res.json(updatedDocRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -1646,6 +1666,11 @@ async function startServer() {
       }
 
       await query('DELETE FROM documents WHERE id = $1', [id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'document_deleted',
+        meta: { provider_id: Number(doc.provider_id), document_id: Number(id), type: doc.type },
+        ip: hashClientIp(req),
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error(err);
@@ -1674,6 +1699,16 @@ async function startServer() {
       }
 
       const { rows: updatedDocRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'document_status_changed',
+        meta: {
+          provider_id: Number(updatedDocRows[0]?.provider_id),
+          document_id: Number(id), status,
+          type: updatedDocRows[0]?.type,
+          rejection_reason: rejection_reason || null,
+        },
+        ip: hashClientIp(req),
+      });
       res.json(updatedDocRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -1934,6 +1969,13 @@ async function startServer() {
           'INSERT INTO trainings (title, description, video_url, pdf_url, created_at, target_type, target_group, target_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
           [title, description || null, video_url || null, pdf_url || null, new Date().toISOString(), target_type || 'geral', target_group || null, target_provider_id || null]
         );
+        if (target_provider_id) {
+          await auditLog({
+            query, userId: req.user.id, action: 'training_targeted',
+            meta: { provider_id: Number(target_provider_id), training_id: rows[0].id, title },
+            ip: hashClientIp(req),
+          });
+        }
         res.json({ id: rows[0].id, title, description, video_url, pdf_url, target_type: target_type || 'geral', target_group, target_provider_id });
       } catch (err: any) {
         res.status(400).json({ error: err.message });
@@ -2040,6 +2082,11 @@ async function startServer() {
           'INSERT INTO survey_responses (provider_id, atendimento, comunicacao, sugestoes, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
           [provider_id, atendimento, comunicacao, sugestoes || null, new Date().toISOString()]
         );
+        await auditLog({
+          query, userId: user_id, action: 'survey_submitted',
+          meta: { provider_id: Number(provider_id), survey_id: rows[0].id },
+          ip: hashClientIp(req),
+        });
         res.json({ id: rows[0].id, success: true });
       } catch (err: any) {
         res.status(400).json({ error: err.message });
@@ -2095,6 +2142,13 @@ async function startServer() {
           'INSERT INTO announcements (title, description, category, image_url, date, target_type, target_group, target_provider_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
           [title, description, category, image_url || null, date, target_type || 'geral', target_group || null, target_provider_id || null]
         );
+        if (target_provider_id) {
+          await auditLog({
+            query, userId: req.user.id, action: 'announcement_targeted',
+            meta: { provider_id: Number(target_provider_id), announcement_id: rows[0].id, title },
+            ip: hashClientIp(req),
+          });
+        }
         res.json({ id: rows[0].id, title, description, category, image_url, date, target_type: target_type || 'geral', target_group, target_provider_id });
       } catch (err: any) {
         res.status(400).json({ error: err.message });
@@ -2173,6 +2227,11 @@ async function startServer() {
       );
 
       const { rows: contractRows } = await query('SELECT * FROM contracts WHERE id = $1', [rows[0].id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'contract_created',
+        meta: { provider_id: Number(provider_id), contract_id: rows[0].id, title },
+        ip: hashClientIp(req),
+      });
       res.json(contractRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -2211,6 +2270,11 @@ async function startServer() {
       await query('UPDATE contracts SET status = $1, signed_at = $2 WHERE id = $3', ['ativo', new Date().toISOString(), id]);
 
       const { rows: updatedContractRows } = await query('SELECT * FROM contracts WHERE id = $1', [id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'contract_signed',
+        meta: { provider_id: Number(contract.provider_id), contract_id: Number(id) },
+        ip: hashClientIp(req),
+      });
       res.json(updatedContractRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -2372,6 +2436,11 @@ async function startServer() {
         return subId;
       });
 
+      await auditLog({
+        query, userId: req.user.id, action: 'qualification_submitted',
+        meta: { provider_id: Number(targetProviderId), submission_id: submissionId, cycle_id: Number(cycle_id) },
+        ip: hashClientIp(req),
+      });
       res.json({ id: submissionId, message: 'Submission created successfully' });
     } catch (err: any) {
       console.error(err);
@@ -2389,9 +2458,9 @@ async function startServer() {
         return res.status(403).json({ error: 'Unauthorized' });
       }
 
-      await withTransaction(async (client) => {
-        await client.query(
-          'UPDATE qualification_submissions SET status = $1, evaluated_at = $2, evaluated_by = $3, final_observations = $4 WHERE id = $5',
+      const subProviderId = await withTransaction(async (client) => {
+        const { rows: subRows } = await client.query(
+          'UPDATE qualification_submissions SET status = $1, evaluated_at = $2, evaluated_by = $3, final_observations = $4 WHERE id = $5 RETURNING provider_id',
           [final_status, new Date().toISOString(), user_id, final_observations || null, id]
         );
 
@@ -2403,8 +2472,16 @@ async function startServer() {
             );
           }
         }
+        return subRows[0]?.provider_id ?? null;
       });
 
+      if (subProviderId != null) {
+        await auditLog({
+          query, userId: user_id, action: 'qualification_evaluated',
+          meta: { provider_id: Number(subProviderId), submission_id: Number(id), final_status },
+          ip: hashClientIp(req),
+        });
+      }
       res.json({ message: 'Evaluation saved successfully' });
     } catch (err: any) {
       console.error(err);
@@ -2495,6 +2572,11 @@ async function startServer() {
       );
 
       const { rows: planRows } = await query('SELECT * FROM action_plans WHERE id = $1', [rows[0].id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'action_plan_created',
+        meta: { provider_id: Number(provider_id), plan_id: rows[0].id, title },
+        ip: hashClientIp(req),
+      });
       res.json(planRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -2507,9 +2589,16 @@ async function startServer() {
       const { id } = req.params;
       const { status } = req.body;
 
-      await query('UPDATE action_plans SET status = $1 WHERE id = $2', [status, id]);
+      const { rows: updRows } = await query('UPDATE action_plans SET status = $1 WHERE id = $2 RETURNING provider_id', [status, id]);
 
       const { rows: planRows } = await query('SELECT * FROM action_plans WHERE id = $1', [id]);
+      if (updRows[0]?.provider_id != null) {
+        await auditLog({
+          query, userId: req.user.id, action: 'action_plan_status_changed',
+          meta: { provider_id: Number(updRows[0].provider_id), plan_id: Number(id), status },
+          ip: hashClientIp(req),
+        });
+      }
       res.json(planRows[0]);
     } catch (err: any) {
       console.error(err);
@@ -2848,6 +2937,11 @@ async function startServer() {
         INSERT INTO eval_instances (script_id, provider_id, status, started_at)
         VALUES ($1, $2, 'em_andamento', $3) RETURNING id
       `, [script_id, providerId, new Date().toISOString()]);
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_created',
+        meta: { provider_id: Number(providerId), instance_id: rows[0].id, script_id: Number(script_id) },
+        ip: hashClientIp(req),
+      });
       res.json({ success: true, id: rows[0].id });
     } catch (err: any) {
       console.error(err);
@@ -2968,6 +3062,15 @@ async function startServer() {
         }
       });
 
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_answered',
+        meta: {
+          provider_id: Number(instance.provider_id),
+          instance_id: Number(instanceId),
+          answers_count: Array.isArray(answers) ? answers.length : 0,
+        },
+        ip: hashClientIp(req),
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error(err);
@@ -2988,6 +3091,15 @@ async function startServer() {
         WHERE id = $8
       `, [status, score || 0, max_possible_score || 0, percentual || 0, seal || null, status, now, req.params.id]);
 
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_status_changed',
+        meta: {
+          provider_id: Number(instance.provider_id),
+          instance_id: Number(req.params.id),
+          status, seal: seal || null,
+        },
+        ip: hashClientIp(req),
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error(err);

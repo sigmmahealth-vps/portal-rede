@@ -127,6 +127,39 @@ function computeStepGroups(sections: Section[], questions: Question[]): Section[
   return [...groups].sort((a, b) => a.order_index - b.order_index);
 }
 
+// Textarea com state local: só propaga no blur (ou Ctrl/Cmd+Enter). Assim o card
+// não sai de "Pendente" a cada tecla — só quando o usuário termina a observação.
+function ObservationField({
+  initial, placeholder, onCommit,
+}: { initial: string; placeholder: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(initial);
+  // Se o valor externo mudar (ex.: recarga), sincroniza — mas só quando o usuário
+  // não está editando ativamente (draft ainda igual ao initial antigo).
+  const lastInitialRef = useRef(initial);
+  useEffect(() => {
+    if (initial !== lastInitialRef.current) {
+      setDraft(initial);
+      lastInitialRef.current = initial;
+    }
+  }, [initial]);
+  return (
+    <textarea
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { if (draft !== initial) onCommit(draft); }}
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          (e.currentTarget as HTMLTextAreaElement).blur();
+        }
+      }}
+      rows={2}
+      placeholder={placeholder}
+      className="w-full rounded-lg border border-gray-300 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+    />
+  );
+}
+
 function CardSkeleton() {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-6">
@@ -732,17 +765,18 @@ export default function RoteiroPlayer({
                             <label className="mb-1 block text-sm font-semibold text-secondary-900">
                               {isNa ? 'Justificativa' : 'Observação'}{' '}
                               <span className="font-normal text-red-600">(obrigatória)</span>
+                              <span className="ml-2 text-xs font-normal text-gray-400">
+                                — salva ao sair do campo (ou Ctrl+Enter)
+                              </span>
                             </label>
-                            <textarea
-                              value={ans?.provider_observation || ''}
-                              onChange={(e) => handleObservationChange(q.id, e.target.value)}
-                              rows={2}
+                            <ObservationField
+                              initial={ans?.provider_observation || ''}
                               placeholder={
                                 isNa
                                   ? 'Explique por que este critério não se aplica ao seu estabelecimento.'
                                   : 'Descreva o motivo da não conformidade.'
                               }
-                              className="w-full rounded-lg border border-gray-300 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+                              onCommit={(v) => handleObservationChange(q.id, v)}
                             />
                           </div>
                         )}

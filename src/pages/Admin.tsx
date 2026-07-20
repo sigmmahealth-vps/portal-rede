@@ -317,7 +317,7 @@ export default function Admin() {
       if (st === 'ativo') ativos++;
       if (st) statusCounts[st] = (statusCounts[st] || 0) + 1;
       if (p.sgu_synced_at && (!atualizadoEm || p.sgu_synced_at > atualizadoEm)) atualizadoEm = p.sgu_synced_at;
-      const t = String(p.provider_type || '').toUpperCase();
+      const t = String(p.provider_type || '').normalize('NFD').replace(/\p{M}/gu, '').toUpperCase();
       const bucket = TYPE_BUCKETS.find(b => b.match(t));
       if (bucket) counts[bucket.key] = (counts[bucket.key] || 0) + 1;
     }

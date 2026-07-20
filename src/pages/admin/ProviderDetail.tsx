@@ -353,10 +353,6 @@ export default function ProviderDetail() {
                       </Fragment>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-400">
-                    Apenas endereços comerciais. Nível de qualificação e situação de documentos são consolidados por
-                    prestador.
-                  </p>
                 </>
               )}
             </div>

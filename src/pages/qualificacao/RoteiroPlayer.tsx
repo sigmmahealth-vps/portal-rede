@@ -416,12 +416,12 @@ export default function RoteiroPlayer({
   const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
   // Pendência = critério sem resposta OU resposta sem o requisito da opção:
-  //   Sim → precisa de evidência (arquivo)
+  //   Sim → precisa de evidência SÓ quando q.evidence_required=true
   //   Não / N/A → precisa de observação (texto)
   const pendingItems = () => questions.filter(q => {
     const a = answers[q.id];
     if (!a?.answer_value) return true;
-    if (a.answer_value === 'sim') return !a.file_url;
+    if (a.answer_value === 'sim') return q.evidence_required && !a.file_url;
     return !a.provider_observation?.trim();
   });
   // ponytail: um Set por render (não por card) — evita o O(n²) de chamar pendingItems() no map.
@@ -659,8 +659,8 @@ export default function RoteiroPlayer({
                           </div>
                         )}
 
-                        {/* Evidência obrigatória para Sim */}
-                        {isSim && (
+                        {/* Evidência obrigatória para Sim (só quando o critério exige) */}
+                        {isSim && q.evidence_required && (
                           <div className="mt-4 border-t border-gray-100 pt-4">
                             <p className="mb-2 text-sm font-semibold text-secondary-900">
                               Evidência <span className="font-normal text-red-600">(obrigatória)</span>

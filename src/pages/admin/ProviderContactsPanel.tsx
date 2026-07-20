@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchApi } from '../../lib/api';
 import { Users, Plus, Trash2, Pencil, MoreVertical, X, Mail, Phone, IdCard, Stethoscope } from 'lucide-react';
 
@@ -205,11 +206,11 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
       {openMenu && (() => {
         const c = contacts.find((x) => x.id === openMenu.id);
         if (!c) return null;
-        return (
+        return createPortal(
           <div
             ref={menuRef}
             role="menu"
-            style={{ position: 'fixed', top: openMenu.top, right: openMenu.right, zIndex: 50 }}
+            style={{ position: 'fixed', top: openMenu.top, right: openMenu.right, zIndex: 9999 }}
             className="w-40 rounded-lg border border-gray-100 bg-white py-1 shadow-lg"
           >
             <button
@@ -228,7 +229,8 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
               <Trash2 className="w-4 h-4" />
               Excluir
             </button>
-          </div>
+          </div>,
+          document.body,
         );
       })()}
 

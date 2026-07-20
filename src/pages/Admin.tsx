@@ -16,10 +16,7 @@ import {
   ChevronDown,
   MoreVertical,
   Building2,
-  Stethoscope,
-  Microscope,
   Activity,
-  Hospital,
   UserPlus,
   Settings,
   ClipboardList,
@@ -47,17 +44,6 @@ const TABS = [
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
 
-// Categorias reais de prestador (provider_type vem como texto livre do SGU;
-// casamos por palavra-chave para tolerar variações de grafia/acentuação).
-const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) => boolean }[] = [
-  { key: 'clinica', label: 'Clínicas', icon: Building2, match: (t) => t.includes('CLINICA') },
-  { key: 'medico', label: 'Médicos', icon: Stethoscope, match: (t) => t.includes('MEDICO') },
-  { key: 'lab', label: 'Laboratórios', icon: Microscope, match: (t) => t.includes('LABORAT') },
-  { key: 'hospital', label: 'Hospitais', icon: Hospital, match: (t) => t.includes('HOSPITAL') },
-  { key: 'diag', label: 'Centros de Diagnóstico', icon: Activity, match: (t) => t.includes('CENTRO') || t.includes('DIAGN') },
-  { key: 'outros', label: 'Outros', icon: Users, match: () => true },
-];
-
 // Rótulos (plural) das situações cadastrais vindas da base (status é o valor real: ativo/afastado/excluído).
 const STATUS_LABELS: Record<string, string> = {
   ativo: 'Ativos', afastado: 'Afastados', excluído: 'Excluídos', excluido: 'Excluídos', inativo: 'Inativos',
@@ -79,9 +65,6 @@ const formatDoc = (v: unknown): string => {
   if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   return String(v ?? '');
 };
-const bucketKey = (t: unknown) =>
-  TYPE_BUCKETS.find((b) => b.match(String(t ?? '').toUpperCase()))!.key;
-
 const PRESTADORES_MOCK = [
   { id: 1, nome: 'Dr. Carlos Eduardo Silva', tipo: 'Médico Cooperado', especialidade: 'Cardiologia', status: 'Ativo' },
   { id: 2, nome: 'Dra. Ana Paula Mendes', tipo: 'Médico Cooperado', especialidade: 'Pediatria', status: 'Ativo' },
@@ -98,7 +81,7 @@ export default function Admin() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [tipoFilter, setTipoFilter] = useState('all');
+  const [grupoFilter, setGrupoFilter] = useState('all');
   const [municipioFilter, setMunicipioFilter] = useState('all');
   const [user, setUser] = useState<any>(null);
   
@@ -304,7 +287,9 @@ export default function Admin() {
 
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
 
-  const uniqueGroups = Array.from(new Set(providers.map(p => p.provider_group).filter(Boolean)));
+  const uniqueGroups: string[] = Array.from(
+    new Set<string>(providers.map((p: any) => String(p.provider_group ?? '')).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
   // Estatísticas reais da rede, computadas dos prestadores já carregados (sem chamada extra).
   const rede = useMemo(() => {
@@ -318,14 +303,12 @@ export default function Admin() {
       if (st === 'ativo') ativos++;
       if (st) statusCounts[st] = (statusCounts[st] || 0) + 1;
       if (p.sgu_synced_at && (!atualizadoEm || p.sgu_synced_at > atualizadoEm)) atualizadoEm = p.sgu_synced_at;
-      const t = String(p.provider_type || '').toUpperCase();
-      const bucket = TYPE_BUCKETS.find(b => b.match(t))!;
-      counts[bucket.key] = (counts[bucket.key] || 0) + 1;
+      const g = String(p.provider_group ?? '').trim();
+      if (g) counts[g] = (counts[g] || 0) + 1;
     }
-    const composicao = TYPE_BUCKETS
-      .map(b => ({ key: b.key, label: b.label, icon: b.icon, count: counts[b.key] || 0 }))
-      .filter(b => b.count > 0)
-      .sort((a, b) => b.count - a.count);
+    const composicao = Object.entries(counts)
+      .map(([g, count]) => ({ key: g, label: g, icon: Building2, count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'));
     // Opções do filtro Status = situações realmente presentes na base (ativo/afastado/excluído).
     const statusOptions = Object.keys(statusCounts).sort()
       .map((s) => ({ value: s, label: statusLabel(s) }));
@@ -349,25 +332,25 @@ export default function Admin() {
     return providers.filter((p) => {
       if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.cpf || ''} ${p.code || ''}`.toLowerCase().includes(q)) return false;
       if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) return false;
-      if (tipoFilter !== 'all' && bucketKey(p.provider_type) !== tipoFilter) return false;
+      if (grupoFilter !== 'all' && String(p.provider_group ?? '') !== grupoFilter) return false;
       if (municipioFilter !== 'all' && normCity(p.cidade) !== municipioFilter) return false;
       return true;
     });
-  }, [providers, searchTerm, statusFilter, tipoFilter, municipioFilter]);
+  }, [providers, searchTerm, statusFilter, grupoFilter, municipioFilter]);
 
-  const filtrosAtivos = statusFilter !== 'all' || tipoFilter !== 'all' || municipioFilter !== 'all' || searchTerm.trim() !== '';
+  const filtrosAtivos = statusFilter !== 'all' || grupoFilter !== 'all' || municipioFilter !== 'all' || searchTerm.trim() !== '';
 
   const limparFiltros = () => {
     setSearchTerm('');
     setStatusFilter('all');
-    setTipoFilter('all');
+    setGrupoFilter('all');
     setMunicipioFilter('all');
   };
 
   const exportarCSV = () => {
-    const header = ['Nome', 'CNPJ/CPF', 'Código', 'Tipo (SGU)', 'Município', 'UF', 'Nível Qualificação', 'Status'];
+    const header = ['Nome', 'CNPJ/CPF', 'Código', 'Grupo de prestador', 'Município', 'UF', 'Nível Qualificação', 'Status'];
     const linhas = filteredProviders.map((p) => [
-      p.name, formatDoc(p.cnpj || p.cpf), p.code, p.provider_type,
+      p.name, formatDoc(p.cnpj || p.cpf), p.code, p.provider_group,
       titleCase(cleanCity(p.cidade)), p.uf, p.qualification_level, p.status,
     ]);
     const esc = (v: any) => {
@@ -473,8 +456,8 @@ export default function Admin() {
                 <FilterSelect className="w-full min-[480px]:w-36" label="Status" value={statusFilter} onChange={setStatusFilter}
                   options={[{ value: 'all', label: 'Todos' }, ...rede.statusOptions]} />
 
-                <FilterSelect className="w-full min-[480px]:w-44" label="Tipo (SGU)" value={tipoFilter} onChange={setTipoFilter}
-                  options={[{ value: 'all', label: 'Todos' }, ...rede.composicao.map((c) => ({ value: c.key, label: c.label }))]} />
+                <FilterSelect className="w-full min-[480px]:w-56" label="Grupo de prestador" value={grupoFilter} onChange={setGrupoFilter}
+                  options={[{ value: 'all', label: 'Todos' }, ...uniqueGroups.map((g) => ({ value: g, label: g }))]} />
 
                 <FilterSelect className="w-full min-[480px]:w-52" label="Município" value={municipioFilter} onChange={setMunicipioFilter}
                   options={[{ value: 'all', label: 'Todos' }, ...municipios.map((m) => ({ value: m.key, label: m.label }))]} />
@@ -518,7 +501,7 @@ export default function Admin() {
                     <th className="pb-3 font-medium">Nome</th>
                     <th className="pb-3 font-medium">CNPJ/CPF</th>
                     <th className="pb-3 font-medium">Código</th>
-                    <th className="pb-3 font-medium">Tipo (SGU)</th>
+                    <th className="pb-3 font-medium">Grupo de prestador</th>
                     <th className="pb-3 font-medium">Município</th>
                     <th className="pb-3 font-medium">Nível Qualificação</th>
                     <th className="pb-3 font-medium">Status</th>
@@ -535,7 +518,7 @@ export default function Admin() {
                       <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
                       <td className="py-4 text-gray-600 whitespace-nowrap">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
                       <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
-                      <td className="py-4 text-gray-600">{prestador.provider_type || '-'}</td>
+                      <td className="py-4 text-gray-600">{prestador.provider_group || '-'}</td>
                       <td className="py-4 text-gray-600">
                         {cleanCity(prestador.cidade)
                           ? `${titleCase(cleanCity(prestador.cidade))}${prestador.uf ? '/' + String(prestador.uf).toUpperCase() : ''}`

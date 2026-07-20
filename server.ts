@@ -305,7 +305,13 @@ async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
   // Emite a sessão (JWT em cookie httpOnly) e devolve o payload do usuário.
-  const issueSession = (res: any, user: any, previousLoginAt: any) => {
+  // Também busca provider.person_type quando há provider_id (front usa como discriminador PF/PJ).
+  const issueSession = async (res: any, user: any, previousLoginAt: any) => {
+    let providerPersonType: string | null = null;
+    if (user.provider_id) {
+      const { rows } = await query('SELECT person_type FROM providers WHERE id = $1', [user.provider_id]);
+      providerPersonType = rows[0]?.person_type ?? null;
+    }
     const token = jwt.sign(
       { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id },
       JWT_SECRET as string,
@@ -317,7 +323,8 @@ async function startServer() {
     return {
       user: {
         id: user.id, name: user.name, email: user.email, role: user.role,
-        provider_id: user.provider_id, last_login_at: previousLoginAt,
+        provider_id: user.provider_id, provider_person_type: providerPersonType,
+        last_login_at: previousLoginAt,
       },
     };
   };
@@ -397,7 +404,7 @@ async function startServer() {
         await query('UPDATE trusted_devices SET last_used_at = now(), last_ip = $1 WHERE id = $2',
           [req.ip, device.id]);
         const previousLoginAt = await finalizeLogin(user, req);
-        return res.json(issueSession(res, user, previousLoginAt));
+        return res.json(await issueSession(res, user, previousLoginAt));
       }
       try {
         const challengeId = await createOtpChallenge(user, req);
@@ -465,7 +472,7 @@ async function startServer() {
         });
       }
       const previousLoginAt = await finalizeLogin(user, req);
-      return res.json(issueSession(res, user, previousLoginAt));
+      return res.json(await issueSession(res, user, previousLoginAt));
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -2990,7 +2997,7 @@ async function startServer() {
     try {
       const { provider_id } = req.user;
       if (!provider_id) return res.json(null);
-      const { rows } = await query('SELECT id, name, trade_name FROM providers WHERE id = $1', [provider_id]);
+      const { rows } = await query('SELECT id, name, trade_name, person_type FROM providers WHERE id = $1', [provider_id]);
       res.json(rows[0] || null);
     } catch (err: any) {
       console.error(err);

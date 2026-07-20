@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { welcomeLine } from '../../lib/greeting';
 import {
-  Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye,
+  Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
 } from 'lucide-react';
 import RoteiroPlayer from './RoteiroPlayer';
 
@@ -37,9 +37,10 @@ export default function PrestadorView({ user }: { user: any }) {
   const [scripts, setScripts] = useState<any[]>([]);
   const [instances, setInstances] = useState<any[]>([]);
   const [evalScriptId, setEvalScriptId] = useState<number | null>(null);
+  const [locations, setLocations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('inicio');
-  const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, readOnly?: boolean } | null>(null);
+  const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -56,6 +57,7 @@ export default function PrestadorView({ user }: { user: any }) {
       setScripts(scriptsData);
       setInstances(instancesData);
       setEvalScriptId(providerData?.eval_script_id ?? null);
+      setLocations(providerData?.locations ?? []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -68,6 +70,7 @@ export default function PrestadorView({ user }: { user: any }) {
       <RoteiroPlayer
         scriptId={activePlayer.scriptId}
         instanceId={activePlayer.instanceId}
+        locationId={activePlayer.locationId}
         readOnly={activePlayer.readOnly}
         providerId={user.provider_id}
         onClose={() => {
@@ -164,6 +167,9 @@ export default function PrestadorView({ user }: { user: any }) {
     </div>
   );
 
+  // Um par (script × unidade) é uma "linha" da aba Roteiros. Se houver >1 unidade
+  // comercial, cada unidade tem sua própria instância; senão, comportamento antigo
+  // (locationId undefined; o backend resolve auto quando há 1 unidade).
   const roteirosTab = (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
       <div className="space-y-4">
@@ -171,24 +177,42 @@ export default function PrestadorView({ user }: { user: any }) {
         {scriptsVigentes.length === 0 ? (
           <p className="text-sm text-gray-500">Nenhum roteiro disponível para o seu tipo de prestador.</p>
         ) : scriptsVigentes.map(s => {
-          const existing = instances.find(i => i.script_id === s.id && !OPEN_STATES.includes(i.status));
-          const sent = existing?.status === 'pendente'; // enviado — só visualização
-          return (
-            <div key={s.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-              <h3 className="font-bold text-secondary-900">{s.title}</h3>
-              <p className="mt-1 text-sm text-gray-500">{s.description}</p>
-              <button
-                onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing?.id, readOnly: sent })}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
-              >
-                {sent
-                  ? (<><Eye className="h-4 w-4" /> Visualizar Avaliação</>)
-                  : existing
-                    ? (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)
-                    : (<><Play className="h-4 w-4" /> Iniciar Avaliação</>)}
-              </button>
-            </div>
-          );
+          const hasMultiple = locations.length > 1;
+          // Sem unidades ou só uma → 1 linha; múltiplas → 1 linha por unidade.
+          const rows = hasMultiple
+            ? locations.map((loc: any) => ({ loc, key: `${s.id}-${loc.id}` }))
+            : [{ loc: null, key: `${s.id}` }];
+          return rows.map(({ loc, key }) => {
+            const existing = instances.find(i =>
+              i.script_id === s.id
+              && !OPEN_STATES.includes(i.status)
+              && (loc ? String(i.location_id) === String(loc.id) : true),
+            );
+            const sent = existing?.status === 'pendente';
+            const cityUf = loc && loc.cidade ? `${loc.cidade}${loc.uf ? '/' + String(loc.uf).toUpperCase() : ''}` : null;
+            return (
+              <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+                <h3 className="font-bold text-secondary-900">{s.title}</h3>
+                {loc && (
+                  <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {loc.label || 'Unidade'}{cityUf ? ` — ${cityUf}` : ''}
+                  </p>
+                )}
+                {!loc && <p className="mt-1 text-sm text-gray-500">{s.description}</p>}
+                <button
+                  onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing?.id, locationId: loc?.id, readOnly: sent })}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
+                >
+                  {sent
+                    ? (<><Eye className="h-4 w-4" /> Visualizar Avaliação</>)
+                    : existing
+                      ? (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)
+                      : (<><Play className="h-4 w-4" /> Iniciar Avaliação</>)}
+                </button>
+              </div>
+            );
+          });
         })}
       </div>
 
@@ -201,6 +225,12 @@ export default function PrestadorView({ user }: { user: any }) {
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold text-secondary-900">{inst.script_title}</h3>
+                {inst.location_label && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-700">
+                    <MapPin className="h-3 w-3" />
+                    {inst.location_label}{inst.location_uf ? '/' + String(inst.location_uf).toUpperCase() : ''}
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-gray-500">
                   {inst.status === 'em_andamento'
                     ? `Iniciado em: ${new Date(inst.started_at).toLocaleDateString('pt-BR')}`

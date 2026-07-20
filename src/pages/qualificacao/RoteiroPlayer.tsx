@@ -180,12 +180,14 @@ function CardSkeleton() {
 export default function RoteiroPlayer({
   scriptId,
   instanceId,
+  locationId,
   onClose,
   providerId,
   readOnly = false,
 }: {
   scriptId: number;
   instanceId?: number;
+  locationId?: number;
   onClose: () => void;
   providerId: number;
   readOnly?: boolean;
@@ -312,7 +314,7 @@ export default function RoteiroPlayer({
         const { id } = await fetchApi('/eval/instances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: scriptId, provider_id: providerId }),
+          body: JSON.stringify({ script_id: scriptId, provider_id: providerId, location_id: locationId ?? null }),
         });
         instId = id;
         setCurrentInstanceId(id);
@@ -371,7 +373,7 @@ export default function RoteiroPlayer({
         const { id } = await fetchApi('/eval/instances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: scriptId, provider_id: providerId }),
+          body: JSON.stringify({ script_id: scriptId, provider_id: providerId, location_id: locationId ?? null }),
         });
         instId = id;
         setCurrentInstanceId(id);

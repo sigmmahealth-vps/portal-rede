@@ -3030,7 +3030,19 @@ async function startServer() {
         'SELECT id, name, trade_name, person_type, provider_group, eval_script_id FROM providers WHERE id = $1',
         [provider_id],
       );
-      res.json(rows[0] || null);
+      const provider = rows[0];
+      if (!provider) return res.json(null);
+      // Unidades comerciais (exclui residencial) para permitir avaliação por local.
+      const { rows: locations } = await query(
+        `SELECT id, label, cidade, uf, logradouro, numero, bairro
+           FROM provider_locations
+          WHERE provider_id = $1
+            AND COALESCE(label,'') NOT ILIKE 'residencial%'
+            AND COALESCE(sgu_location_code,'') !~ '-RES$'
+          ORDER BY is_primary DESC NULLS LAST, id ASC`,
+        [provider_id],
+      );
+      res.json({ ...provider, locations });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

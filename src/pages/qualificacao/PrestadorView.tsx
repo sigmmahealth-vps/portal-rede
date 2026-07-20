@@ -36,6 +36,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const [scripts, setScripts] = useState<any[]>([]);
   const [instances, setInstances] = useState<any[]>([]);
   const [providerName, setProviderName] = useState<string | null>(null);
+  const [personType, setPersonType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('roteiros');
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, readOnly?: boolean } | null>(null);
@@ -55,6 +56,7 @@ export default function PrestadorView({ user }: { user: any }) {
       setScripts(scriptsData);
       setInstances(instancesData);
       setProviderName(providerData ? (providerData.trade_name || providerData.name) : null);
+      setPersonType(providerData?.person_type ?? null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -77,7 +79,14 @@ export default function PrestadorView({ user }: { user: any }) {
     );
   }
 
-  const scriptsVigentes = scripts.filter((s: any) => s.is_current !== false);
+  const scriptsVigentesRaw = scripts.filter((s: any) => s.is_current !== false);
+  // Prestador PF (ex.: médico cooperado) usa preferencialmente o roteiro "Médicos"
+  // (OPS-RED-FOR-017). O plural evita casar com PJ ("Clínica Médica", "Não Médico",
+  // "Medicina Nuclear"). Sem match, cai para todos os vigentes.
+  const medicoScripts = scriptsVigentesRaw.filter((s: any) => /m[ée]dicos\b/i.test(s.title || ''));
+  const scriptsVigentes = personType === 'PF' && medicoScripts.length > 0
+    ? medicoScripts
+    : scriptsVigentesRaw;
   const inProgress = instances.find(i => !OPEN_STATES.includes(i.status));
   const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);
   const displayName = providerName || (user?.name || '').split(' ')[0] || '';

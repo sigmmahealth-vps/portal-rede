@@ -1060,6 +1060,42 @@ async function startServer() {
     }
   });
 
+  app.put('/api/provider-contacts/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      const { rows: existing } = await query('SELECT provider_id FROM provider_contacts WHERE id = $1', [req.params.id]);
+      const contact = existing[0] as any;
+      if (!contact) return res.status(404).json({ error: 'Contato não encontrado' });
+
+      if (role !== 'admin' && role !== 'auditoria') {
+        const providerId = await resolveProviderId(req);
+        if (String(contact.provider_id) !== String(providerId)) {
+          return res.status(403).json({ error: 'Você não tem permissão para editar este contato' });
+        }
+      }
+
+      const { name, position, email, phone, cpf, council_registry } = req.body;
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({ error: 'Nome é obrigatório' });
+      }
+      const { rows } = await query(
+        `UPDATE provider_contacts
+            SET name = $1, position = $2, email = $3, phone = $4, cpf = $5, council_registry = $6
+          WHERE id = $7 RETURNING *`,
+        [String(name).trim(), position || null, email || null, phone || null, cpf || null, council_registry || null, req.params.id],
+      );
+      await auditLog({
+        query, userId: req.user.id, action: 'provider_contact_updated',
+        meta: { provider_id: Number(contact.provider_id), contact_id: Number(req.params.id), name: rows[0].name, position: rows[0].position },
+        ip: hashClientIp(req),
+      });
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.delete('/api/provider-contacts/:id', authenticate, async (req: any, res) => {
     try {
       const { role } = req.user;

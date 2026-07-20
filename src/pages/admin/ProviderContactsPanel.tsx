@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Users, Plus, Trash2, X, Mail, Phone, IdCard, Stethoscope } from 'lucide-react';
+import { Users, Plus, Trash2, Pencil, X, Mail, Phone, IdCard, Stethoscope } from 'lucide-react';
 
 type ProviderContactsPanelProps = {
   providerId: number | string | null;
@@ -12,6 +12,7 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
   const [contacts, setContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', position: '', council_registry: '', email: '', phone: '', cpf: '' });
 
@@ -38,21 +39,47 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
   };
 
   const resetForm = () => setForm({ name: '', position: '', council_registry: '', email: '', phone: '', cpf: '' });
+  const closeModal = () => { setShowModal(false); setEditingId(null); resetForm(); };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const startCreate = () => {
+    setEditingId(null);
+    resetForm();
+    setShowModal(true);
+  };
+
+  const startEdit = (c: any) => {
+    setEditingId(c.id);
+    setForm({
+      name: c.name ?? '',
+      position: c.position ?? '',
+      council_registry: c.council_registry ?? '',
+      email: c.email ?? '',
+      phone: c.phone ?? '',
+      cpf: c.cpf ?? '',
+    });
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!providerId) return;
     setSaving(true);
     try {
-      await fetchApi('/provider-contacts', {
-        method: 'POST',
-        body: JSON.stringify({ ...form, provider_id: providerId }),
-      });
-      setShowModal(false);
-      resetForm();
+      if (editingId != null) {
+        await fetchApi(`/provider-contacts/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await fetchApi('/provider-contacts', {
+          method: 'POST',
+          body: JSON.stringify({ ...form, provider_id: providerId }),
+        });
+      }
+      closeModal();
       loadContacts();
     } catch (err: any) {
-      alert(err.message || 'Erro ao cadastrar contato');
+      alert(err.message || 'Erro ao salvar contato');
     } finally {
       setSaving(false);
     }
@@ -73,7 +100,7 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
       {canEdit && (
         <div className="flex justify-end">
           <button
-            onClick={() => setShowModal(true)}
+            onClick={startCreate}
             disabled={!providerId}
             className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -127,13 +154,24 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
                     {!hideProviderColumn && <td className="py-3 text-gray-600">{c.provider_name || '-'}</td>}
                     {canEdit && (
                       <td className="py-3 text-right">
-                        <button
-                          onClick={() => handleDelete(c.id)}
-                          className="text-red-500 hover:text-red-700 p-1"
-                          title="Remover contato"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => startEdit(c)}
+                            className="text-gray-500 hover:text-[#00995D] p-1"
+                            title="Editar contato"
+                            aria-label="Editar contato"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(c.id)}
+                            className="text-red-500 hover:text-red-700 p-1"
+                            title="Remover contato"
+                            aria-label="Remover contato"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -148,12 +186,14 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Novo Contato/Profissional</h3>
-              <button onClick={() => { setShowModal(false); resetForm(); }} className="text-gray-400 hover:text-gray-600">
+              <h3 className="text-lg font-bold text-gray-900">
+                {editingId != null ? 'Editar Contato/Profissional' : 'Novo Contato/Profissional'}
+              </h3>
+              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleCreate} className="p-6 space-y-4 overflow-y-auto">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nome <span className="text-red-500">*</span></label>
                 <input
@@ -216,7 +256,7 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
               </div>
               <div className="pt-4 flex justify-end gap-3">
                 <button
-                  type="button" onClick={() => { setShowModal(false); resetForm(); }}
+                  type="button" onClick={closeModal}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   Cancelar

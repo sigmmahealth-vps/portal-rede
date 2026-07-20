@@ -17,6 +17,7 @@ const ACTION_META: Record<string, { label: string; icon: any }> = {
   provider_access_updated: { label: 'Acesso do prestador atualizado', icon: ShieldCheck },
   provider_updated: { label: 'Cadastro do prestador atualizado', icon: Pencil },
   provider_contact_created: { label: 'Contato adicionado à equipe', icon: UserPlus },
+  provider_contact_updated: { label: 'Contato da equipe atualizado', icon: Pencil },
   provider_contact_deleted: { label: 'Contato removido da equipe', icon: User },
   document_uploaded: { label: 'Documento enviado', icon: FileText },
   document_updated: { label: 'Documento substituído', icon: FileText },
@@ -70,6 +71,7 @@ function detailFor(action: string | null, meta: any): string | null {
     case 'provider_updated':
       return m.field ? `Campo: ${m.field}` : null;
     case 'provider_contact_created':
+    case 'provider_contact_updated':
       return [m.name, m.position].filter(Boolean).join(' — ') || null;
     default:
       return null;

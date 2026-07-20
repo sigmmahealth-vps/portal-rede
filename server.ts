@@ -1210,11 +1210,12 @@ async function startServer() {
                  p.area_atuacao, p.qualification_level, p.status, p.sgu_synced_at,
                  loc.cidade, loc.uf,
                  COALESCE(
-                   (SELECT array_agg(DISTINCT cidade)
-                      FROM provider_locations
-                     WHERE provider_id = p.id AND cidade IS NOT NULL AND cidade <> ''),
-                   '{}'
-                 ) AS cidades
+                   (SELECT jsonb_agg(jsonb_build_object('cidade', x.cidade, 'uf', x.uf))
+                      FROM (SELECT DISTINCT cidade, uf FROM provider_locations
+                             WHERE provider_id = p.id AND cidade IS NOT NULL AND cidade <> ''
+                             ORDER BY cidade) x),
+                   '[]'::jsonb
+                 ) AS locais
           FROM providers p
           LEFT JOIN LATERAL (
             SELECT cidade, uf FROM provider_locations pl

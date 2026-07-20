@@ -330,15 +330,20 @@ export default function Admin() {
     return { total, ativos, afastados: total - ativos, composicao, atualizadoEm, statusOptions };
   }, [providers]);
 
+  // Cada linha da tabela = (prestador × local). Fallback p/ o local primário
+  // (p.cidade/p.uf) se o backend antigo não devolver o array 'locais'.
+  const locaisDe = (p: any): { cidade: string; uf: string | null }[] => {
+    if (Array.isArray(p.locais) && p.locais.length) return p.locais;
+    return [{ cidade: p.cidade ?? '', uf: p.uf ?? null }];
+  };
+
   // Lista de municípios (TODAS as localizações — primária, secundária, etc.),
-  // fundindo duplicatas de caixa/acento. Fallback p/ p.cidade se o backend antigo
-  // ainda não devolver o array cidades.
+  // fundindo duplicatas de caixa/acento.
   const municipios = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of providers) {
-      const cidades: string[] = Array.isArray(p.cidades) && p.cidades.length ? p.cidades : [p.cidade];
-      for (const c of cidades) {
-        const nome = cleanCity(c);
+      for (const l of locaisDe(p)) {
+        const nome = cleanCity(l.cidade);
         if (!nome) continue;
         const key = normCity(nome);
         if (!map.has(key)) map.set(key, titleCase(nome));
@@ -347,18 +352,22 @@ export default function Admin() {
     return Array.from(map, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [providers]);
 
-  const filteredProviders = useMemo(() => {
+  // Expande em 1 linha por (prestador, local). Filtro de município é aplicado
+  // ao NÍVEL do local: um prestador com 4 cidades vira 4 linhas quando "Todos"
+  // está selecionado, e 1 linha quando o filtro casa uma cidade específica.
+  const filteredRows = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    return providers.filter((p) => {
-      if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.cpf || ''} ${p.code || ''}`.toLowerCase().includes(q)) return false;
-      if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) return false;
-      if (grupoFilter !== 'all' && String(p.provider_group ?? '') !== grupoFilter) return false;
-      if (municipioFilter !== 'all') {
-        const cidades: string[] = Array.isArray(p.cidades) && p.cidades.length ? p.cidades : [p.cidade];
-        if (!cidades.some((c) => normCity(c) === municipioFilter)) return false;
+    const out: { p: any; cidade: string; uf: string | null }[] = [];
+    for (const p of providers) {
+      if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.cpf || ''} ${p.code || ''}`.toLowerCase().includes(q)) continue;
+      if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) continue;
+      if (grupoFilter !== 'all' && String(p.provider_group ?? '') !== grupoFilter) continue;
+      for (const l of locaisDe(p)) {
+        if (municipioFilter !== 'all' && normCity(l.cidade) !== municipioFilter) continue;
+        out.push({ p, cidade: l.cidade, uf: l.uf });
       }
-      return true;
-    });
+    }
+    return out;
   }, [providers, searchTerm, statusFilter, grupoFilter, municipioFilter]);
 
   const filtrosAtivos = statusFilter !== 'all' || grupoFilter !== 'all' || municipioFilter !== 'all' || searchTerm.trim() !== '';
@@ -372,9 +381,9 @@ export default function Admin() {
 
   const exportarCSV = () => {
     const header = ['Nome', 'CNPJ/CPF', 'Código', 'Grupo de prestador', 'Município', 'UF', 'Nível Qualificação', 'Status'];
-    const linhas = filteredProviders.map((p) => [
-      p.name, formatDoc(p.cnpj || p.cpf), p.code, p.provider_group,
-      titleCase(cleanCity(p.cidade)), p.uf, p.qualification_level, p.status,
+    const linhas = filteredRows.map((r) => [
+      r.p.name, formatDoc(r.p.cnpj || r.p.cpf), r.p.code, r.p.provider_group,
+      titleCase(cleanCity(r.cidade)), r.uf, r.p.qualification_level, r.p.status,
     ]);
     const esc = (v: any) => {
       const s = String(v ?? '');
@@ -497,7 +506,7 @@ export default function Admin() {
                   )}
                   <button
                     onClick={exportarCSV}
-                    disabled={filteredProviders.length === 0}
+                    disabled={filteredRows.length === 0}
                     className="ml-auto flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 min-[480px]:ml-0"
                   >
                     <Download className="h-4 w-4" />
@@ -530,34 +539,38 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {filteredProviders.map((prestador) => (
-                    <tr
-                      key={prestador.id}
-                      onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
-                      className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
-                    >
-                      <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
-                      <td className="py-4 text-gray-600 whitespace-nowrap">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
-                      <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
-                      <td className="py-4 text-gray-600 break-words">{prestador.provider_group || '-'}</td>
-                      <td className="py-4 text-gray-600 break-words">
-                        {cleanCity(prestador.cidade)
-                          ? `${titleCase(cleanCity(prestador.cidade))}${prestador.uf ? '/' + String(prestador.uf).toUpperCase() : ''}`
-                          : '-'}
-                      </td>
-                      <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>
-                      <td className="py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                          String(prestador.status).toLowerCase() === 'ativo'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {prestador.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredProviders.length === 0 && !loading && (
+                  {filteredRows.map((row, i) => {
+                    const prestador = row.p;
+                    const cidadeLimpa = cleanCity(row.cidade);
+                    return (
+                      <tr
+                        key={`${prestador.id}-${normCity(row.cidade) || i}`}
+                        onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
+                        className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                      >
+                        <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
+                        <td className="py-4 text-gray-600 whitespace-nowrap">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
+                        <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
+                        <td className="py-4 text-gray-600 break-words">{prestador.provider_group || '-'}</td>
+                        <td className="py-4 text-gray-600 break-words">
+                          {cidadeLimpa
+                            ? `${titleCase(cidadeLimpa)}${row.uf ? '/' + String(row.uf).toUpperCase() : ''}`
+                            : '-'}
+                        </td>
+                        <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>
+                        <td className="py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                            String(prestador.status).toLowerCase() === 'ativo'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {prestador.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredRows.length === 0 && !loading && (
                     <tr>
                       <td colSpan={7} className="py-8 text-center text-gray-500">
                         {providers.length === 0 ? 'Nenhum prestador encontrado.' : 'Nenhum prestador corresponde aos filtros.'}
@@ -570,8 +583,10 @@ export default function Admin() {
 
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
               <p>
-                Mostrando <span className="font-medium text-gray-700">{filteredProviders.length.toLocaleString('pt-BR')}</span>
-                {filteredProviders.length !== providers.length && <> de {providers.length.toLocaleString('pt-BR')}</>} prestadores
+                Mostrando <span className="font-medium text-gray-700">{filteredRows.length.toLocaleString('pt-BR')}</span> resultados
+                {' · '}
+                <span className="font-medium text-gray-700">{new Set(filteredRows.map((r) => r.p.id)).size.toLocaleString('pt-BR')}</span>
+                {' de '}{providers.length.toLocaleString('pt-BR')} prestadores
               </p>
             </div>
           </div>

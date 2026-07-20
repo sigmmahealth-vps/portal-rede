@@ -98,9 +98,11 @@ export default function Perfil() {
             <h2 className="text-2xl font-bold text-gray-900">{user?.name}</h2>
             <p className="text-gray-500 flex items-center mt-1">
               <Shield className="h-4 w-4 mr-1.5 text-[#00995D]" />
-              {user?.role === 'prestador' ? 'Prestador Credenciado' : 
-               user?.role === 'cooperado' ? 'Médico Cooperado' :
-               user?.role === 'admin' ? 'Administrador' : 'Auditoria'}
+              {user?.role === 'admin' ? 'Administrador' :
+               user?.role === 'auditoria' ? 'Auditoria' :
+               user?.provider_person_type === 'PF' ? 'Prestador Credenciado (PF)' :
+               user?.provider_person_type === 'PJ' ? 'Prestador Credenciado (PJ)' :
+               'Prestador Credenciado'}
             </p>
           </div>
 

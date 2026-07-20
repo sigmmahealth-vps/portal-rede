@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
+import { welcomeLine } from '../lib/greeting';
 import { 
   UploadCloud, 
   Monitor, 
@@ -84,11 +85,10 @@ export default function Dashboard() {
     }, 1500);
   };
 
-  const firstName = user?.name?.split(' ')[0] || 'Usuário';
+  const greeting = welcomeLine(user?.last_login_at);
   const lastAccess = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
   const isCooperado = user?.is_cooperado === true;
-  const isPrestador = user?.role === 'prestador' || user?.role === 'cooperado';
 
   // Formata percentual em pt-BR (vírgula). Valores numeric do Postgres chegam como string.
   const formatPct = (value: number) => value.toFixed(2).replace('.', ',');
@@ -120,12 +120,6 @@ export default function Dashboard() {
       case 'Bronze': return { bg: 'bg-orange-300', border: 'border-orange-200', text: 'text-orange-900', label: 'SELO\nBRONZE' };
       default: return { bg: 'bg-gray-100', border: 'border-gray-200', text: 'text-gray-400', label: 'SEM\nSELO' };
     }
-  };
-
-  const getRoleGreeting = () => {
-    if (isCooperado) return 'Bem-vindo(a) ao portal do Cooperado Unimed';
-    if (isPrestador) return 'Bem-vindo(a) ao portal da Rede Prestadora';
-    return 'Bem-vindo(a) ao Unimed Rede+';
   };
 
   if (loading) {
@@ -267,7 +261,7 @@ export default function Dashboard() {
     return (
       <div className="max-w-7xl mx-auto pb-10">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Olá, {firstName}. {getRoleGreeting()}</h1>
+          <h1 className="text-2xl font-bold text-gray-800">{greeting}</h1>
           <p className="text-sm text-gray-500">Último acesso: {lastAccess}</p>
         </div>
 
@@ -379,7 +373,7 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto pb-10">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Olá, seja bem vindo</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{greeting}</h1>
         <p className="text-sm text-gray-500">Último acesso: {lastAccess}</p>
       </div>
 

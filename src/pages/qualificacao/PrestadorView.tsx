@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { welcomeLine } from '../../lib/greeting';
 import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye,
 } from 'lucide-react';
@@ -35,7 +36,6 @@ function EmBreve({ icon: Icon, title, desc }: { icon: any; title: string; desc: 
 export default function PrestadorView({ user }: { user: any }) {
   const [scripts, setScripts] = useState<any[]>([]);
   const [instances, setInstances] = useState<any[]>([]);
-  const [providerName, setProviderName] = useState<string | null>(null);
   const [evalScriptId, setEvalScriptId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('roteiros');
@@ -55,7 +55,6 @@ export default function PrestadorView({ user }: { user: any }) {
       ]);
       setScripts(scriptsData);
       setInstances(instancesData);
-      setProviderName(providerData ? (providerData.trade_name || providerData.name) : null);
       setEvalScriptId(providerData?.eval_script_id ?? null);
     } catch (err) {
       console.error(err);
@@ -88,7 +87,7 @@ export default function PrestadorView({ user }: { user: any }) {
     : scriptsVigentesRaw;
   const inProgress = instances.find(i => !OPEN_STATES.includes(i.status));
   const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);
-  const displayName = providerName || (user?.name || '').split(' ')[0] || '';
+  const greeting = welcomeLine(user?.last_login_at);
 
   // Progresso de preenchimento (respondidos / total), não o score — que só existe pós-auditoria.
   const fillPct = (i: any) => {
@@ -102,7 +101,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const inicioTab = (
     <div className="space-y-6">
       <div className="rounded-2xl border border-gray-200 bg-white p-6">
-        <h2 className="text-lg font-bold text-secondary-900">Olá{displayName ? `, ${displayName}` : ''}</h2>
+        <h2 className="text-lg font-bold text-secondary-900">{greeting}</h2>
 
         {inProgress ? (
           <>

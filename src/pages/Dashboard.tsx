@@ -379,7 +379,7 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto pb-10">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Olá, {firstName}. {getRoleGreeting()}</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Olá, seja bem vindo</h1>
         <p className="text-sm text-gray-500">Último acesso: {lastAccess}</p>
       </div>
 

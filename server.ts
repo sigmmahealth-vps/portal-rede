@@ -1170,11 +1170,17 @@ async function startServer() {
             GROUP BY seal`
         );
 
+        // Avaliações submetidas pelo prestador aguardando análise do auditor.
+        const { rows: pendingEvalRows } = await query(
+          `SELECT COUNT(*)::int AS count FROM eval_instances WHERE status = 'pendente'`
+        );
+
         res.json({
           providersCount: providersCountRows[0],
           openTicketsCount: openTicketsCountRows[0],
           pendingDocsCount: pendingDocsCountRows[0],
           pendingCredentialingCount: pendingCredentialingCountRows[0],
+          pendingEvaluationsCount: pendingEvalRows[0],
           sealDistribution,
           recentPendingDocs,
           recentOpenTickets

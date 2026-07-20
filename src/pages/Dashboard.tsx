@@ -197,33 +197,63 @@ export default function Dashboard() {
               </Link>
             </div>
             <div className="p-5">
-              {sealTotal > 0 ? (
-                <div className="space-y-4">
-                  {[
-                    { name: 'Ouro', icon: 'bg-yellow-100', color: 'text-yellow-600' },
-                    { name: 'Prata', icon: 'bg-gray-100', color: 'text-gray-500' },
-                    { name: 'Bronze', icon: 'bg-orange-100', color: 'text-orange-600' },
-                  ].map(({ name, icon, color }) => {
-                    const { count, pct } = getSeal(name);
-                    return (
-                      <div key={name} className="flex items-center justify-between">
+              {(() => {
+                const pendingEvals = Number(adminData?.pendingEvaluationsCount?.count || 0);
+                const hasContent = sealTotal > 0 || pendingEvals > 0;
+                return (
+                  <>
+                    {pendingEvals > 0 && (
+                      <Link
+                        to="/qualificacao"
+                        className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 transition-colors hover:bg-amber-100"
+                      >
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full ${icon} flex items-center justify-center`}>
-                            <Award className={`h-5 w-5 ${color}`} />
+                          <div className="grid h-10 w-10 place-items-center rounded-full bg-amber-100">
+                            <Clock className="h-5 w-5 text-amber-600" />
                           </div>
                           <div>
-                            <p className="text-sm font-bold text-gray-800">Selo {name}</p>
-                            <p className="text-xs text-gray-500">{count} {count === 1 ? 'prestador avaliado' : 'prestadores avaliados'}</p>
+                            <p className="text-sm font-bold text-amber-900">Pendentes de análise</p>
+                            <p className="text-xs text-amber-700">
+                              {pendingEvals === 1
+                                ? '1 avaliação aguardando auditoria'
+                                : `${pendingEvals} avaliações aguardando auditoria`}
+                            </p>
                           </div>
                         </div>
-                        <span className="text-lg font-bold text-gray-800">{formatPct(pct)}%</span>
+                        <span className="text-xl font-bold tabular-nums text-amber-900">{pendingEvals}</span>
+                      </Link>
+                    )}
+                    {sealTotal > 0 && (
+                      <div className="space-y-4">
+                        {[
+                          { name: 'Ouro', icon: 'bg-yellow-100', color: 'text-yellow-600' },
+                          { name: 'Prata', icon: 'bg-gray-100', color: 'text-gray-500' },
+                          { name: 'Bronze', icon: 'bg-orange-100', color: 'text-orange-600' },
+                        ].map(({ name, icon, color }) => {
+                          const { count, pct } = getSeal(name);
+                          return (
+                            <div key={name} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full ${icon} flex items-center justify-center`}>
+                                  <Award className={`h-5 w-5 ${color}`} />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold text-gray-800">Selo {name}</p>
+                                  <p className="text-xs text-gray-500">{count} {count === 1 ? 'prestador avaliado' : 'prestadores avaliados'}</p>
+                                </div>
+                              </div>
+                              <span className="text-lg font-bold text-gray-800">{formatPct(pct)}%</span>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-6 text-gray-500 text-sm">Nenhuma avaliação finalizada ainda.</div>
-              )}
+                    )}
+                    {!hasContent && (
+                      <div className="text-center py-6 text-gray-500 text-sm">Nenhuma avaliação finalizada nem pendente ainda.</div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 

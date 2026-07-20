@@ -96,6 +96,8 @@ export default function Admin() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [grupoFilter, setGrupoFilter] = useState('all');
   const [municipioFilter, setMunicipioFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
   const [user, setUser] = useState<any>(null);
   
   const [providers, setProviders] = useState<any[]>([]);
@@ -372,6 +374,11 @@ export default function Admin() {
 
   const filtrosAtivos = statusFilter !== 'all' || grupoFilter !== 'all' || municipioFilter !== 'all' || searchTerm.trim() !== '';
 
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, grupoFilter, municipioFilter]);
+
   const limparFiltros = () => {
     setSearchTerm('');
     setStatusFilter('all');
@@ -539,7 +546,7 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {filteredRows.map((row, i) => {
+                  {pageRows.map((row, i) => {
                     const prestador = row.p;
                     const cidadeLimpa = cleanCity(row.cidade);
                     return (
@@ -581,13 +588,34 @@ export default function Admin() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-4 text-sm text-gray-500">
               <p>
-                Mostrando <span className="font-medium text-gray-700">{filteredRows.length.toLocaleString('pt-BR')}</span> resultados
-                {' · '}
-                <span className="font-medium text-gray-700">{new Set(filteredRows.map((r) => r.p.id)).size.toLocaleString('pt-BR')}</span>
-                {' de '}{providers.length.toLocaleString('pt-BR')} prestadores
+                {filteredRows.length === 0 ? 'Nenhum resultado' : <>
+                  Mostrando <span className="font-medium text-gray-700">{((safePage - 1) * PAGE_SIZE + 1).toLocaleString('pt-BR')}
+                  {'–'}{Math.min(safePage * PAGE_SIZE, filteredRows.length).toLocaleString('pt-BR')}</span>
+                  {' de '}<span className="font-medium text-gray-700">{filteredRows.length.toLocaleString('pt-BR')}</span> resultados
+                  {' · '}
+                  <span className="font-medium text-gray-700">{new Set(filteredRows.map((r) => r.p.id)).size.toLocaleString('pt-BR')}</span>
+                  {' de '}{providers.length.toLocaleString('pt-BR')} prestadores
+                </>}
               </p>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >Anterior</button>
+                  <span className="tabular-nums">Página {safePage} de {totalPages}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage >= totalPages}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >Próxima</button>
+                </div>
+              )}
             </div>
           </div>
         )}

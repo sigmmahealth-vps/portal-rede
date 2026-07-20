@@ -1533,11 +1533,16 @@ async function startServer() {
       }
       const { rows: userRows } = await query('SELECT id FROM users WHERE provider_id = $1', [req.params.id]);
       const userIds = userRows.map((r: any) => r.id);
+      // Enriquece com al.meta e junta o rótulo da unidade quando meta.location_id existe
+      // (avaliações por unidade). Evento de outra natureza segue com location_label null.
       const { rows: events } = await query(
-        `SELECT al.id, al.action, al.success, al.ip_hash, al.created_at,
-                u.name AS actor_name, u.email AS actor_email
+        `SELECT al.id, al.action, al.success, al.ip_hash, al.created_at, al.meta,
+                u.name AS actor_name, u.email AS actor_email,
+                COALESCE(pl.label, pl.cidade) AS location_label
            FROM access_logs al
            LEFT JOIN users u ON u.id = al.user_id
+           LEFT JOIN provider_locations pl
+                  ON pl.id = NULLIF(al.meta->>'location_id','')::int
           WHERE al.user_id = ANY($1::int[])
              OR al.meta->>'provider_id' = $2
           ORDER BY al.created_at DESC

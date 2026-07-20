@@ -65,9 +65,13 @@ function detailFor(action: string | null, meta: any): string | null {
     case 'action_plan_status_changed':
       return m.status ? `→ ${m.status}` : null;
     case 'evaluation_answered':
-      return m.answers_count != null ? `${m.answers_count} resposta(s)` : null;
+      return [m.location_label && `Unidade ${m.location_label}`, m.answers_count != null && `${m.answers_count} resposta(s)`]
+        .filter(Boolean).join(' · ') || null;
     case 'evaluation_status_changed':
-      return [m.status && `→ ${m.status}`, m.seal && `selo: ${m.seal}`].filter(Boolean).join(' · ') || null;
+      return [m.location_label && `Unidade ${m.location_label}`, m.status && `→ ${m.status}`, m.seal && `selo: ${m.seal}`]
+        .filter(Boolean).join(' · ') || null;
+    case 'evaluation_created':
+      return m.location_label ? `Unidade ${m.location_label}` : null;
     case 'provider_updated':
       return m.field ? `Campo: ${m.field}` : null;
     case 'provider_contact_created':

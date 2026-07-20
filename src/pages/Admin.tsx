@@ -77,7 +77,6 @@ const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) 
   { key: 'lab', label: 'Laboratórios', icon: Microscope, match: (t) => t.includes('LABORAT') },
   { key: 'hospital', label: 'Hospitais', icon: Hospital, match: (t) => t.includes('HOSPITAL') },
   { key: 'diag', label: 'Centros de Diagnóstico', icon: Activity, match: (t) => t.includes('CENTRO') || t.includes('DIAGN') },
-  { key: 'outros', label: 'Outros', icon: Users, match: () => true },
 ];
 
 const PRESTADORES_MOCK = [
@@ -319,8 +318,8 @@ export default function Admin() {
       if (st) statusCounts[st] = (statusCounts[st] || 0) + 1;
       if (p.sgu_synced_at && (!atualizadoEm || p.sgu_synced_at > atualizadoEm)) atualizadoEm = p.sgu_synced_at;
       const t = String(p.provider_type || '').toUpperCase();
-      const bucket = TYPE_BUCKETS.find(b => b.match(t))!;
-      counts[bucket.key] = (counts[bucket.key] || 0) + 1;
+      const bucket = TYPE_BUCKETS.find(b => b.match(t));
+      if (bucket) counts[bucket.key] = (counts[bucket.key] || 0) + 1;
     }
     const composicao = TYPE_BUCKETS
       .map(b => ({ key: b.key, label: b.label, icon: b.icon, count: counts[b.key] || 0 }))

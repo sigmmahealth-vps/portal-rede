@@ -305,13 +305,18 @@ async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
   // Emite a sessão (JWT em cookie httpOnly) e devolve o payload do usuário.
-  // Também busca provider.person_type quando há provider_id (front usa como discriminador PF/PJ).
+  // Traz do provider: person_type (PF/PJ) e is_cooperado (grupo "MEDICOS COOPERADOS").
   const issueSession = async (res: any, user: any, previousLoginAt: any) => {
     let providerPersonType: string | null = null;
+    let providerGroup: string | null = null;
     if (user.provider_id) {
-      const { rows } = await query('SELECT person_type FROM providers WHERE id = $1', [user.provider_id]);
+      const { rows } = await query('SELECT person_type, provider_group FROM providers WHERE id = $1', [user.provider_id]);
       providerPersonType = rows[0]?.person_type ?? null;
+      providerGroup = rows[0]?.provider_group ?? null;
     }
+    // Cooperado = grupo "MEDICOS COOPERADOS" (com ou sem sufixo ARARANGUA). Regra ancorada
+    // no provider_group porque o provider_type "MÉDICO" cobre também psicólogos/nutris/etc.
+    const isCooperado = /^MEDICOS COOPERADOS(\s+ARARANGUA)?$/i.test(String(providerGroup ?? '').trim());
     const token = jwt.sign(
       { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id },
       JWT_SECRET as string,
@@ -324,6 +329,7 @@ async function startServer() {
       user: {
         id: user.id, name: user.name, email: user.email, role: user.role,
         provider_id: user.provider_id, provider_person_type: providerPersonType,
+        provider_group: providerGroup, is_cooperado: isCooperado,
         last_login_at: previousLoginAt,
       },
     };

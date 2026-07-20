@@ -87,7 +87,7 @@ export default function Dashboard() {
   const firstName = user?.name?.split(' ')[0] || 'Usuário';
   const lastAccess = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
-  const isPFProvider = user?.provider_person_type === 'PF';
+  const isCooperado = user?.is_cooperado === true;
   const isPrestador = user?.role === 'prestador' || user?.role === 'cooperado';
 
   // Formata percentual em pt-BR (vírgula). Valores numeric do Postgres chegam como string.
@@ -123,7 +123,7 @@ export default function Dashboard() {
   };
 
   const getRoleGreeting = () => {
-    if (isPFProvider) return 'Bem-vindo(a) ao portal do Cooperado Unimed';
+    if (isCooperado) return 'Bem-vindo(a) ao portal do Cooperado Unimed';
     if (isPrestador) return 'Bem-vindo(a) ao portal da Rede Prestadora';
     return 'Bem-vindo(a) ao Unimed Rede+';
   };
@@ -261,7 +261,7 @@ export default function Dashboard() {
     );
   }
 
-  if (isPFProvider) {
+  if (isCooperado) {
     const openTickets = adminData?.tickets?.filter((t: any) => t.status !== 'encerrado').length || 0;
     const pendingTrainings = adminData?.trainings?.filter((t: any) => t.status !== 'concluido').length || 0;
     return (

@@ -48,14 +48,14 @@ export default function Layout() {
   const [user, setUser] = useState<any>(null);
 
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
-  const isPFProvider = user?.provider_person_type === 'PF';
+  const isCooperado = user?.is_cooperado === true;
 
-  // Módulos de pessoa jurídica que não se aplicam a prestador PF (ex.: médico cooperado).
-  const PF_HIDDEN = ['Gestão Documental', 'Contratos', 'Financeiro'];
+  // Módulos de pessoa jurídica que não se aplicam ao médico cooperado.
+  const COOPERADO_HIDDEN = ['Gestão Documental', 'Contratos', 'Financeiro'];
 
   const filteredNavigation = navigation.filter(item => {
     if ((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin) return false;
-    if (isPFProvider && PF_HIDDEN.includes(item.name)) return false;
+    if (isCooperado && COOPERADO_HIDDEN.includes(item.name)) return false;
 
     return true;
   });

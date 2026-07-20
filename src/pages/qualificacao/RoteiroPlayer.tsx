@@ -4,7 +4,7 @@ import { computeScore } from '../../lib/score';
 import { questionOnly } from '../../lib/questionText';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
-  AlertTriangle, MessageSquarePlus, Save, Loader2, Paperclip, Eye,
+  AlertTriangle, Save, Loader2, Paperclip, Eye,
 } from 'lucide-react';
 
 interface Question {
@@ -158,7 +158,6 @@ export default function RoteiroPlayer({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
-  const [obsOpen, setObsOpen] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -416,14 +415,14 @@ export default function RoteiroPlayer({
   const answeredCount = questions.filter(isAnswered).length;
   const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
-  // Pendência = critério sem resposta; ou evidência obrigatória sem arquivo (exceto N/A);
-  // ou N/A sem justificativa.
+  // Pendência = critério sem resposta OU resposta sem o requisito da opção:
+  //   Sim → precisa de evidência (arquivo)
+  //   Não / N/A → precisa de observação (texto)
   const pendingItems = () => questions.filter(q => {
     const a = answers[q.id];
     if (!a?.answer_value) return true;
-    if (a.answer_value === 'na') return !a.provider_observation?.trim();
-    if (q.evidence_required && !a.file_url) return true;
-    return false;
+    if (a.answer_value === 'sim') return !a.file_url;
+    return !a.provider_observation?.trim();
   });
   // ponytail: um Set por render (não por card) — evita o O(n²) de chamar pendingItems() no map.
   const pendingSet = new Set(pendingItems().map(q => q.id));
@@ -543,12 +542,11 @@ export default function RoteiroPlayer({
                   {secQuestions.map(q => {
                     const ans = answers[q.id];
                     const value = ans?.answer_value;
+                    const isSim = value === 'sim';
                     const isNao = value === 'nao';
                     const isNa = value === 'na';
                     const answered = !!value;
                     const pending = pendingSet.has(q.id);
-                    const required = q.evidence_required || q.is_eliminatory;
-                    const showObs = isNa || obsOpen[q.id] || ans?.provider_observation !== undefined;
 
                     return (
                       <article
@@ -608,14 +606,6 @@ export default function RoteiroPlayer({
                           </p>
                         )}
 
-                        {/* Banner de obrigatoriedade */}
-                        {pending && required && (
-                          <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                            Este critério é obrigatório{q.evidence_required ? ' e exige evidência anexada.' : '.'}
-                          </div>
-                        )}
-
                         {/* Resposta segmentada Sim / Não / N/A */}
                         {q.type === 'sim_nao' && (
                           <div className="mt-4 flex w-fit rounded-xl border border-gray-200 bg-gray-50 p-1" role="group" aria-label="Resposta">
@@ -648,43 +638,33 @@ export default function RoteiroPlayer({
                           </div>
                         )}
 
-                        {/* Observação / Justificativa */}
-                        {isNa ? (
+                        {/* Observação obrigatória para Não e N/A */}
+                        {(isNao || isNa) && (
                           <div className="mt-4">
                             <label className="mb-1 block text-sm font-semibold text-secondary-900">
-                              Justificativa <span className="font-normal text-red-600">(obrigatória para “Não se aplica”)</span>
+                              {isNa ? 'Justificativa' : 'Observação'}{' '}
+                              <span className="font-normal text-red-600">(obrigatória)</span>
                             </label>
                             <textarea
                               value={ans?.provider_observation || ''}
                               onChange={(e) => handleObservationChange(q.id, e.target.value)}
                               rows={2}
-                              placeholder="Explique por que este critério não se aplica ao seu estabelecimento."
+                              placeholder={
+                                isNa
+                                  ? 'Explique por que este critério não se aplica ao seu estabelecimento.'
+                                  : 'Descreva o motivo da não conformidade.'
+                              }
                               className="w-full rounded-lg border border-gray-300 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
                             />
                           </div>
-                        ) : showObs ? (
-                          <div className="mt-4">
-                            <label className="mb-1 block text-xs font-semibold text-gray-500">Observação (opcional)</label>
-                            <textarea
-                              value={ans?.provider_observation || ''}
-                              onChange={(e) => handleObservationChange(q.id, e.target.value)}
-                              rows={2}
-                              className="w-full rounded-lg border border-gray-200 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
-                            />
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setObsOpen(prev => ({ ...prev, [q.id]: true }))}
-                            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700"
-                          >
-                            <MessageSquarePlus className="h-4 w-4" /> Adicionar observação
-                          </button>
                         )}
 
-                        {/* Evidência */}
-                        {q.evidence_required && !isNa && (
+                        {/* Evidência obrigatória para Sim */}
+                        {isSim && (
                           <div className="mt-4 border-t border-gray-100 pt-4">
-                            <p className="mb-2 text-sm font-semibold text-secondary-900">Evidência obrigatória</p>
+                            <p className="mb-2 text-sm font-semibold text-secondary-900">
+                              Evidência <span className="font-normal text-red-600">(obrigatória)</span>
+                            </p>
                             {ans?.file_url ? (
                               <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5">
                                 <span className="inline-flex items-center gap-2 text-sm font-medium text-emerald-700">

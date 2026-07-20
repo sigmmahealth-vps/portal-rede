@@ -2988,13 +2988,30 @@ async function startServer() {
       if (!script_id || !providerId) {
         return res.status(400).json({ error: 'script_id e provider_id são obrigatórios' });
       }
+      // Avaliação é por unidade de atendimento. Se o body não trouxer location_id e o
+      // prestador tem exatamente 1 unidade comercial, resolve automático. Se tem 0 ou >1
+      // sem escolha, salva com NULL (compat legada — instância "do prestador inteiro").
+      let locationId: number | null = req.body.location_id ? Number(req.body.location_id) : null;
+      if (locationId == null) {
+        const { rows: locs } = await query(
+          `SELECT id FROM provider_locations
+            WHERE provider_id = $1
+              AND COALESCE(label,'') NOT ILIKE 'residencial%'
+              AND COALESCE(sgu_location_code,'') !~ '-RES$'`,
+          [providerId],
+        );
+        if (locs.length === 1) locationId = Number(locs[0].id);
+      }
       const { rows } = await query(`
-        INSERT INTO eval_instances (script_id, provider_id, status, started_at)
-        VALUES ($1, $2, 'em_andamento', $3) RETURNING id
-      `, [script_id, providerId, new Date().toISOString()]);
+        INSERT INTO eval_instances (script_id, provider_id, location_id, status, started_at)
+        VALUES ($1, $2, $3, 'em_andamento', $4) RETURNING id
+      `, [script_id, providerId, locationId, new Date().toISOString()]);
       await auditLog({
         query, userId: req.user.id, action: 'evaluation_created',
-        meta: { provider_id: Number(providerId), instance_id: rows[0].id, script_id: Number(script_id) },
+        meta: {
+          provider_id: Number(providerId), instance_id: rows[0].id,
+          script_id: Number(script_id), location_id: locationId,
+        },
         ip: hashClientIp(req),
       });
       res.json({ success: true, id: rows[0].id });
@@ -3025,6 +3042,8 @@ async function startServer() {
       const { provider_id, role } = req.user;
       const baseQuery = `
         SELECT ei.*, s.title as script_title, p.name as provider_name,
+          COALESCE(pl.label, pl.cidade) AS location_label,
+          pl.cidade AS location_cidade, pl.uf AS location_uf,
           (SELECT count(*)::int FROM eval_questions eq
              JOIN eval_sections es ON eq.section_id = es.id
             WHERE es.script_id = ei.script_id) AS total_questions,
@@ -3033,6 +3052,7 @@ async function startServer() {
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id
+        LEFT JOIN provider_locations pl ON pl.id = ei.location_id
       `;
       let instances;
       if (role === 'admin' || role === 'auditoria') {
@@ -3052,10 +3072,13 @@ async function startServer() {
   app.get('/api/eval/instances/:id', authenticate, async (req: any, res) => {
     try {
       const { rows: instanceRows } = await query(`
-        SELECT ei.*, s.title as script_title, p.name as provider_name
+        SELECT ei.*, s.title as script_title, p.name as provider_name,
+               COALESCE(pl.label, pl.cidade) AS location_label,
+               pl.cidade AS location_cidade, pl.uf AS location_uf
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id
+        LEFT JOIN provider_locations pl ON pl.id = ei.location_id
         WHERE ei.id = $1
       `, [req.params.id]);
       const instance = instanceRows[0] as any;
@@ -3076,7 +3099,7 @@ async function startServer() {
   // Carrega a instância garantindo posse (anti-IDOR). Prestador só acessa a própria;
   // admin/auditoria acessam qualquer uma. Responde 404/403 e retorna null se negado.
   const loadInstanceForWrite = async (req: any, res: any): Promise<any | null> => {
-    const { rows } = await query('SELECT id, provider_id, status FROM eval_instances WHERE id = $1', [req.params.id]);
+    const { rows } = await query('SELECT id, provider_id, location_id, status FROM eval_instances WHERE id = $1', [req.params.id]);
     const instance = rows[0] as any;
     if (!instance) {
       res.status(404).json({ error: 'Avaliação não encontrada' });
@@ -3125,6 +3148,7 @@ async function startServer() {
         meta: {
           provider_id: Number(instance.provider_id),
           instance_id: Number(instanceId),
+          location_id: instance.location_id ?? null,
           answers_count: Array.isArray(answers) ? answers.length : 0,
         },
         ip: hashClientIp(req),
@@ -3154,6 +3178,7 @@ async function startServer() {
         meta: {
           provider_id: Number(instance.provider_id),
           instance_id: Number(req.params.id),
+          location_id: instance.location_id ?? null,
           status, seal: seal || null,
         },
         ip: hashClientIp(req),

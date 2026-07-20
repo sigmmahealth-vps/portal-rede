@@ -162,6 +162,7 @@ export default function RoteiroPlayer({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -556,12 +557,63 @@ export default function RoteiroPlayer({
                 Esta seção é de registro qualitativo — não há critérios para o prestador pontuar neste roteiro.
               </p>
             </div>
-          ) : (
+          ) : (() => {
+            // Contadores por status para o grupo atual (macro-seção selecionada).
+            const groupQs = renderList.flatMap(({ section }) => questionsBySection.get(section.id) ?? []);
+            const groupPending = groupQs.filter(q => pendingSet.has(q.id)).length;
+            const groupDone = groupQs.length - groupPending;
+            const filterMatches = (q: Question) => {
+              if (statusFilter === 'pending') return pendingSet.has(q.id);
+              if (statusFilter === 'done') return !pendingSet.has(q.id);
+              return true;
+            };
+            const filterTabs = [
+              { key: 'all',     label: 'Todas',       count: groupQs.length },
+              { key: 'pending', label: 'Pendentes',   count: groupPending },
+              { key: 'done',    label: 'Respondidas', count: groupDone },
+            ] as const;
+            const totalVisible = groupQs.filter(filterMatches).length;
+            return (
             <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-6 border-0 p-0">
+            {/* Filtro de status — aplica a todas as (sub)seções do grupo atual. */}
+            <div className="flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+              {filterTabs.map(t => {
+                const active = statusFilter === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setStatusFilter(t.key)}
+                    aria-pressed={active}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                      active ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    {t.label}
+                    <span className={`inline-flex min-w-[1.5rem] justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                      active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {t.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {totalVisible === 0 && (
+              <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center">
+                <p className="text-sm text-gray-500">
+                  {statusFilter === 'pending' ? 'Nenhum item pendente neste grupo — bom trabalho!' : 'Nenhum item respondido ainda.'}
+                </p>
+              </div>
+            )}
+
             {renderList.map(({ section: renderSec, depth }) => {
-              const secQuestions = questionsBySection.get(renderSec.id) ?? [];
+              const allSecQuestions = questionsBySection.get(renderSec.id) ?? [];
+              const secQuestions = allSecQuestions.filter(filterMatches);
               const showHeader = depth >= 1;
               if (secQuestions.length === 0 && !showHeader) return null;
+              if (secQuestions.length === 0 && statusFilter !== 'all') return null;
 
               return (
                 <section key={renderSec.id} className="space-y-4">
@@ -747,7 +799,8 @@ export default function RoteiroPlayer({
               );
             })}
             </fieldset>
-          )}
+            );
+          })()}
 
           {/* Navegação entre seções */}
           {!loading && !emptyGroup && (

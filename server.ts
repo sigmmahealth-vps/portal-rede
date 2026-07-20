@@ -3172,13 +3172,16 @@ async function startServer() {
       // A evidência pertence ao prestador da própria instância (evita gravar no prestador errado).
       const providerId = instance.provider_id;
       const fileUrl = '/uploads/' + req.file.filename;
+      const questionId = req.body.question_id ? Number(req.body.question_id) : null;
 
-      await query(`
-        INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [providerId, 'qualificacao_evidencia', new Date().toISOString(), 'valido', fileUrl, req.user.id, instanceId]);
+      // Cada evidência é um row novo (permite múltiplos anexos por questão).
+      const { rows: docRows } = await query(`
+        INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id, question_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+      `, [providerId, 'qualificacao_evidencia', new Date().toISOString(), 'valido', fileUrl, req.user.id, instanceId, questionId]);
 
-      const questionId = req.body.question_id;
+      // Mantém eval_answers.evidence_url apontando p/ o último anexo (compat com consumidores legados).
       if (questionId) {
         await query(`
           INSERT INTO eval_answers (instance_id, question_id, evidence_url, evidence_status)
@@ -3189,9 +3192,31 @@ async function startServer() {
         `, [instanceId, questionId, fileUrl]);
       }
 
-      res.json({ success: true, url: fileUrl });
+      res.json({ id: docRows[0].id, url: fileUrl, question_id: questionId });
     } catch (err: any) {
       console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Remove uma evidência específica da instância. Prestador só apaga o próprio anexo
+  // e apenas enquanto a avaliação ainda não foi finalizada.
+  app.delete('/api/eval/instances/:id/evidence/:docId', authenticate, async (req: any, res) => {
+    try {
+      const instance = await loadInstanceForWrite(req, res);
+      if (!instance) return;
+      if (instance.status === 'finalizado' || instance.status === 'aprovado' || instance.status === 'reprovado') {
+        return res.status(400).json({ error: 'Avaliação já foi finalizada; não é possível remover evidências.' });
+      }
+      const { rowCount } = await query(
+        `DELETE FROM documents
+          WHERE id = $1 AND type = 'qualificacao_evidencia' AND reference_id = $2`,
+        [req.params.docId, req.params.id],
+      );
+      if (rowCount === 0) return res.status(404).json({ error: 'Evidência não encontrada.' });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('DELETE /eval/instances/:id/evidence/:docId:', err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -3272,7 +3272,14 @@ async function startServer() {
       }
 
       const { rows: totalRows } = await query('SELECT COUNT(*) as count FROM eval_instances');
-      const { rows: approvedRows } = await query("SELECT COUNT(*) as count FROM eval_instances WHERE status = 'finalizado' AND seal IS NOT NULL");
+      // Qualificados = prestadores únicos com pelo menos 1 unidade finalizada com selo
+      // (uma unidade não conta 3× se o prestador tem 3 unidades avaliadas).
+      const { rows: approvedRows } = await query(
+        "SELECT COUNT(DISTINCT provider_id) as count FROM eval_instances WHERE status = 'finalizado' AND seal IS NOT NULL"
+      );
+      const { rows: evaluatedProvidersRows } = await query(
+        'SELECT COUNT(DISTINCT provider_id)::int AS count FROM eval_instances'
+      );
       const { rows: avgRows } = await query("SELECT AVG(percentual) as avg FROM eval_instances WHERE status = 'finalizado'");
 
       const { rows: instancesByStatus } = await query("SELECT status, COUNT(*) as count FROM eval_instances GROUP BY status");
@@ -3288,9 +3295,12 @@ async function startServer() {
       `);
 
       const { rows: rankingRows } = await query(`
-        SELECT COALESCE(p.trade_name, p.name) AS provider, ROUND(ei.percentual)::int AS score, ei.seal
+        SELECT COALESCE(p.trade_name, p.name) AS provider,
+               ROUND(ei.percentual)::int AS score, ei.seal,
+               COALESCE(pl.label, pl.cidade) AS location_label
         FROM eval_instances ei
         JOIN providers p ON p.id = ei.provider_id
+        LEFT JOIN provider_locations pl ON pl.id = ei.location_id
         WHERE ei.status = 'finalizado'
         ORDER BY ei.percentual DESC
         LIMIT 10
@@ -3307,6 +3317,7 @@ async function startServer() {
       res.json({
         total: (totalRows[0] as any).count,
         approved: (approvedRows[0] as any).count,
+        providers_evaluated: (evaluatedProvidersRows[0] as any).count,
         avg_score: (avgRows[0] as any).avg || 0,
         by_status: instancesByStatus,
         non_conformities: (ncRows[0] as any).count,

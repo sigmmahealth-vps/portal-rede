@@ -132,9 +132,13 @@ export default function GestorDashboard({ user }: { user: any }) {
                      const countOf = (s: string) => Number(byStatus.find((r) => r.status === s)?.count || 0);
                      const finalizadas = countOf('finalizado') + countOf('aprovado');
                      const pendentes = countOf('pendente');
+                     const provs = Number(data.providers_evaluated || 0);
+                     const total = Number(data.total || 0);
                      const parts: string[] = [];
                      if (finalizadas > 0) parts.push(`${finalizadas} ${finalizadas === 1 ? 'finalizada' : 'finalizadas'}`);
                      if (pendentes > 0) parts.push(`${pendentes} ${pendentes === 1 ? 'pendente' : 'pendentes'}`);
+                     // Só sinaliza multi-unidade quando prestadores < instâncias.
+                     if (provs > 0 && provs < total) parts.push(`em ${provs} ${provs === 1 ? 'prestador' : 'prestadores'}`);
                      return parts.length ? (
                        <p className="mt-0.5 text-xs text-gray-500">{parts.join(' · ')}</p>
                      ) : null;
@@ -243,7 +247,12 @@ export default function GestorDashboard({ user }: { user: any }) {
                   {(data.ranking || []).map((r: any, i: number) => (
                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
                       <td className="p-4"><div className="w-8 h-8 rounded bg-gray-100 text-gray-700 font-bold flex items-center justify-center">{i + 1}º</div></td>
-                      <td className="p-4 font-medium text-gray-900">{r.provider}</td>
+                      <td className="p-4 font-medium text-gray-900">
+                        {r.provider}
+                        {r.location_label && (
+                          <span className="ml-1 text-xs font-normal text-gray-500">— {r.location_label}</span>
+                        )}
+                      </td>
                       <td className="p-4 font-bold text-emerald-600">{r.score}%</td>
                       <td className="p-4">{r.seal
                         ? <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold uppercase tracking-wide">{r.seal}</span>

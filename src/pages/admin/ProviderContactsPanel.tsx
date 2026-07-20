@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Users, Plus, Trash2, Pencil, X, Mail, Phone, IdCard, Stethoscope } from 'lucide-react';
+import { Users, Plus, Trash2, Pencil, MoreVertical, X, Mail, Phone, IdCard, Stethoscope } from 'lucide-react';
 
 type ProviderContactsPanelProps = {
   providerId: number | string | null;
@@ -15,6 +15,19 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', position: '', council_registry: '', email: '', phone: '', cpf: '' });
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (openMenuId == null) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenuId(null); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [openMenuId]);
 
   useEffect(() => {
     loadContacts();
@@ -154,23 +167,40 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
                     {!hideProviderColumn && <td className="py-3 text-gray-600">{c.provider_name || '-'}</td>}
                     {canEdit && (
                       <td className="py-3 text-right">
-                        <div className="inline-flex items-center gap-1">
+                        <div className="relative inline-block" ref={openMenuId === c.id ? menuRef : null}>
                           <button
-                            onClick={() => startEdit(c)}
-                            className="text-gray-500 hover:text-[#00995D] p-1"
-                            title="Editar contato"
-                            aria-label="Editar contato"
+                            onClick={() => setOpenMenuId((cur) => (cur === c.id ? null : c.id))}
+                            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                            title="Ações"
+                            aria-label="Ações do contato"
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuId === c.id}
                           >
-                            <Pencil className="w-4 h-4" />
+                            <MoreVertical className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => handleDelete(c.id)}
-                            className="text-red-500 hover:text-red-700 p-1"
-                            title="Remover contato"
-                            aria-label="Remover contato"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
+                          {openMenuId === c.id && (
+                            <div
+                              role="menu"
+                              className="absolute right-0 mt-1 w-40 rounded-lg border border-gray-100 bg-white py-1 shadow-lg z-20"
+                            >
+                              <button
+                                role="menuitem"
+                                onClick={() => { setOpenMenuId(null); startEdit(c); }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                <Pencil className="w-4 h-4 text-gray-400" />
+                                Editar
+                              </button>
+                              <button
+                                role="menuitem"
+                                onClick={() => { setOpenMenuId(null); handleDelete(c.id); }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Excluir
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     )}

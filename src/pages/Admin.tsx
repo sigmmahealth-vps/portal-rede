@@ -16,7 +16,10 @@ import {
   ChevronDown,
   MoreVertical,
   Building2,
+  Stethoscope,
+  Microscope,
   Activity,
+  Hospital,
   UserPlus,
   Settings,
   ClipboardList,
@@ -65,6 +68,18 @@ const formatDoc = (v: unknown): string => {
   if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   return String(v ?? '');
 };
+// Categorias de Tipo de Prestador (provider_type vem como texto livre do SGU;
+// casamos por palavra-chave para tolerar variações de grafia/acentuação).
+// Usadas só nos cards da Visão Geral — filtro/tabela usam Grupo de prestador.
+const TYPE_BUCKETS: { key: string; label: string; icon: any; match: (t: string) => boolean }[] = [
+  { key: 'clinica', label: 'Clínicas', icon: Building2, match: (t) => t.includes('CLINICA') },
+  { key: 'medico', label: 'Médicos', icon: Stethoscope, match: (t) => t.includes('MEDICO') },
+  { key: 'lab', label: 'Laboratórios', icon: Microscope, match: (t) => t.includes('LABORAT') },
+  { key: 'hospital', label: 'Hospitais', icon: Hospital, match: (t) => t.includes('HOSPITAL') },
+  { key: 'diag', label: 'Centros de Diagnóstico', icon: Activity, match: (t) => t.includes('CENTRO') || t.includes('DIAGN') },
+  { key: 'outros', label: 'Outros', icon: Users, match: () => true },
+];
+
 const PRESTADORES_MOCK = [
   { id: 1, nome: 'Dr. Carlos Eduardo Silva', tipo: 'Médico Cooperado', especialidade: 'Cardiologia', status: 'Ativo' },
   { id: 2, nome: 'Dra. Ana Paula Mendes', tipo: 'Médico Cooperado', especialidade: 'Pediatria', status: 'Ativo' },
@@ -303,12 +318,14 @@ export default function Admin() {
       if (st === 'ativo') ativos++;
       if (st) statusCounts[st] = (statusCounts[st] || 0) + 1;
       if (p.sgu_synced_at && (!atualizadoEm || p.sgu_synced_at > atualizadoEm)) atualizadoEm = p.sgu_synced_at;
-      const g = String(p.provider_group ?? '').trim();
-      if (g) counts[g] = (counts[g] || 0) + 1;
+      const t = String(p.provider_type || '').toUpperCase();
+      const bucket = TYPE_BUCKETS.find(b => b.match(t))!;
+      counts[bucket.key] = (counts[bucket.key] || 0) + 1;
     }
-    const composicao = Object.entries(counts)
-      .map(([g, count]) => ({ key: g, label: g, icon: Building2, count }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'));
+    const composicao = TYPE_BUCKETS
+      .map(b => ({ key: b.key, label: b.label, icon: b.icon, count: counts[b.key] || 0 }))
+      .filter(b => b.count > 0)
+      .sort((a, b) => b.count - a.count);
     // Opções do filtro Status = situações realmente presentes na base (ativo/afastado/excluído).
     const statusOptions = Object.keys(statusCounts).sort()
       .map((s) => ({ value: s, label: statusLabel(s) }));

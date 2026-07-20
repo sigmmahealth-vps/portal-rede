@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import GestorDashboard from './GestorDashboard';
 import PrestadorView from './PrestadorView';
-import AuditorView from './AuditorView';
 
 export default function QualificacaoModule() {
   const [user, setUser] = useState<any>(null);
@@ -15,8 +14,7 @@ export default function QualificacaoModule() {
 
   if (!user) return null;
 
-  if (user.role === 'admin') return <GestorDashboard user={user} />;
-  if (user.role === 'auditoria') return <AuditorView user={user} />;
+  if (user.role === 'admin' || user.role === 'auditoria') return <GestorDashboard user={user} />;
   // prestador e cooperado usam a mesma view; PrestadorView filtra roteiros por person_type (PF/PJ).
   return <PrestadorView user={user} />;
 }

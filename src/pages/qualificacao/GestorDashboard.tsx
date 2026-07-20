@@ -124,9 +124,21 @@ export default function GestorDashboard({ user }: { user: any }) {
                  <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
                    <Building2 className="w-6 h-6 text-blue-600" />
                  </div>
-                 <div>
+                 <div className="min-w-0">
                    <p className="text-sm text-gray-500 font-medium">Total de Avaliações</p>
                    <p className="text-2xl font-bold text-gray-900">{data.total}</p>
+                   {(() => {
+                     const byStatus: any[] = data.by_status || [];
+                     const countOf = (s: string) => Number(byStatus.find((r) => r.status === s)?.count || 0);
+                     const finalizadas = countOf('finalizado') + countOf('aprovado');
+                     const pendentes = countOf('pendente');
+                     const parts: string[] = [];
+                     if (finalizadas > 0) parts.push(`${finalizadas} ${finalizadas === 1 ? 'finalizada' : 'finalizadas'}`);
+                     if (pendentes > 0) parts.push(`${pendentes} ${pendentes === 1 ? 'pendente' : 'pendentes'}`);
+                     return parts.length ? (
+                       <p className="mt-0.5 text-xs text-gray-500">{parts.join(' · ')}</p>
+                     ) : null;
+                   })()}
                  </div>
                </div>
              </div>

@@ -36,7 +36,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const [scripts, setScripts] = useState<any[]>([]);
   const [instances, setInstances] = useState<any[]>([]);
   const [providerName, setProviderName] = useState<string | null>(null);
-  const [isCooperado, setIsCooperado] = useState(false);
+  const [evalScriptId, setEvalScriptId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('roteiros');
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, readOnly?: boolean } | null>(null);
@@ -56,8 +56,7 @@ export default function PrestadorView({ user }: { user: any }) {
       setScripts(scriptsData);
       setInstances(instancesData);
       setProviderName(providerData ? (providerData.trade_name || providerData.name) : null);
-      const grupo = String(providerData?.provider_group ?? '').trim();
-      setIsCooperado(/^MEDICOS COOPERADOS(\s+ARARANGUA)?$/i.test(grupo));
+      setEvalScriptId(providerData?.eval_script_id ?? null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -81,12 +80,11 @@ export default function PrestadorView({ user }: { user: any }) {
   }
 
   const scriptsVigentesRaw = scripts.filter((s: any) => s.is_current !== false);
-  // Médico cooperado usa preferencialmente o roteiro "Médicos" (OPS-RED-FOR-017).
-  // O plural evita casar com PJ ("Clínica Médica", "Não Médico", "Medicina Nuclear").
-  // Sem match, cai para todos os vigentes.
-  const medicoScripts = scriptsVigentesRaw.filter((s: any) => /m[ée]dicos\b/i.test(s.title || ''));
-  const scriptsVigentes = isCooperado && medicoScripts.length > 0
-    ? medicoScripts
+  // Cada prestador vê apenas o roteiro que o import resolveu para ele
+  // (providers.eval_script_id, populado a partir do provider_group).
+  // Sem eval_script_id, cai para todos os vigentes (fallback defensivo).
+  const scriptsVigentes = evalScriptId != null
+    ? scriptsVigentesRaw.filter((s: any) => s.id === evalScriptId)
     : scriptsVigentesRaw;
   const inProgress = instances.find(i => !OPEN_STATES.includes(i.status));
   const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);

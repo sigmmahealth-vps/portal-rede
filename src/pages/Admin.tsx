@@ -330,14 +330,19 @@ export default function Admin() {
     return { total, ativos, afastados: total - ativos, composicao, atualizadoEm, statusOptions };
   }, [providers]);
 
-  // Lista de municípios (localização primária), fundindo duplicatas de caixa/acento.
+  // Lista de municípios (TODAS as localizações — primária, secundária, etc.),
+  // fundindo duplicatas de caixa/acento. Fallback p/ p.cidade se o backend antigo
+  // ainda não devolver o array cidades.
   const municipios = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of providers) {
-      const nome = cleanCity(p.cidade);
-      if (!nome) continue;
-      const key = normCity(nome);
-      if (!map.has(key)) map.set(key, titleCase(nome));
+      const cidades: string[] = Array.isArray(p.cidades) && p.cidades.length ? p.cidades : [p.cidade];
+      for (const c of cidades) {
+        const nome = cleanCity(c);
+        if (!nome) continue;
+        const key = normCity(nome);
+        if (!map.has(key)) map.set(key, titleCase(nome));
+      }
     }
     return Array.from(map, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [providers]);
@@ -348,7 +353,10 @@ export default function Admin() {
       if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.cpf || ''} ${p.code || ''}`.toLowerCase().includes(q)) return false;
       if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) return false;
       if (grupoFilter !== 'all' && String(p.provider_group ?? '') !== grupoFilter) return false;
-      if (municipioFilter !== 'all' && normCity(p.cidade) !== municipioFilter) return false;
+      if (municipioFilter !== 'all') {
+        const cidades: string[] = Array.isArray(p.cidades) && p.cidades.length ? p.cidades : [p.cidade];
+        if (!cidades.some((c) => normCity(c) === municipioFilter)) return false;
+      }
       return true;
     });
   }, [providers, searchTerm, statusFilter, grupoFilter, municipioFilter]);

@@ -4,7 +4,7 @@ import { computeScore } from '../../lib/score';
 import { questionOnly } from '../../lib/questionText';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
-  AlertTriangle, Save, Loader2, Paperclip, Eye,
+  AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2,
 } from 'lucide-react';
 
 interface Question {
@@ -30,11 +30,15 @@ interface Section {
   order_index: number;
 }
 
+interface EvidenceFile {
+  id: number;
+  url: string;
+}
+
 interface Answer {
   answer_value: string;
   score_obtained: number;
-  file?: File | null;
-  file_url?: string;
+  files?: EvidenceFile[];
   is_na?: boolean;
   provider_observation?: string;
 }
@@ -214,15 +218,26 @@ export default function RoteiroPlayer({
       if (instanceId) {
         const instanceData = await fetchApi(`/eval/instances/${instanceId}`);
         const loadedAnswers: Record<number, Answer> = {};
+        // Agrupa evidências (múltiplos anexos por question_id) do array `evidences`.
+        const filesByQuestion: Record<number, EvidenceFile[]> = {};
+        for (const ev of instanceData.evidences ?? []) {
+          if (ev.question_id == null) continue;
+          const bucket = filesByQuestion[ev.question_id] ?? (filesByQuestion[ev.question_id] = []);
+          bucket.push({ id: Number(ev.id), url: ev.file_url });
+        }
         if (instanceData.answers) {
           instanceData.answers.forEach((ans: any) => {
             loadedAnswers[ans.question_id] = {
               answer_value: ans.answer_value,
               score_obtained: ans.score_obtained,
-              file_url: ans.evidence_url || undefined,
+              files: filesByQuestion[ans.question_id] ?? [],
               provider_observation: ans.provider_observation || undefined,
             };
           });
+        }
+        // Perguntas com evidências mas sem answer_value (raro; salvaguarda).
+        for (const qId of Object.keys(filesByQuestion).map(Number)) {
+          if (!loadedAnswers[qId]) loadedAnswers[qId] = { answer_value: '', score_obtained: 0, files: filesByQuestion[qId] };
         }
         setAnswers(loadedAnswers);
       }
@@ -284,12 +299,33 @@ export default function RoteiroPlayer({
         method: 'POST',
         body: formData,
       });
-      setAnswers(prev => ({
-        ...prev,
-        [questionId]: { ...prev[questionId], file_url: res.url },
-      }));
+      setAnswers(prev => {
+        const cur = prev[questionId] ?? { answer_value: '', score_obtained: 0 };
+        return {
+          ...prev,
+          [questionId]: { ...cur, files: [...(cur.files ?? []), { id: Number(res.id), url: res.url }] },
+        };
+      });
     } catch (err) {
       alert('Erro ao fazer upload da evidência');
+    } finally {
+      // permite reanexar o mesmo arquivo em sequência
+      e.target.value = '';
+    }
+  };
+
+  const handleFileDelete = async (questionId: number, docId: number) => {
+    if (!currentInstanceId) return;
+    if (!window.confirm('Remover este anexo?')) return;
+    try {
+      await fetchApi(`/eval/instances/${currentInstanceId}/evidence/${docId}`, { method: 'DELETE' });
+      setAnswers(prev => {
+        const cur = prev[questionId];
+        if (!cur) return prev;
+        return { ...prev, [questionId]: { ...cur, files: (cur.files ?? []).filter(f => f.id !== docId) } };
+      });
+    } catch (err: any) {
+      alert(err.message || 'Erro ao remover anexo');
     }
   };
 
@@ -421,7 +457,7 @@ export default function RoteiroPlayer({
   const pendingItems = () => questions.filter(q => {
     const a = answers[q.id];
     if (!a?.answer_value) return true;
-    if (a.answer_value === 'sim') return q.evidence_required && !a.file_url;
+    if (a.answer_value === 'sim') return q.evidence_required && !(a.files && a.files.length > 0);
     return !a.provider_observation?.trim();
   });
   // ponytail: um Set por render (não por card) — evita o O(n²) de chamar pendingItems() no map.
@@ -659,31 +695,51 @@ export default function RoteiroPlayer({
                           </div>
                         )}
 
-                        {/* Evidência obrigatória para Sim (só quando o critério exige) */}
-                        {isSim && q.evidence_required && (
-                          <div className="mt-4 border-t border-gray-100 pt-4">
-                            <p className="mb-2 text-sm font-semibold text-secondary-900">
-                              Evidência <span className="font-normal text-red-600">(obrigatória)</span>
-                            </p>
-                            {ans?.file_url ? (
-                              <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5">
-                                <span className="inline-flex items-center gap-2 text-sm font-medium text-emerald-700">
-                                  <Paperclip className="h-4 w-4" /> Evidência anexada
-                                </span>
-                                <label className="cursor-pointer text-xs font-semibold text-emerald-700 underline-offset-2 hover:underline">
-                                  Substituir
-                                  <input type="file" className="hidden" onChange={(e) => handleFileUpload(q.id, e)} accept=".pdf,.jpg,.jpeg,.png" />
-                                </label>
-                              </div>
-                            ) : (
+                        {/* Evidências obrigatórias para Sim (só quando o critério exige) */}
+                        {isSim && q.evidence_required && (() => {
+                          const files = ans?.files ?? [];
+                          return (
+                            <div className="mt-4 border-t border-gray-100 pt-4">
+                              <p className="mb-2 text-sm font-semibold text-secondary-900">
+                                Evidências <span className="font-normal text-red-600">(pelo menos uma)</span>
+                              </p>
+                              {files.length > 0 && (
+                                <ul className="mb-3 space-y-1.5">
+                                  {files.map((f) => {
+                                    const name = f.url.split('/').pop() || 'anexo';
+                                    return (
+                                      <li key={f.id} className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                                        <a
+                                          href={f.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-emerald-700 hover:underline"
+                                        >
+                                          <Paperclip className="h-4 w-4 shrink-0" />
+                                          <span className="truncate">{name}</span>
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleFileDelete(q.id, f.id)}
+                                          className="shrink-0 rounded-md p-1 text-emerald-700/70 transition-colors hover:bg-emerald-100 hover:text-red-600"
+                                          title="Remover anexo"
+                                          aria-label="Remover anexo"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
                               <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50/40 hover:text-emerald-700">
                                 <UploadCloud className="h-5 w-5" />
-                                Anexar arquivo (PDF, JPG ou PNG · até 20 MB)
+                                {files.length > 0 ? 'Adicionar outro arquivo' : 'Anexar arquivo (PDF, JPG ou PNG · até 20 MB)'}
                                 <input type="file" className="hidden" onChange={(e) => handleFileUpload(q.id, e)} accept=".pdf,.jpg,.jpeg,.png" />
                               </label>
-                            )}
-                          </div>
-                        )}
+                            </div>
+                          );
+                        })()}
                       </article>
                     );
                   })}

@@ -15,19 +15,34 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', position: '', council_registry: '', email: '', phone: '', cpf: '' });
-  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const [openMenu, setOpenMenu] = useState<{ id: number; top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  const toggleMenu = (id: number, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (openMenu?.id === id) { setOpenMenu(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    // ancora à direita do botão, logo abaixo
+    setOpenMenu({ id, top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
+
   useEffect(() => {
-    if (openMenuId == null) return;
+    if (!openMenu) return;
+    const close = () => setOpenMenu(null);
     const onDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenuId(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenu(null); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [openMenuId]);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [openMenu]);
 
   useEffect(() => {
     loadContacts();
@@ -167,41 +182,16 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
                     {!hideProviderColumn && <td className="py-3 text-gray-600">{c.provider_name || '-'}</td>}
                     {canEdit && (
                       <td className="py-3 text-right">
-                        <div className="relative inline-block" ref={openMenuId === c.id ? menuRef : null}>
-                          <button
-                            onClick={() => setOpenMenuId((cur) => (cur === c.id ? null : c.id))}
-                            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-                            title="Ações"
-                            aria-label="Ações do contato"
-                            aria-haspopup="menu"
-                            aria-expanded={openMenuId === c.id}
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-                          {openMenuId === c.id && (
-                            <div
-                              role="menu"
-                              className="absolute right-0 mt-1 w-40 rounded-lg border border-gray-100 bg-white py-1 shadow-lg z-20"
-                            >
-                              <button
-                                role="menuitem"
-                                onClick={() => { setOpenMenuId(null); startEdit(c); }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                              >
-                                <Pencil className="w-4 h-4 text-gray-400" />
-                                Editar
-                              </button>
-                              <button
-                                role="menuitem"
-                                onClick={() => { setOpenMenuId(null); handleDelete(c.id); }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Excluir
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        <button
+                          onClick={(e) => toggleMenu(c.id, e)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                          title="Ações"
+                          aria-label="Ações do contato"
+                          aria-haspopup="menu"
+                          aria-expanded={openMenu?.id === c.id}
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
                       </td>
                     )}
                   </tr>
@@ -211,6 +201,36 @@ export default function ProviderContactsPanel({ providerId, hideProviderColumn =
           </div>
         )}
       </div>
+
+      {openMenu && (() => {
+        const c = contacts.find((x) => x.id === openMenu.id);
+        if (!c) return null;
+        return (
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ position: 'fixed', top: openMenu.top, right: openMenu.right, zIndex: 50 }}
+            className="w-40 rounded-lg border border-gray-100 bg-white py-1 shadow-lg"
+          >
+            <button
+              role="menuitem"
+              onClick={() => { setOpenMenu(null); startEdit(c); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="w-4 h-4 text-gray-400" />
+              Editar
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => { setOpenMenu(null); handleDelete(c.id); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+          </div>
+        );
+      })()}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

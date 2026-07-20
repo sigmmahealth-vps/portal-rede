@@ -38,7 +38,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const [instances, setInstances] = useState<any[]>([]);
   const [evalScriptId, setEvalScriptId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabKey>('roteiros');
+  const [activeTab, setActiveTab] = useState<TabKey>('inicio');
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, readOnly?: boolean } | null>(null);
 
   useEffect(() => {

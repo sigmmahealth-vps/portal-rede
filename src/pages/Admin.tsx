@@ -14,7 +14,6 @@ import {
   Plus,
   Download,
   ChevronDown,
-  MoreVertical,
   Building2,
   Stethoscope,
   Microscope,
@@ -503,14 +502,13 @@ export default function Admin() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] table-fixed text-left border-collapse [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_td]:align-top [&_th]:align-bottom">
                 <colgroup>
-                  <col className="w-[20%]" />
-                  <col className="w-[17%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[18%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[11%]" />
                   <col className="w-[13%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[7%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[11%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-gray-100 text-sm text-gray-500">
@@ -521,7 +519,6 @@ export default function Admin() {
                     <th className="pb-3 font-medium">Município</th>
                     <th className="pb-3 font-medium">Nível Qualificação</th>
                     <th className="pb-3 font-medium">Status</th>
-                    <th className="pb-3 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
@@ -550,16 +547,11 @@ export default function Admin() {
                           {prestador.status}
                         </span>
                       </td>
-                      <td className="py-4 text-right">
-                        <button onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600">
-                          <MoreVertical className="w-5 h-5" />
-                        </button>
-                      </td>
                     </tr>
                   ))}
                   {filteredProviders.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-gray-500">
+                      <td colSpan={7} className="py-8 text-center text-gray-500">
                         {providers.length === 0 ? 'Nenhum prestador encontrado.' : 'Nenhum prestador corresponde aos filtros.'}
                       </td>
                     </tr>

@@ -3438,7 +3438,11 @@ async function startServer() {
       const { rows: cycleRows } = cycleIdParam
         ? await query('SELECT id, label, start_date, end_date FROM eval_cycles WHERE id = $1', [cycleIdParam])
         : await query('SELECT id, label, start_date, end_date FROM eval_cycles WHERE active = true');
-      if (!cycleRows.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      if (!cycleRows.length) {
+        return res.status(cycleIdParam ? 404 : 400).json({
+          error: cycleIdParam ? 'ciclo não encontrado' : 'nenhum ciclo ativo — informe cycle_id',
+        });
+      }
       const cycle = cycleRows[0];
 
       const { rows: instances } = await query(`

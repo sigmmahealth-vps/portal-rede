@@ -18,7 +18,7 @@
     "db:import-roteiros": "tsx db/import-roteiros.ts",
     "db:import-providers": "tsx db/import-providers.ts",
     "db:import-tabela": "tsx db/import-tabela.ts",
-    "test": "node --import tsx --test db/roteiro-parser.test.ts auth/otp.test.ts auth/trustedDevice.test.ts auth/rateLimit.test.ts auth/mailer.test.ts auth/setupToken.test.ts auth/passwordPolicy.test.ts auth/auditLog.test.ts auth/ipHash.test.ts db/purgeExpiredLogs.test.ts db/providers-parser.test.ts db/resolveDbUrl.test.ts src/lib/score.test.ts db/roteiro-rule.test.ts db/tabela-parser.test.ts db/import-tabela.test.ts src/lib/auditorDashboard.test.ts src/lib/auditorXlsx.test.ts"
+    "test": "node --import tsx --test db/roteiro-parser.test.ts auth/otp.test.ts auth/trustedDevice.test.ts auth/rateLimit.test.ts auth/mailer.test.ts auth/setupToken.test.ts auth/passwordPolicy.test.ts auth/auditLog.test.ts auth/ipHash.test.ts db/purgeExpiredLogs.test.ts db/providers-parser.test.ts db/resolveDbUrl.test.ts src/lib/score.test.ts db/roteiro-rule.test.ts db/tabela-parser.test.ts db/import-tabela.test.ts src/lib/auditorDashboard.test.ts src/lib/auditorXlsx.test.ts src/lib/computeSeal.test.ts src/lib/dimensionAgg.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

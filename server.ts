@@ -3139,8 +3139,24 @@ async function startServer() {
       const instanceId = req.params.id;
       const { answers } = req.body;
 
+      const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' ? 'prestador' : 'auditor';
       await withTransaction(async (client) => {
         for (const ans of answers as any[]) {
+          // Lê o valor anterior pra decidir se grava iteration (só quando de fato mudou).
+          const { rows: prevRows } = await client.query(
+            `SELECT id, answer_value, score_obtained, provider_observation
+               FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
+            [instanceId, ans.question_id]
+          );
+          const prev = prevRows[0];
+          const nextVal = ans.answer_value || null;
+          const nextScore = Number(ans.score_obtained || 0);
+          const nextObs = ans.provider_observation || null;
+          const changed = !prev
+            || prev.answer_value !== nextVal
+            || Number(prev.score_obtained) !== nextScore
+            || (prev.provider_observation ?? null) !== nextObs;
+
           await client.query(`
             INSERT INTO eval_answers (instance_id, question_id, answer_value, score_obtained, provider_observation, is_non_compliant)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -3152,11 +3168,13 @@ async function startServer() {
           `, [
             instanceId,
             ans.question_id,
-            ans.answer_value || null,
-            ans.score_obtained || 0,
-            ans.provider_observation || null,
+            nextVal,
+            nextScore,
+            nextObs,
             ans.is_non_compliant || false
           ]);
+
+          if (!changed) continue;
 
           const { rows: [{ id: answerId }] } = await client.query(
             `SELECT id FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
@@ -3169,8 +3187,8 @@ async function startServer() {
           await client.query(`
             INSERT INTO eval_answer_iterations
               (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
-            VALUES ($1, $2, $3, 'prestador', 'respondeu', $4, $5, NULL, $6)
-          `, [answerId, n, req.user.id, ans.answer_value || null, ans.score_obtained || 0, ans.provider_observation || null]);
+            VALUES ($1, $2, $3, $4, 'respondeu', $5, $6, NULL, $7)
+          `, [answerId, n, req.user.id, actorRole, nextVal, nextScore, nextObs]);
           // Reset evidence_status se estava aguardando reanálise
           await client.query(
             `UPDATE eval_answers SET evidence_status = 'pendente' WHERE id = $1 AND evidence_status = 'aguardando_reanalise'`,

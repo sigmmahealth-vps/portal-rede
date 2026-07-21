@@ -3457,6 +3457,191 @@ async function startServer() {
     }
   });
 
+  // ==========================================================================
+  // Abertura de ciclo (spec 5.4.1.2 etapa 1 + 5.4.2.1)
+  // ==========================================================================
+
+  async function buildAperturaPreview(cycleId: number) {
+    const { rows: cycleRows } = await query(
+      'SELECT id, label FROM eval_cycles WHERE id = $1', [cycleId]
+    );
+    if (!cycleRows.length) return { notFound: true } as const;
+    const cycle = cycleRows[0];
+
+    // Grupos ambíguos: provider_group com mais de um eval_script_id distinct.
+    const { rows: ambigRows } = await query(`
+      SELECT provider_group
+        FROM providers
+       WHERE provider_group IS NOT NULL AND eval_script_id IS NOT NULL
+       GROUP BY provider_group
+      HAVING COUNT(DISTINCT eval_script_id) > 1
+    `);
+    const ambiguousGroups = ambigRows.map((r: any) => r.provider_group);
+
+    // Prestadores sem grupo.
+    const { rows: noGroup } = await query(`
+      SELECT id, COALESCE(trade_name, name) AS name
+        FROM providers WHERE provider_group IS NULL LIMIT 50
+    `);
+
+    // Grupos que serão criados (não-ambíguos, com script definido).
+    const { rows: groups } = await query(`
+      SELECT p.provider_group, MIN(p.eval_script_id)::bigint AS script_id, COUNT(*)::int AS providers
+        FROM providers p
+       WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
+         AND p.provider_group <> ALL($1::text[])
+       GROUP BY p.provider_group
+    `, [ambiguousGroups.length ? ambiguousGroups : ['__none__']]);
+
+    // Unidades no guia médico dos prestadores desses grupos.
+    const groupList = groups.map((g: any) => g.provider_group);
+    const { rows: instRows } = await query(`
+      SELECT COUNT(*)::int AS n
+        FROM provider_locations pl
+        JOIN providers p ON p.id = pl.provider_id
+       WHERE pl.in_medical_guide = true
+         AND p.provider_group = ANY($1::text[])
+    `, [groupList.length ? groupList : ['__none__']]);
+
+    // DL bypass — quantos crítérios DL de todos os scripts têm document_type + doc válido do prestador.
+    const { rows: bypassRows } = await query(`
+      SELECT COUNT(*)::int AS n
+        FROM providers p
+        JOIN eval_scripts s ON s.id = p.eval_script_id
+        JOIN eval_sections sc ON sc.script_id = s.id
+        JOIN eval_questions eq ON eq.section_id = sc.id AND eq.document_type IS NOT NULL
+        JOIN documents d ON d.provider_id = p.id AND d.type = eq.document_type
+                        AND d.status = 'valido'
+                        AND (d.expiry_date IS NULL OR d.expiry_date >= CURRENT_DATE)
+       WHERE p.provider_group = ANY($1::text[])
+    `, [groupList.length ? groupList : ['__none__']]);
+
+    return {
+      cycle: { id: Number(cycle.id), label: cycle.label },
+      would_create: {
+        groups: groups.length,
+        instances: instRows[0].n,
+        dl_bypass: bypassRows[0].n,
+      },
+      excluded: {
+        providers_without_group: noGroup.map((r: any) => ({ id: Number(r.id), name: r.name })),
+        groups_without_script_mapping: ambiguousGroups,
+      },
+    };
+  }
+
+  app.get('/api/eval/cycles/:id/abertura-preview', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const preview = await buildAperturaPreview(Number(req.params.id));
+      if ('notFound' in preview) return res.status(404).json({ error: 'ciclo não encontrado' });
+      res.json(preview);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/eval/cycles/:id/abrir', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+
+      const { rows: cy } = await query(
+        'SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]
+      );
+      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      if (!cy[0].active) return res.status(400).json({ error: 'ciclo não está ativo' });
+      const { rows: existInst } = await query(
+        'SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]
+      );
+      if (existInst.length) return res.status(409).json({ error: 'ciclo já tem instâncias' });
+
+      const created = await withTransaction(async (client) => {
+        // 1. Popula eval_cycle_groups (pula ambíguos).
+        const { rows: groups } = await client.query(`
+          INSERT INTO eval_cycle_groups (cycle_id, provider_group, script_id)
+          SELECT $1, p.provider_group, MIN(p.eval_script_id)::bigint
+            FROM providers p
+           WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
+             AND p.provider_group NOT IN (
+               SELECT provider_group FROM providers
+                WHERE provider_group IS NOT NULL AND eval_script_id IS NOT NULL
+                GROUP BY provider_group HAVING COUNT(DISTINCT eval_script_id) > 1
+             )
+           GROUP BY p.provider_group
+          RETURNING id, provider_group, script_id
+        `, [cycleId]);
+
+        // 2. Cria eval_instances (1 por unidade no guia médico cujo grupo caiu no ciclo).
+        const { rows: instances } = await client.query(`
+          INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id, started_at)
+          SELECT ecg.script_id, p.id, pl.id, 'pendente', $1, now()
+            FROM provider_locations pl
+            JOIN providers p ON p.id = pl.provider_id
+            JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
+           WHERE pl.in_medical_guide = true
+          RETURNING id, provider_id, script_id
+        `, [cycleId]);
+
+        // 3. DL bypass em lote — para cada instância, cria answer 'aprovado' para os critérios DL
+        //    que têm documento válido no cadastro do prestador.
+        //    Uma passada de INSERT ... SELECT.
+        const { rows: bypassAnswers } = await client.query(`
+          INSERT INTO eval_answers (instance_id, question_id, answer_value, score_obtained,
+                                    evidence_url, evidence_status, auditor_observation, is_non_compliant)
+          SELECT ei.id, eq.id, 'sim', eq.max_score, d.file_url, 'aprovado',
+                 'Aprovado via cadastro (DL bypass)', false
+            FROM eval_instances ei
+            JOIN eval_sections sc ON sc.script_id = ei.script_id
+            JOIN eval_questions eq ON eq.section_id = sc.id AND eq.document_type IS NOT NULL
+            JOIN LATERAL (
+              SELECT file_url FROM documents
+               WHERE provider_id = ei.provider_id AND type = eq.document_type
+                 AND status = 'valido'
+                 AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+               ORDER BY issue_date DESC NULLS LAST LIMIT 1
+            ) d ON true
+           WHERE ei.cycle_id = $1
+          RETURNING id, instance_id, question_id, score_obtained, evidence_url
+        `, [cycleId]);
+
+        // 3.1. Registra iteration 1 (action='aprovou', actor=sistema/NULL) para cada bypass.
+        //      5 valores por linha (answer_id, answer_value, score, evidence_url, observation);
+        //      iteration_number=1, actor_id=NULL, actor_role='auditor', action='aprovou' são literais.
+        if (bypassAnswers.length) {
+          const placeholders = bypassAnswers.map((_, i) => {
+            const b = i * 5;
+            return `($${b+1}, 1, NULL, 'auditor', 'aprovou', $${b+2}, $${b+3}, $${b+4}, $${b+5})`;
+          }).join(',');
+          const params: any[] = [];
+          for (const a of bypassAnswers) {
+            params.push(a.id, 'sim', a.score_obtained, a.evidence_url, 'Aprovado via cadastro (DL bypass)');
+          }
+          await client.query(
+            `INSERT INTO eval_answer_iterations
+             (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
+             VALUES ${placeholders}`,
+            params
+          );
+        }
+
+        return { groups: groups.length, instances: instances.length, dl_bypass: bypassAnswers.length };
+      });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_opened',
+        meta: { cycle_id: cycleId, ...created },
+        ip: hashClientIp(req),
+      });
+
+      res.json({ cycle_id: cycleId, created });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });

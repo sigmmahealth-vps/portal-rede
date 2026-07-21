@@ -3642,6 +3642,103 @@ async function startServer() {
     }
   });
 
+  // ==========================================================================
+  // Ações do auditor por critério (spec 5.4.1.2 etapa 4)
+  // ==========================================================================
+
+  async function loadAnswerForAuditor(answerId: number) {
+    const { rows } = await query(`
+      SELECT ea.id, ea.instance_id, ea.question_id, ea.answer_value, ea.score_obtained,
+             ea.evidence_url, ea.evidence_status,
+             ei.status AS instance_status, ei.provider_id, ei.location_id
+        FROM eval_answers ea
+        JOIN eval_instances ei ON ei.id = ea.instance_id
+       WHERE ea.id = $1
+    `, [answerId]);
+    return rows[0] || null;
+  }
+
+  async function nextIterationNumber(client: any, answerId: number) {
+    const { rows } = await client.query(
+      'SELECT COALESCE(MAX(iteration_number), 0) + 1 AS n FROM eval_answer_iterations WHERE answer_id = $1',
+      [answerId]
+    );
+    return Number(rows[0].n);
+  }
+
+  async function auditorAction(
+    req: any, res: any,
+    action: 'aprovou' | 'reprovou' | 'solicitou_reanalise',
+    observationRequired: boolean
+  ) {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const answerId = Number(req.params.id);
+      const observation = (req.body?.observation ?? '').trim();
+      if (observationRequired && !observation) {
+        return res.status(400).json({ error: 'observação obrigatória' });
+      }
+      const ans = await loadAnswerForAuditor(answerId);
+      if (!ans) return res.status(404).json({ error: 'answer not found' });
+      if (!['em_analise', 'aguardando_evidencia'].includes(ans.instance_status)) {
+        return res.status(409).json({ error: `instância em status ${ans.instance_status}, não aceita ação` });
+      }
+
+      const newEvidenceStatus =
+        action === 'aprovou' ? 'aprovado' :
+        action === 'reprovou' ? 'reprovado' : 'aguardando_reanalise';
+      const newScore =
+        action === 'reprovou' ? 0 :
+        action === 'aprovou'  ? Number(ans.score_obtained ?? 0) : Number(ans.score_obtained ?? 0);
+      const isNonCompliant = action === 'reprovou';
+
+      await withTransaction(async (client) => {
+        await client.query(`
+          UPDATE eval_answers
+             SET evidence_status = $1,
+                 score_obtained  = $2,
+                 auditor_observation = $3,
+                 is_non_compliant = $4
+           WHERE id = $5
+        `, [newEvidenceStatus, newScore, observation || null, isNonCompliant, answerId]);
+
+        const n = await nextIterationNumber(client, answerId);
+        await client.query(`
+          INSERT INTO eval_answer_iterations
+            (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
+          VALUES ($1, $2, $3, 'auditor', $4, $5, $6, $7, $8)
+        `, [answerId, n, req.user.id, action, ans.answer_value, newScore, ans.evidence_url, observation || null]);
+
+        if (action === 'solicitou_reanalise' && ans.instance_status === 'em_analise') {
+          await client.query(
+            `UPDATE eval_instances SET status = 'aguardando_evidencia' WHERE id = $1`,
+            [ans.instance_id]
+          );
+        }
+      });
+
+      await auditLog({
+        query, userId: req.user.id, action: `answer_${action}`,
+        meta: {
+          provider_id: Number(ans.provider_id),
+          instance_id: Number(ans.instance_id),
+          location_id: ans.location_id ?? null,
+          question_id: Number(ans.question_id),
+        },
+        ip: hashClientIp(req),
+      });
+
+      res.json({ success: true, evidence_status: newEvidenceStatus });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  app.post('/api/eval/answers/:id/aprovar',              authenticate, (req, res) => auditorAction(req, res, 'aprovou', false));
+  app.post('/api/eval/answers/:id/reprovar',             authenticate, (req, res) => auditorAction(req, res, 'reprovou', true));
+  app.post('/api/eval/answers/:id/solicitar-reanalise',  authenticate, (req, res) => auditorAction(req, res, 'solicitou_reanalise', true));
+
   app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });

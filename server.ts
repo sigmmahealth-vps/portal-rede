@@ -3368,22 +3368,18 @@ async function startServer() {
       if (new Date(end_date) < new Date(start_date)) {
         return res.status(400).json({ error: 'end_date < start_date' });
       }
-      await query('BEGIN');
-      try {
+      const row = await withTransaction(async (client) => {
         if (active) {
-          await query('UPDATE eval_cycles SET active = false WHERE active = true');
+          await client.query('UPDATE eval_cycles SET active = false WHERE active = true');
         }
-        const { rows } = await query(
+        const { rows } = await client.query(
           `INSERT INTO eval_cycles (label, start_date, end_date, active)
            VALUES ($1, $2, $3, COALESCE($4, false)) RETURNING *`,
           [label, start_date, end_date, active || false]
         );
-        await query('COMMIT');
-        res.json(rows[0]);
-      } catch (e) {
-        await query('ROLLBACK');
-        throw e;
-      }
+        return rows[0];
+      });
+      res.json(row);
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -3395,12 +3391,11 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
       const { label, start_date, end_date, active } = req.body || {};
-      await query('BEGIN');
-      try {
+      const row = await withTransaction(async (client) => {
         if (active === true) {
-          await query('UPDATE eval_cycles SET active = false WHERE active = true AND id <> $1', [id]);
+          await client.query('UPDATE eval_cycles SET active = false WHERE active = true AND id <> $1', [id]);
         }
-        const { rows } = await query(
+        const { rows } = await client.query(
           `UPDATE eval_cycles
               SET label      = COALESCE($1, label),
                   start_date = COALESCE($2, start_date),
@@ -3409,13 +3404,10 @@ async function startServer() {
             WHERE id = $5 RETURNING *`,
           [label ?? null, start_date ?? null, end_date ?? null, active ?? null, id]
         );
-        if (!rows.length) { await query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
-        await query('COMMIT');
-        res.json(rows[0]);
-      } catch (e) {
-        await query('ROLLBACK');
-        throw e;
-      }
+        return rows[0] || null;
+      });
+      if (!row) return res.status(404).json({ error: 'not found' });
+      res.json(row);
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

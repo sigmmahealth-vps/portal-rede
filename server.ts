@@ -3928,7 +3928,8 @@ async function startServer() {
       // ficam com city=null. Add when fallback para local primário for pedido.
 
       const { rows: dimPct } = await query(`
-        SELECT ea.instance_id, eq.dimension,
+        SELECT ea.instance_id,
+               CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END AS dimension,
                (SUM(ea.score_obtained) / NULLIF(SUM(eq.max_score), 0)) * 100 AS pct
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
@@ -3936,7 +3937,8 @@ async function startServer() {
          WHERE ei.cycle_id = $1
            AND (ea.answer_value IS NULL OR ea.answer_value <> 'NA')
            AND eq.dimension IS NOT NULL
-         GROUP BY ea.instance_id, eq.dimension
+         GROUP BY ea.instance_id,
+                  CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END
       `, [cycle.id]);
 
       const { buildAuditorDashboard } = await import('./src/lib/auditorDashboard.js');
@@ -3998,7 +4000,8 @@ async function startServer() {
       `, [cycle.id]);
 
       const { rows: dimRows } = await query(`
-        SELECT ea.instance_id, eq.dimension,
+        SELECT ea.instance_id,
+               CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END AS dimension,
                ROUND((SUM(ea.score_obtained) / NULLIF(SUM(eq.max_score), 0)) * 100)::int AS pct
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
@@ -4006,7 +4009,8 @@ async function startServer() {
          WHERE ei.cycle_id = $1
            AND (ea.answer_value IS NULL OR ea.answer_value <> 'NA')
            AND eq.dimension IS NOT NULL
-         GROUP BY ea.instance_id, eq.dimension
+         GROUP BY ea.instance_id,
+                  CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END
       `, [cycle.id]);
 
       const dimByInst: Record<number, Record<string, number>> = {};

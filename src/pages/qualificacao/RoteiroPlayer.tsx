@@ -4,7 +4,7 @@ import { computeScore } from '../../lib/score';
 import { questionOnly } from '../../lib/questionText';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
-  AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2,
+  AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2, RotateCcw,
 } from 'lucide-react';
 
 interface Question {
@@ -21,6 +21,7 @@ interface Question {
   order_index: number;
   dimension?: string | null;
   guidance?: string | null;
+  document_type?: string | null;
 }
 
 interface Section {
@@ -41,6 +42,8 @@ interface Answer {
   files?: EvidenceFile[];
   is_na?: boolean;
   provider_observation?: string;
+  evidence_status?: string | null;
+  auditor_observation?: string | null;
 }
 
 // --- Peças de UI --------------------------------------------------------------
@@ -268,6 +271,8 @@ export default function RoteiroPlayer({
               score_obtained: ans.score_obtained,
               files: filesByQuestion[ans.question_id] ?? [],
               provider_observation: ans.provider_observation || undefined,
+              evidence_status: ans.evidence_status,
+              auditor_observation: ans.auditor_observation,
             };
           });
         }
@@ -727,6 +732,23 @@ export default function RoteiroPlayer({
                           <p className="mt-2 text-xs leading-relaxed text-gray-500">
                             <span className="font-semibold text-gray-600">Evidência esperada: </span>{q.guidance}
                           </p>
+                        )}
+
+                        {/* Reanálise: auditor devolveu este critério com orientação do que corrigir. */}
+                        {ans?.evidence_status === 'aguardando_reanalise' && ans?.auditor_observation && (
+                          <div className="mb-3 mt-3 flex gap-2 rounded border-l-4 border-amber-500 bg-amber-50 p-3">
+                            <RotateCcw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            <div className="text-sm">
+                              <p className="font-semibold text-amber-900">Reanálise solicitada pelo auditor</p>
+                              <p className="mt-1 italic text-amber-800">"{ans.auditor_observation}"</p>
+                            </div>
+                          </div>
+                        )}
+                        {/* Bypass DL: critério de documentação legal atendido automaticamente via cadastro. */}
+                        {q.document_type && ans?.evidence_status === 'aprovado' && (ans?.auditor_observation || '').includes('Aprovado via cadastro') && (
+                          <div className="mb-3 mt-3 inline-block rounded bg-amber-100 p-2 text-xs font-bold text-amber-800">
+                            Atendido via cadastro ({q.document_type})
+                          </div>
                         )}
 
                         {/* Resposta segmentada Sim / Não / N/A */}

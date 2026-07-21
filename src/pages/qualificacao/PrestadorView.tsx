@@ -18,6 +18,9 @@ const TABS = [
 type TabKey = typeof TABS[number]['key'];
 
 const OPEN_STATES = ['finalizado', 'aprovado', 'reprovado'];
+// Estados em que o prestador ainda pode editar respostas e enviar para análise
+// (POST /submit). Fora daqui (pendente/em_analise/terminais) a instância é só leitura.
+const EDITABLE_STATES = ['em_andamento', 'aguardando_evidencia'];
 
 function EmBreve({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
   return (
@@ -42,6 +45,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('inicio');
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -63,6 +67,24 @@ export default function PrestadorView({ user }: { user: any }) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Envia a instância para análise (POST /submit) — usado tanto no envio inicial
+  // quanto no reenvio após reanálise (status 'aguardando_evidencia').
+  const submitForAnalysis = async (instanceId: number) => {
+    if (!confirm('Enviar para análise? Você não poderá editar até o auditor liberar.')) return;
+    setSubmitting(true);
+    try {
+      await fetchApi(`/eval/instances/${instanceId}/submit`, { method: 'POST' });
+      alert('Enviado com sucesso!');
+      await loadData();
+    } catch (e: any) {
+      if (e.message.includes('critérios sem resposta')) alert('Preencha todos os critérios antes de enviar.');
+      else if (e.message.includes('aguardando reanálise')) alert('Ainda há critérios aguardando reanálise.');
+      else alert(e.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -110,9 +132,9 @@ export default function PrestadorView({ user }: { user: any }) {
         {inProgress ? (
           <>
             <p className="mt-1 text-sm text-gray-500">
-              {inProgress.status === 'pendente'
-                ? 'Sua qualificação foi enviada e está aguardando auditoria.'
-                : 'Você tem uma qualificação em andamento.'}
+              {EDITABLE_STATES.includes(inProgress.status)
+                ? 'Você tem uma qualificação em andamento.'
+                : 'Sua qualificação foi enviada e está aguardando auditoria.'}
             </p>
             <div className="mt-4 rounded-xl bg-emerald-50/60 p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -122,14 +144,25 @@ export default function PrestadorView({ user }: { user: any }) {
                     {fillPct(inProgress)}% respondido · {Number(inProgress.answered_count) || 0} de {Number(inProgress.total_questions) || 0} critérios
                   </p>
                 </div>
-                <button
-                  onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id, readOnly: inProgress.status === 'pendente' })}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
-                >
-                  {inProgress.status === 'pendente'
-                    ? (<><Eye className="h-4 w-4" /> Visualizar avaliação</>)
-                    : (<><Clock className="h-4 w-4" /> Continuar avaliação</>)}
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id, readOnly: !EDITABLE_STATES.includes(inProgress.status) })}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
+                  >
+                    {EDITABLE_STATES.includes(inProgress.status)
+                      ? (<><Clock className="h-4 w-4" /> Continuar avaliação</>)
+                      : (<><Eye className="h-4 w-4" /> Visualizar avaliação</>)}
+                  </button>
+                  {EDITABLE_STATES.includes(inProgress.status) && (
+                    <button
+                      onClick={() => submitForAnalysis(inProgress.id)}
+                      disabled={submitting}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 disabled:opacity-60"
+                    >
+                      {submitting ? 'Enviando...' : 'Enviar para Análise'}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
                 <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out" style={{ width: `${fillPct(inProgress)}%` }} />
@@ -189,7 +222,7 @@ export default function PrestadorView({ user }: { user: any }) {
               && !OPEN_STATES.includes(i.status)
               && (loc ? String(i.location_id) === String(loc.id) : true),
             );
-            const sent = existing?.status === 'pendente';
+            const sent = existing ? !EDITABLE_STATES.includes(existing.status) : false;
             const cityUf = loc && loc.cidade ? `${loc.cidade}${loc.uf ? '/' + String(loc.uf).toUpperCase() : ''}` : null;
             return (
               <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">

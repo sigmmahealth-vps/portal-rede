@@ -24,7 +24,6 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import AuditorView from './AuditorView'; // Admins can probably toggle to Auditor view
 
 const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
@@ -33,7 +32,6 @@ const SEAL_COLORS: Record<string, string> = {
 export default function GestorDashboard({ user }: { user: any }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'dashboard' | 'auditor'>('dashboard');
 
   useEffect(() => {
     loadDashboard();
@@ -76,22 +74,6 @@ export default function GestorDashboard({ user }: { user: any }) {
     document.body.removeChild(link);
   };
 
-  if (viewMode === 'auditor') {
-    return (
-      <div>
-        <div className="mb-4">
-          <button 
-            onClick={() => setViewMode('dashboard')}
-            className="text-emerald-600 text-sm font-medium hover:underline flex items-center gap-1"
-          >
-            ← Voltar para Dashboard Estratégico
-          </button>
-        </div>
-        <AuditorView user={user} />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -105,12 +87,6 @@ export default function GestorDashboard({ user }: { user: any }) {
             onClick={exportRankingCsv}
           >
             Exportar Relatório
-          </button>
-          <button 
-            className="btn btn-primary"
-            onClick={() => setViewMode('auditor')}
-          >
-            Acessar Painel do Auditor
           </button>
         </div>
       </div>

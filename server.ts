@@ -3264,6 +3264,9 @@ async function startServer() {
     }
   });
 
+  // ponytail: legado. O selo agora é calculado exclusivamente em POST /parecer.
+  // O campo `seal` do body é ignorado. Mantido para compat com o AuditorEvaluationModal
+  // antigo até a Task 11 refatorar.
   app.put('/api/eval/instances/:id/status', authenticate, async (req: any, res) => {
     try {
       const instance = await loadInstanceForWrite(req, res);
@@ -3273,9 +3276,10 @@ async function startServer() {
       const now = new Date().toISOString();
       await query(`
         UPDATE eval_instances
-        SET status = $1, score = $2, max_possible_score = $3, percentual = $4, seal = $5, completed_at = CASE WHEN $6 IN ('pendente', 'finalizado') THEN $7 ELSE completed_at END
-        WHERE id = $8
-      `, [status, score || 0, max_possible_score || 0, percentual || 0, seal || null, status, now, req.params.id]);
+        SET status = $1, score = $2, max_possible_score = $3, percentual = $4,
+            completed_at = CASE WHEN $5 IN ('pendente', 'finalizado') THEN $6 ELSE completed_at END
+        WHERE id = $7
+      `, [status, score || 0, max_possible_score || 0, percentual || 0, status, now, req.params.id]);
 
       await auditLog({
         query, userId: req.user.id, action: 'evaluation_status_changed',
@@ -3825,6 +3829,71 @@ async function startServer() {
   app.post('/api/eval/answers/:id/aprovar',              authenticate, (req, res) => auditorAction(req, res, 'aprovou', false));
   app.post('/api/eval/answers/:id/reprovar',             authenticate, (req, res) => auditorAction(req, res, 'reprovou', true));
   app.post('/api/eval/answers/:id/solicitar-reanalise',  authenticate, (req, res) => auditorAction(req, res, 'solicitou_reanalise', true));
+
+  app.post('/api/eval/instances/:id/parecer', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+
+      const { rows: [inst] } = await query(`
+        SELECT id, status, provider_id, location_id FROM eval_instances WHERE id = $1
+      `, [id]);
+      if (!inst) return res.status(404).json({ error: 'instance not found' });
+      if (inst.status !== 'em_analise') {
+        return res.status(409).json({ error: `status ${inst.status} não permite parecer` });
+      }
+
+      const { rows: pending } = await query(`
+        SELECT id FROM eval_answers
+         WHERE instance_id = $1 AND evidence_status NOT IN ('aprovado','reprovado')
+      `, [id]);
+      if (pending.length) {
+        return res.status(409).json({ error: 'critérios sem decisão terminal', pending_answer_ids: pending.map((r: any) => Number(r.id)) });
+      }
+
+      const { rows: [totals] } = await query(`
+        SELECT
+          COALESCE(SUM(ea.score_obtained) FILTER (WHERE ea.answer_value <> 'NA'), 0)::numeric AS score,
+          COALESCE(SUM(eq.max_score)      FILTER (WHERE ea.answer_value <> 'NA'), 0)::numeric AS max_possible,
+          COALESCE(BOOL_OR(ea.evidence_status = 'reprovado' AND eq.is_eliminatory), false) AS elim_fail
+        FROM eval_answers ea
+        JOIN eval_questions eq ON eq.id = ea.question_id
+        WHERE ea.instance_id = $1
+      `, [id]);
+
+      const score = Number(totals.score);
+      const maxPossible = Number(totals.max_possible);
+      const percentual = maxPossible > 0 ? Math.round((score / maxPossible) * 10000) / 100 : 0;
+      const hasEliminatoryFailed = !!totals.elim_fail;
+
+      const { computeSeal } = await import('./src/lib/computeSeal.js');
+      const seal = computeSeal(percentual, hasEliminatoryFailed);
+
+      await query(`
+        UPDATE eval_instances
+           SET status = 'aprovado',
+               score = $1, max_possible_score = $2, percentual = $3, seal = $4,
+               completed_at = now()
+         WHERE id = $5
+      `, [score, maxPossible, percentual, seal, id]);
+
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_finalized',
+        meta: {
+          provider_id: Number(inst.provider_id),
+          instance_id: id,
+          location_id: inst.location_id ?? null,
+          seal, percentual, has_eliminatory_failed: hasEliminatoryFailed,
+        },
+        ip: hashClientIp(req),
+      });
+
+      res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {
     try {

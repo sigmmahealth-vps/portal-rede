@@ -3207,6 +3207,33 @@ async function startServer() {
     }
   });
 
+  app.post('/api/eval/instances/:id/reopen', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows } = await query(
+        `UPDATE eval_instances SET status = 'aguardando_evidencia'
+          WHERE id = $1 RETURNING id, provider_id, location_id, status`,
+        [id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'instance not found' });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_reopened',
+        meta: {
+          provider_id: Number(rows[0].provider_id),
+          instance_id: id,
+          location_id: rows[0].location_id ?? null,
+        },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true, new_status: rows[0].status });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/eval/instances/:id/evidence', authenticate, upload.single('file'), async (req: any, res) => {
     try {
       if (!req.file) {

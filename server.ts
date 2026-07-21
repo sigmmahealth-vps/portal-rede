@@ -2837,11 +2837,11 @@ async function startServer() {
             // Adiado: derivar o type do "Tipo" (S/DL/E/C) quando o parser passar a lê-lo.
             await client.query(
               `INSERT INTO eval_questions
-                 (section_id, code, text, legislation, type, weight, max_score, dimension,
+                 (section_id, code, text, legislation, type, weight, max_score, dimension, document_type,
                   guidance, evidence_required, is_eliminatory, order_index)
-               VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11)`,
+               VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11,$12)`,
               [sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
-               q.dimension, q.guidance, q.evidenceRequired, q.isEliminatory, q.order],
+               q.dimension, q.documentType, q.guidance, q.evidenceRequired, q.isEliminatory, q.order],
             );
           }
           return { id: scriptId, version: parsed.version };

@@ -68,12 +68,12 @@ async function commitScript(parsed: ParsedScript): Promise<number> {
       if (sectionId == null) continue; // critério sem seção: ignora (não deveria ocorrer)
       await client.query(
         `INSERT INTO eval_questions
-           (section_id, code, text, legislation, type, weight, max_score, dimension,
+           (section_id, code, text, legislation, type, weight, max_score, dimension, document_type,
             guidance, evidence_required, is_eliminatory, order_index)
-         VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11)`,
+         VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
-          q.dimension, q.guidance, q.evidenceRequired, q.isEliminatory, q.order,
+          q.dimension, q.documentType, q.guidance, q.evidenceRequired, q.isEliminatory, q.order,
         ],
       );
     }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from 'xlsx';
-import { parseWorkbook, num } from './roteiro-parser.js';
+import { parseWorkbook, num, extractDocumentType } from './roteiro-parser.js';
 
 /** Monta uma planilha mínima em memória no layout esperado pelo parser. */
 function buildBuffer(): Buffer {
@@ -166,4 +166,54 @@ test('Revisão em forma de data (sem número) não vira número de revisão', ()
   assert.equal(parsed.version, null);
   assert.equal(parsed.revisaoDate, null);
   assert.equal(parsed.implantacaoDate, '2025-09-30');
+});
+
+test('extractDocumentType — reconhece cada label da spec 5.4.2.3', () => {
+  const cases: Array<[string, string, string]> = [
+    ['Dispõe de alvará sanitário válido? DL', '', 'Alvará Sanitário'],
+    ['Alvará de funcionamento expedido pelo órgão competente DL', '', 'Alvará de Funcionamento'],
+    ['Alvará do Corpo de Bombeiros / AVCB DL', 'Alvará ou protocolo dentro do prazo', 'Alvará Corpo de Bombeiros'],
+    ['Cadastro Nacional Estabelecimento Saúde (CNES) DL', '', 'CNES'],
+    ['Dispõe de Anotação de Responsabilidade Técnica DL', '', 'ART'],
+    ['Programa de Gerenciamento de Resíduos de Serviços de Saúde - PGRSS DL', '', 'PGRSS'],
+    ['Dispõe de PGR (Programa de Gerenciamento de Riscos) DL', '', 'PGR'],
+    ['Dispõe de PCMSO DL', '', 'PCMSO'],
+    ['Contrato Social atualizado DL', '', 'Contrato Social'],
+    ['Registro de Qualificação de Especialista (RQE) DL', '', 'RQE'],
+  ];
+  for (const [text, guidance, expected] of cases) {
+    assert.equal(extractDocumentType(text, guidance), expected, `falhou: "${text}"`);
+  }
+});
+
+test('extractDocumentType — PGR não bate com PGRSS e vice-versa', () => {
+  assert.equal(extractDocumentType('PGRSS aprovado', ''), 'PGRSS');
+  assert.equal(extractDocumentType('PGR anual', ''), 'PGR');
+});
+
+test('extractDocumentType — sem match retorna null', () => {
+  assert.equal(extractDocumentType('Critério qualquer sem palavra-chave', ''), null);
+  assert.equal(extractDocumentType('Certificação genérica', ''), null);
+});
+
+test('parseWorkbook popula document_type apenas para critérios DL', () => {
+  // Monta uma planilha mínima com 1 critério S e 1 DL
+  const aoa = [
+    ['ROTEIRO PARA AVALIAÇÃO DE QUALIFICAÇÃO', 'OPS-REDS Revisão: 03'],
+    ['GRUPO DE TESTE'],
+    ['ITEM', 'EVIDÊNCIA', 'PESO MÁXIMO', 'PESO À CONSIDERAR'],
+    ['SEÇÃO 1. Estrutura'],
+    ['1.1.1 Dispõe de alvará sanitário válido? "DL"', 'Alvará dentro do prazo', '10', '10'],
+    ['1.1.2 Realiza treinamento anual? "S"', 'Lista de presença', '10', '10'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Roteiro');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const parsed = parseWorkbook(buf, 'OPS-RED-FOR-TESTE.xlsx');
+  const dl = parsed.questions.find(q => q.code === '1.1.1');
+  const s = parsed.questions.find(q => q.code === '1.1.2');
+  assert.ok(dl && s);
+  assert.equal(dl!.documentType, 'Alvará Sanitário');
+  assert.equal(s!.documentType, null);
 });

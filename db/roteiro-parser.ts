@@ -40,6 +40,29 @@ function extractLegislation(text: string): string | null {
   return uniq.join('; ').slice(0, 300) || null;
 }
 
+/**
+ * Extrai um "tipo de documento" normalizado a partir do texto do critério + guidance,
+ * usado pelo bypass DL (spec 5.4.2.3). Só faz sentido quando dimension='Documento Legal';
+ * o chamador é responsável por só usar o valor nesse caso.
+ * Regras aplicadas em ordem — primeira match ganha. Retorna null se nenhuma bate.
+ */
+export function extractDocumentType(text: string, guidance: string | null | undefined): string | null {
+  const haystack = `${text} ${guidance ?? ''}`;
+  const H = haystack.toLowerCase();
+  // ORDER MATTERS — mais específico antes do genérico (PGRSS antes de PGR).
+  if (/alvar[áa]\s+sanit[áa]rio/.test(H)) return 'Alvará Sanitário';
+  if (/alvar[áa]\s+de\s+funcionamento/.test(H)) return 'Alvará de Funcionamento';
+  if (/corpo\s+de\s+bombeiros|\bavcb\b/.test(H)) return 'Alvará Corpo de Bombeiros';
+  if (/\bcnes\b|cadastro\s+nacional\s+(de\s+)?estabelecimento/.test(H)) return 'CNES';
+  if (/anota[çc][ãa]o\s+de\s+responsabilidade\s+t[ée]cnica|\bart\b/.test(H)) return 'ART';
+  if (/\bpgrss\b|res[íi]duos\s+de\s+servi[çc]os\s+de\s+sa[úu]de/.test(H)) return 'PGRSS';
+  if (/\bpgr\b/.test(H)) return 'PGR';
+  if (/\bpcmso\b|controle\s+m[ée]dico\s+e\s+sa[úu]de\s+ocupacional/.test(H)) return 'PCMSO';
+  if (/contrato\s+social/.test(H)) return 'Contrato Social';
+  if (/\brqe\b|registro\s+de\s+qualifica[çc][ãa]o\s+de\s+especialista/.test(H)) return 'RQE';
+  return null;
+}
+
 // padrões de linha (col A)
 const RE_QUESTION = /^(\d+(?:\.\d+){2,})\s*[.)]?\s+(.+)/s; // 1.1.1 ...
 const RE_SUBSECTION = /^(\d+\.\d+)(?!\.\d)\.?\s+(.+)/s; //     1.1 ... (2 níveis)
@@ -63,6 +86,7 @@ export interface QuestionNode {
   text: string;
   guidance: string | null;
   dimension: string | null;
+  documentType: string | null;
   legislation: string | null;
   weight: number;
   maxScore: number;
@@ -196,6 +220,7 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
       text,
       guidance,
       dimension,
+      documentType: dimension === 'Documento Legal' ? extractDocumentType(text, guidance) : null,
       legislation: extractLegislation(text),
       weight,
       maxScore,

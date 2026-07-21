@@ -54,7 +54,9 @@ export function extractDocumentType(text: string, guidance: string | null | unde
   if (/alvar[áa]\s+de\s+funcionamento/.test(H)) return 'Alvará de Funcionamento';
   if (/corpo\s+de\s+bombeiros|\bavcb\b/.test(H)) return 'Alvará Corpo de Bombeiros';
   if (/\bcnes\b|cadastro\s+nacional\s+(de\s+)?estabelecimento/.test(H)) return 'CNES';
-  if (/anota[çc][ãa]o\s+de\s+responsabilidade\s+t[ée]cnica|\bart\b/.test(H)) return 'ART';
+  // ART: só bate na forma completa (não usa \bart\b, pois "art. 968" — abreviação de artigo
+  // de lei — vive nos critérios DL e roubava o match antes de Contrato Social/PGR/etc.).
+  if (/anota[çc][ãa]o\s+de\s+responsabilidade\s+t[ée]cnica/.test(H)) return 'ART';
   if (/\bpgrss\b|res[íi]duos\s+de\s+servi[çc]os\s+de\s+sa[úu]de/.test(H)) return 'PGRSS';
   if (/\bpgr\b/.test(H)) return 'PGR';
   if (/\bpcmso\b|controle\s+m[ée]dico\s+e\s+sa[úu]de\s+ocupacional/.test(H)) return 'PCMSO';

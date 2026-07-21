@@ -50,13 +50,15 @@ export function extractDocumentType(text: string, guidance: string | null | unde
   const haystack = `${text} ${guidance ?? ''}`;
   const H = haystack.toLowerCase();
   // ORDER MATTERS — mais específico antes do genérico (PGRSS antes de PGR).
+  // Labels alinhados ao dropdown de upload em src/pages/Documentos.tsx:546-556.
+  // Sem esse alinhamento, o DL bypass da Task 4 faria zero match em produção.
   if (/alvar[áa]\s+sanit[áa]rio/.test(H)) return 'Alvará Sanitário';
-  if (/alvar[áa]\s+de\s+funcionamento/.test(H)) return 'Alvará de Funcionamento';
-  if (/corpo\s+de\s+bombeiros|\bavcb\b/.test(H)) return 'Alvará Corpo de Bombeiros';
+  if (/alvar[áa]\s+de\s+(funcionamento|localiza[çc][ãa]o)/.test(H)) return 'Alvará de Localização';
+  if (/corpo\s+de\s+bombeiros|\bavcb\b/.test(H)) return 'Alvará dos Bombeiros';
   if (/\bcnes\b|cadastro\s+nacional\s+(de\s+)?estabelecimento/.test(H)) return 'CNES';
   // ART: só bate na forma completa (não usa \bart\b, pois "art. 968" — abreviação de artigo
   // de lei — vive nos critérios DL e roubava o match antes de Contrato Social/PGR/etc.).
-  if (/anota[çc][ãa]o\s+de\s+responsabilidade\s+t[ée]cnica/.test(H)) return 'ART';
+  if (/anota[çc][ãa]o\s+de\s+responsabilidade\s+t[ée]cnica/.test(H)) return 'ART - Anotação de Responsabilidade Técnica';
   if (/\bpgrss\b|res[íi]duos\s+de\s+servi[çc]os\s+de\s+sa[úu]de/.test(H)) return 'PGRSS';
   if (/\bpgr\b/.test(H)) return 'PGR';
   if (/\bpcmso\b|controle\s+m[ée]dico\s+e\s+sa[úu]de\s+ocupacional/.test(H)) return 'PCMSO';

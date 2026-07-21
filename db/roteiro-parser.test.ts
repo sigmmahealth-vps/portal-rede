@@ -171,10 +171,10 @@ test('Revisão em forma de data (sem número) não vira número de revisão', ()
 test('extractDocumentType — reconhece cada label da spec 5.4.2.3', () => {
   const cases: Array<[string, string, string]> = [
     ['Dispõe de alvará sanitário válido? DL', '', 'Alvará Sanitário'],
-    ['Alvará de funcionamento expedido pelo órgão competente DL', '', 'Alvará de Funcionamento'],
-    ['Alvará do Corpo de Bombeiros / AVCB DL', 'Alvará ou protocolo dentro do prazo', 'Alvará Corpo de Bombeiros'],
+    ['Alvará de funcionamento expedido pelo órgão competente DL', '', 'Alvará de Localização'],
+    ['Alvará do Corpo de Bombeiros / AVCB DL', 'Alvará ou protocolo dentro do prazo', 'Alvará dos Bombeiros'],
     ['Cadastro Nacional Estabelecimento Saúde (CNES) DL', '', 'CNES'],
-    ['Dispõe de Anotação de Responsabilidade Técnica DL', '', 'ART'],
+    ['Dispõe de Anotação de Responsabilidade Técnica DL', '', 'ART - Anotação de Responsabilidade Técnica'],
     ['Programa de Gerenciamento de Resíduos de Serviços de Saúde - PGRSS DL', '', 'PGRSS'],
     ['Dispõe de PGR (Programa de Gerenciamento de Riscos) DL', '', 'PGR'],
     ['Dispõe de PCMSO DL', '', 'PCMSO'],

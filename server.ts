@@ -3430,6 +3430,73 @@ async function startServer() {
     }
   });
 
+  app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+
+      const cycleIdParam = req.query.cycle_id ? Number(req.query.cycle_id) : null;
+      const { rows: cycleRows } = cycleIdParam
+        ? await query('SELECT id, label, start_date, end_date FROM eval_cycles WHERE id = $1', [cycleIdParam])
+        : await query('SELECT id, label, start_date, end_date FROM eval_cycles WHERE active = true');
+      if (!cycleRows.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      const cycle = cycleRows[0];
+
+      const { rows: instances } = await query(`
+        SELECT ei.id, ei.provider_id, ei.location_id,
+               COALESCE(p.trade_name, p.name) AS provider_name,
+               p.sgu_code AS provider_code,
+               pl.cidade AS city,
+               p.provider_group,
+               ei.status, ei.percentual, ei.seal,
+               false AS has_certificate
+          FROM eval_instances ei
+          JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+         WHERE ei.cycle_id = $1
+         ORDER BY ei.id
+      `, [cycle.id]);
+      // ponytail: cidade só quando location_id existe; instâncias "prestador inteiro"
+      // ficam com city=null. Add when fallback para local primário for pedido.
+
+      const { rows: dimPct } = await query(`
+        SELECT ea.instance_id, eq.dimension,
+               (SUM(ea.score_obtained) / NULLIF(SUM(eq.max_score), 0)) * 100 AS pct
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+          JOIN eval_instances ei ON ei.id = ea.instance_id
+         WHERE ei.cycle_id = $1
+           AND (ea.answer_value IS NULL OR ea.answer_value <> 'NA')
+           AND eq.dimension IS NOT NULL
+         GROUP BY ea.instance_id, eq.dimension
+      `, [cycle.id]);
+
+      const { buildAuditorDashboard } = await import('./src/lib/auditorDashboard.js');
+      const payload = buildAuditorDashboard(
+        {
+          id: Number(cycle.id),
+          label: cycle.label,
+          start_date: cycle.start_date instanceof Date ? cycle.start_date.toISOString().slice(0, 10) : String(cycle.start_date),
+          end_date: cycle.end_date instanceof Date ? cycle.end_date.toISOString().slice(0, 10) : String(cycle.end_date),
+        },
+        instances.map((r: any) => ({
+          id: Number(r.id), provider_id: Number(r.provider_id),
+          location_id: r.location_id != null ? Number(r.location_id) : null,
+          provider_name: r.provider_name, provider_code: r.provider_code,
+          city: r.city, provider_group: r.provider_group,
+          status: r.status, percentual: Number(r.percentual) || 0, seal: r.seal,
+          has_certificate: false,
+        })),
+        dimPct.map((r: any) => ({
+          instance_id: Number(r.instance_id), dimension: r.dimension, pct: Number(r.pct) || 0,
+        })),
+      );
+      res.json(payload);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   if (process.env.RETENTION_AUTO_PURGE !== 'false') {
     try {
       const { rows } = await query("SELECT value FROM settings WHERE key = 'data_retention_last_run_at'");

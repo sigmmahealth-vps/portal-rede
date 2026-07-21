@@ -1,220 +1,176 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { X, CheckCircle, AlertTriangle, MessageSquare, Download, ShieldCheck } from 'lucide-react';
+import { X, Check, XCircle, RotateCcw, ChevronDown, ChevronUp, ShieldCheck, FileText } from 'lucide-react';
+import { statusLabel } from '../../lib/statusLabels';
 
-export default function AuditorEvaluationModal({ instanceId, onClose }: { instanceId: number, onClose: () => void }) {
+interface Answer {
+  id: number; question_id: number;
+  answer_value: string | null; score_obtained: number;
+  evidence_url: string | null; evidence_status: string | null;
+  auditor_observation: string | null; provider_observation: string | null;
+  is_non_compliant: boolean;
+}
+interface Question {
+  id: number; code: string | null; text: string; dimension: string | null;
+  max_score: number; document_type: string | null;
+}
+interface Iteration {
+  id: number; iteration_number: number; actor_role: string; action: string;
+  answer_value: string | null; observation: string | null; evidence_url: string | null; created_at: string;
+}
+
+export default function AuditorEvaluationModal({ instanceId, onClose }: { instanceId: number; onClose: () => void }) {
   const [data, setData] = useState<any>(null);
+  const [answers, setAnswers] = useState<Record<number, Answer>>({});
+  const [iterations, setIterations] = useState<Record<number, Iteration[]>>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [openHistory, setOpenHistory] = useState<Set<number>>(new Set());
+  const [reasonPrompt, setReasonPrompt] = useState<{ answerId: number; action: 'reprovou' | 'solicitou_reanalise' } | null>(null);
+  const [reasonText, setReasonText] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  // Local state for answers so auditor can override or comment
-  const [answers, setAnswers] = useState<Record<number, any>>({});
-  const [seal, setSeal] = useState<string>('');
-  
-  useEffect(() => {
-    loadData();
-  }, [instanceId]);
-
-  const loadData = async () => {
+  const load = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await fetchApi(`/eval/instances/${instanceId}`);
-      
-      const scriptRes = await fetchApi(`/eval/scripts/${res.script_id}`);
-      
-      setData({ ...res, script: scriptRes });
-      
-      const ansObj: Record<number, any> = {};
-      if (res.answers) {
-        res.answers.forEach((a: any) => {
-          ansObj[a.question_id] = { ...a };
-        });
-      }
-      setAnswers(ansObj);
-      setSeal(res.seal || '');
-      
-    } catch (err) {
-      console.error(err);
-      alert('Erro ao carregar avaliação');
-    } finally {
-      setLoading(false);
-    }
+      const inst = await fetchApi(`/eval/instances/${instanceId}`);
+      const script = await fetchApi(`/eval/scripts/${inst.script_id}`);
+      setData({ ...inst, script });
+      const map: Record<number, Answer> = {};
+      (inst.answers || []).forEach((a: Answer) => { map[a.question_id] = a; });
+      setAnswers(map);
+      // Iterations: assume endpoint futuro; por ora, coleta de inst.answers se vier.
+      const iters: Record<number, Iteration[]> = {};
+      (inst.answers || []).forEach((a: any) => { iters[a.id] = a.iterations || []; });
+      setIterations(iters);
+    } finally { setLoading(false); }
   };
 
-  const handleAuditorChange = (qId: number, field: string, value: any) => {
-    setAnswers(prev => ({
-      ...prev,
-      [qId]: {
-        ...prev[qId],
-        [field]: value
-      }
-    }));
+  useEffect(() => { load(); }, [instanceId]);
+
+  const act = async (answerId: number, action: 'aprovou' | 'reprovou' | 'solicitou_reanalise', observation?: string) => {
+    setBusy(true);
+    const path = action === 'aprovou' ? 'aprovar' : action === 'reprovou' ? 'reprovar' : 'solicitar-reanalise';
+    try {
+      await fetchApi(`/eval/answers/${answerId}/${path}`, {
+        method: 'POST', body: JSON.stringify({ observation: observation || '' }),
+      });
+      await load();
+    } catch (e: any) { alert(e.message); }
+    finally { setBusy(false); setReasonPrompt(null); setReasonText(''); }
   };
 
-  const handleFinishEvaluation = async () => {
+  const emitirParecer = async () => {
+    if (!confirm('Emitir parecer final? Esta ação fecha a avaliação.')) return;
+    setBusy(true);
     try {
-      setSaving(true);
-      // Auditor might have changed some scores, let's recalculate total
-      let newTotal = 0;
-      let newMax = 0;
-      
-      data.script.questions.forEach((q: any) => {
-        newMax += q.max_score;
-        if (answers[q.id]?.answer_value === 'sim') { // Simplify logic for MVP
-          newTotal += q.max_score;
-        }
-      });
-      
-      let calculatedSeal = seal;
-      const percentual = newMax > 0 ? (newTotal / newMax) * 100 : 0;
-      
-      if (!calculatedSeal) {
-        if (percentual >= 90) calculatedSeal = 'Ouro';
-        else if (percentual >= 60) calculatedSeal = 'Prata';
-        else calculatedSeal = 'Bronze';
-      }
-
-      await fetchApi(`/eval/instances/${instanceId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'finalizado',
-          score: newTotal,
-          percentual: percentual,
-          max_possible_score: newMax,
-          seal: calculatedSeal
-        })
-      });
-      
-      // Update answers array
-      const ansArray = Object.keys(answers).map(k => ({
-        question_id: parseInt(k),
-        ...answers[parseInt(k)]
-      }));
-      
-      await fetchApi(`/eval/instances/${instanceId}/answers`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: ansArray })
-      });
-
-      alert('Auditoria finalizada com sucesso!');
+      const res = await fetchApi(`/eval/instances/${instanceId}/parecer`, { method: 'POST' });
+      alert(`Parecer emitido: ${res.seal} (${res.percentual.toFixed(2)}%)`);
       onClose();
-    } catch (err) {
-      console.error(err);
-      alert('Erro ao finalizar auditoria');
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { alert(e.message); }
+    finally { setBusy(false); }
   };
 
-  if (loading || !data) return (
-    <div className="fixed inset-0 z-50 bg-gray-900/50 flex justify-center items-center">
-      <div className="bg-white p-6 rounded-xl shadow-xl flex items-center gap-3">
-        <div className="animate-spin h-5 w-5 border-b-2 border-emerald-600 rounded-full"></div>
-        <span className="font-medium text-gray-700">Carregando avaliação...</span>
-      </div>
-    </div>
-  );
+  const summary = useMemo(() => {
+    const qs: Question[] = data?.script?.questions || [];
+    let aprovados = 0, reprovados = 0, reanalise = 0, sem = 0;
+    for (const q of qs) {
+      const a = answers[q.id];
+      if (!a) { sem++; continue; }
+      if (a.evidence_status === 'aprovado') aprovados++;
+      else if (a.evidence_status === 'reprovado') reprovados++;
+      else if (a.evidence_status === 'aguardando_reanalise') reanalise++;
+      else sem++;
+    }
+    return { aprovados, reprovados, reanalise, sem, canFinish: reanalise === 0 && sem === 0 };
+  }, [data, answers]);
+
+  if (loading || !data) {
+    return <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center"><p className="text-white">Carregando...</p></div>;
+  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-gray-900/80 flex justify-center p-4 sm:p-8 overflow-hidden backdrop-blur-sm">
-      <div className="bg-gray-50 flex flex-col w-full max-w-5xl h-full rounded-2xl shadow-2xl overflow-hidden">
-        
-        {/* Header */}
-        <div className="bg-white px-6 py-4 border-b border-gray-200 flex justify-between items-center shrink-0">
+    <div className="fixed inset-0 z-50 bg-black/80 flex justify-center p-4 backdrop-blur-sm">
+      <div className="bg-gray-50 w-full max-w-5xl flex flex-col rounded-2xl shadow-2xl overflow-hidden">
+        <div className="bg-white px-6 py-4 border-b flex justify-between items-center">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Auditoria: {data.provider_name}</h2>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="text-sm text-gray-500 font-medium">Roteiro: {data.script.title}</span>
-              <span className="w-1 h-1 rounded-full bg-gray-300"></span>
-              <span className="text-sm font-bold text-emerald-600">Score Atual: {Number(data.percentual).toFixed(1)}%</span>
-            </div>
+            <h2 className="text-xl font-bold">Auditoria: {data.provider_name}</h2>
+            <p className="text-sm text-gray-500">{data.script.title} · {statusLabel(data.status)}</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
-            <X className="w-6 h-6" />
-          </button>
+          <button onClick={onClose}><X className="w-6 h-6 text-gray-400" /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {data.script.questions.map((q: any) => {
-             const ans = answers[q.id] || {};
-             const evs = data.evidences || [];
-             
-             return (
-               <div key={q.id} className="bg-white p-5 border border-gray-200 rounded-xl shadow-sm">
-                 <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 shrink-0 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">
-                      {q.code}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {data.script.questions.map((q: Question) => {
+            const a = answers[q.id];
+            if (!a) return null;
+            const bypass = (a.auditor_observation || '').includes('Aprovado via cadastro');
+            const iters = iterations[a.id] || [];
+            const historyOpen = openHistory.has(a.id);
+            const terminal = a.evidence_status === 'aprovado' || a.evidence_status === 'reprovado';
+            return (
+              <div key={q.id} className="bg-white p-4 border rounded-xl">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-xs font-mono text-gray-500">{q.code} · {q.dimension}</p>
+                    <p className="font-semibold text-sm mt-1">{q.text}</p>
+                    <p className="text-sm mt-2">Resposta: <strong>{a.answer_value || '—'}</strong></p>
+                    {a.evidence_url && <a href={a.evidence_url} target="_blank" className="text-sm text-blue-600 underline flex items-center gap-1 mt-1"><FileText className="w-3 h-3" /> Evidência</a>}
+                    {a.provider_observation && <p className="text-xs text-gray-600 italic mt-1">"{a.provider_observation}"</p>}
+                    {bypass && <span className="inline-block mt-2 px-2 py-0.5 bg-amber-100 text-amber-800 text-xs font-bold rounded">Atendido via cadastro</span>}
+                    {a.evidence_status && <span className={`inline-block mt-2 ml-2 px-2 py-0.5 text-xs font-bold rounded ${
+                      a.evidence_status === 'aprovado' ? 'bg-emerald-100 text-emerald-800' :
+                      a.evidence_status === 'reprovado' ? 'bg-red-100 text-red-800' :
+                      a.evidence_status === 'aguardando_reanalise' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100'
+                    }`}>{a.evidence_status.replace('_', ' ')}</span>}
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button disabled={busy || terminal} onClick={() => act(a.id, 'aprovou')} className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 disabled:opacity-40 flex items-center gap-1"><Check className="w-3 h-3" /> Aprovar</button>
+                  <button disabled={busy || terminal} onClick={() => { setReasonPrompt({ answerId: a.id, action: 'reprovou' }); setReasonText(''); }} className="px-3 py-1.5 text-xs bg-red-50 text-red-700 rounded hover:bg-red-100 disabled:opacity-40 flex items-center gap-1"><XCircle className="w-3 h-3" /> Reprovar</button>
+                  <button disabled={busy || terminal} onClick={() => { setReasonPrompt({ answerId: a.id, action: 'solicitou_reanalise' }); setReasonText(''); }} className="px-3 py-1.5 text-xs bg-orange-50 text-orange-700 rounded hover:bg-orange-100 disabled:opacity-40 flex items-center gap-1"><RotateCcw className="w-3 h-3" /> Reanálise</button>
+                  {iters.length > 0 && (
+                    <button onClick={() => setOpenHistory(s => { const n = new Set(s); n.has(a.id) ? n.delete(a.id) : n.add(a.id); return n; })} className="ml-auto text-xs text-gray-600 flex items-center gap-1">
+                      {historyOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />} Histórico ({iters.length})
+                    </button>
+                  )}
+                </div>
+                {reasonPrompt?.answerId === a.id && (
+                  <div className="mt-3 p-3 bg-gray-100 rounded">
+                    <textarea value={reasonText} onChange={e => setReasonText(e.target.value)} placeholder="Justificativa obrigatória..." className="w-full p-2 border rounded text-sm" rows={2} />
+                    <div className="flex justify-end gap-2 mt-2">
+                      <button onClick={() => setReasonPrompt(null)} className="text-xs px-3 py-1 border rounded">Cancelar</button>
+                      <button disabled={!reasonText.trim()} onClick={() => act(a.id, reasonPrompt.action, reasonText)} className="text-xs px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-40">Confirmar</button>
                     </div>
-                    <div className="flex-1 space-y-3">
-                      <div>
-                        <h4 className="text-sm font-bold text-gray-900">{q.text}</h4>
-                        <div className="flex gap-2 mt-2">
-                           <span className={`px-2 py-0.5 text-xs font-bold rounded uppercase ${
-                             ans.answer_value === 'sim' ? 'bg-emerald-100 text-emerald-800' :
-                             ans.answer_value === 'nao' ? 'bg-red-100 text-red-800' :
-                             ans.answer_value === 'na' ? 'bg-gray-100 text-gray-800' :
-                             'bg-gray-50 text-gray-400 border border-gray-200'
-                           }`}>
-                             Resp: {ans.answer_value?.toUpperCase() || 'Pendente'}
-                           </span>
-                           {q.evidence_required && (
-                             <span className="px-2 py-0.5 text-xs font-bold rounded uppercase bg-blue-50 text-blue-700">Evidência Obrig.</span>
-                           )}
-                        </div>
+                  </div>
+                )}
+                {historyOpen && (
+                  <div className="mt-3 pl-4 border-l-2 border-gray-200 space-y-2">
+                    {iters.map(it => (
+                      <div key={it.id} className="text-xs text-gray-700">
+                        <span className="font-semibold">#{it.iteration_number} · {it.actor_role} · {it.action}</span>
+                        <span className="text-gray-500"> ({new Date(it.created_at).toLocaleString('pt-BR')})</span>
+                        {it.observation && <p className="italic text-gray-600">"{it.observation}"</p>}
                       </div>
-
-                      <div className="bg-gray-50 p-4 rounded-lg space-y-3 border border-gray-100 mt-4">
-                        <h5 className="text-xs font-bold text-gray-700 uppercase">Anotações do Auditor</h5>
-                        
-                        <div className="flex gap-4">
-                           <label className="flex items-center gap-2 text-sm text-gray-800">
-                             <input type="checkbox" 
-                               checked={ans.is_non_compliant === 1} 
-                               onChange={(e) => handleAuditorChange(q.id, 'is_non_compliant', e.target.checked ? 1 : 0)}
-                             />
-                             Marcar Não Conformidade
-                           </label>
-                        </div>
-                        
-                        <textarea 
-                          value={ans.auditor_observation || ''}
-                          onChange={(e) => handleAuditorChange(q.id, 'auditor_observation', e.target.value)}
-                          placeholder="Observações do auditor para este item..."
-                          className="w-full text-sm p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500"
-                          rows={2}
-                        ></textarea>
-                      </div>
-                    </div>
-                 </div>
-               </div>
-             )
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
 
-        {/* Footer */}
-        <div className="bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-bold text-gray-700">Classificação Final:</label>
-            <select 
-              value={seal} 
-              onChange={e => setSeal(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 font-bold"
-            >
-              <option value="">- Automática -</option>
-              <option value="Ouro">Ouro (90%+)</option>
-              <option value="Prata">Prata (60%+)</option>
-              <option value="Bronze">Bronze (Até 60%)</option>
-            </select>
+        <div className="bg-white border-t px-6 py-4 flex justify-between items-center">
+          <div className="text-sm">
+            <span className="text-emerald-700 font-semibold">{summary.aprovados} ✓</span>
+            <span className="mx-2 text-gray-300">·</span>
+            <span className="text-red-700 font-semibold">{summary.reprovados} ✗</span>
+            <span className="mx-2 text-gray-300">·</span>
+            <span className="text-orange-700 font-semibold">{summary.reanalise} 🔁</span>
+            <span className="mx-2 text-gray-300">·</span>
+            <span className="text-gray-600 font-semibold">{summary.sem} sem análise</span>
           </div>
-          
-          <button 
-             onClick={handleFinishEvaluation}
-             disabled={saving}
-             className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-70"
-          >
-             {saving ? 'Finalizando...' : <><ShieldCheck className="w-5 h-5" /> Emitir Certificação e Finalizar</>}
+          <button onClick={emitirParecer} disabled={busy || !summary.canFinish} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded disabled:opacity-50 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" /> Emitir Parecer Final
           </button>
         </div>
       </div>

@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Plus, Edit3, Trash2, Check } from 'lucide-react';
+import { Plus, Edit3, Trash2, Check, Play } from 'lucide-react';
 import NovoCicloModal from './NovoCicloModal';
+import AbrirCicloModal from './AbrirCicloModal';
 
 export default function CiclosAdmin({ user }: { user: any }) {
   const [cycles, setCycles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
+  const [abrindo, setAbrindo] = useState<any>(null);
 
   const load = async () => {
     setLoading(true);
@@ -71,6 +73,11 @@ export default function CiclosAdmin({ user }: { user: any }) {
                 <td className="p-3">
                   <div className="flex gap-2">
                     <button onClick={() => setEditing(c)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit3 className="w-4 h-4" /></button>
+                    {c.active && c.instances_count === 0 && (
+                      <button onClick={() => setAbrindo(c)} className="text-emerald-700 hover:text-emerald-900" title="Abrir ciclo">
+                        <Play className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => remove(c)}
                       disabled={c.instances_count > 0}
@@ -87,6 +94,7 @@ export default function CiclosAdmin({ user }: { user: any }) {
 
       {creating && <NovoCicloModal onClose={() => setCreating(false)} onSaved={load} />}
       {editing && <NovoCicloModal initial={editing} onClose={() => setEditing(null)} onSaved={load} />}
+      {abrindo && <AbrirCicloModal cycle={abrindo} onClose={() => setAbrindo(null)} onDone={load} />}
     </div>
   );
 }

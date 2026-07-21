@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import GestorDashboard from './GestorDashboard';
+import QualificacaoStaff from './QualificacaoStaff';
 import PrestadorView from './PrestadorView';
 
 export default function QualificacaoModule() {
@@ -7,14 +7,13 @@ export default function QualificacaoModule() {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
+    if (storedUser) setUser(JSON.parse(storedUser));
   }, []);
 
   if (!user) return null;
 
-  if (user.role === 'admin' || user.role === 'auditoria') return <GestorDashboard user={user} />;
-  // prestador e cooperado usam a mesma view; PrestadorView filtra roteiros por person_type (PF/PJ).
+  if (user.role === 'admin' || user.role === 'auditoria') {
+    return <QualificacaoStaff user={user} />;
+  }
   return <PrestadorView user={user} />;
 }

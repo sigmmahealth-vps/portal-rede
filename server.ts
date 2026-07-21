@@ -3116,7 +3116,7 @@ async function startServer() {
   // Carrega a instância garantindo posse (anti-IDOR). Prestador só acessa a própria;
   // admin/auditoria acessam qualquer uma. Responde 404/403 e retorna null se negado.
   const loadInstanceForWrite = async (req: any, res: any): Promise<any | null> => {
-    const { rows } = await query('SELECT id, provider_id, location_id, status FROM eval_instances WHERE id = $1', [req.params.id]);
+    const { rows } = await query('SELECT id, provider_id, location_id, status, script_id FROM eval_instances WHERE id = $1', [req.params.id]);
     const instance = rows[0] as any;
     if (!instance) {
       res.status(404).json({ error: 'Avaliação não encontrada' });
@@ -3157,6 +3157,25 @@ async function startServer() {
             ans.provider_observation || null,
             ans.is_non_compliant || false
           ]);
+
+          const { rows: [{ id: answerId }] } = await client.query(
+            `SELECT id FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
+            [instanceId, ans.question_id]
+          );
+          const { rows: [{ n }] } = await client.query(
+            `SELECT COALESCE(MAX(iteration_number), 0) + 1 AS n FROM eval_answer_iterations WHERE answer_id = $1`,
+            [answerId]
+          );
+          await client.query(`
+            INSERT INTO eval_answer_iterations
+              (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
+            VALUES ($1, $2, $3, 'prestador', 'respondeu', $4, $5, NULL, $6)
+          `, [answerId, n, req.user.id, ans.answer_value || null, ans.score_obtained || 0, ans.provider_observation || null]);
+          // Reset evidence_status se estava aguardando reanálise
+          await client.query(
+            `UPDATE eval_answers SET evidence_status = 'pendente' WHERE id = $1 AND evidence_status = 'aguardando_reanalise'`,
+            [answerId]
+          );
         }
       });
 
@@ -3167,6 +3186,56 @@ async function startServer() {
           instance_id: Number(instanceId),
           location_id: instance.location_id ?? null,
           answers_count: Array.isArray(answers) ? answers.length : 0,
+        },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/eval/instances/:id/submit', authenticate, async (req: any, res) => {
+    try {
+      const instance = await loadInstanceForWrite(req, res);
+      if (!instance) return;
+      if (!['em_andamento', 'aguardando_evidencia'].includes(instance.status)) {
+        return res.status(409).json({ error: `status ${instance.status} não permite submit` });
+      }
+
+      // Completude: toda eval_questions do script precisa ter answer com answer_value não vazio.
+      const { rows: missing } = await query(`
+        SELECT eq.id
+          FROM eval_questions eq
+          JOIN eval_sections sc ON sc.id = eq.section_id
+         WHERE sc.script_id = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM eval_answers ea
+              WHERE ea.instance_id = $2 AND ea.question_id = eq.id
+                AND ea.answer_value IS NOT NULL AND ea.answer_value <> ''
+           )
+      `, [instance.script_id, req.params.id]);
+      if (missing.length) {
+        return res.status(409).json({ error: 'critérios sem resposta', missing_question_ids: missing.map((r: any) => Number(r.id)) });
+      }
+
+      const { rows: pending } = await query(
+        `SELECT id FROM eval_answers WHERE instance_id = $1 AND evidence_status = 'aguardando_reanalise'`,
+        [req.params.id]
+      );
+      if (pending.length) {
+        return res.status(409).json({ error: 'critérios aguardando reanálise', pending_answer_ids: pending.map((r: any) => Number(r.id)) });
+      }
+
+      await query(`UPDATE eval_instances SET status = 'em_analise' WHERE id = $1`, [req.params.id]);
+
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_submitted',
+        meta: {
+          provider_id: Number(instance.provider_id),
+          instance_id: Number(req.params.id),
+          location_id: instance.location_id ?? null,
         },
         ip: hashClientIp(req),
       });

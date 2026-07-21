@@ -3,6 +3,7 @@ import { fetchApi } from '../../lib/api';
 import { Search, Download, Eye, RotateCcw, Award, Shield, Users, ClipboardList, Clock, TrendingUp, AlertTriangle, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import AuditorEvaluationModal from './AuditorEvaluationModal';
+import { statusLabel } from '../../lib/statusLabels';
 
 const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
@@ -167,7 +168,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                   <td className="p-3 text-sm text-gray-600">{i.city || '—'}</td>
                   <td className="p-3">
                     <span className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-full tracking-wide ${statusPill(i.status)}`}>
-                      {i.status.replace(/_/g, ' ')}
+                      {statusLabel(i.status)}
                     </span>
                   </td>
                   <td className="p-3 font-bold text-gray-700">{Number(i.percentual).toFixed(0)}%</td>

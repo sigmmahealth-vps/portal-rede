@@ -5,6 +5,7 @@ import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
 } from 'lucide-react';
 import RoteiroPlayer from './RoteiroPlayer';
+import { statusLabel } from '../../lib/statusLabels';
 
 const TABS = [
   { key: 'inicio', label: 'Início', icon: LayoutGrid, soon: false },
@@ -243,7 +244,7 @@ export default function PrestadorView({ user }: { user: any }) {
                 </span>
               ) : (
                 <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-600">
-                  {inst.status === 'pendente' ? 'Aguardando auditoria' : inst.status.replace('_', ' ')}
+                  {statusLabel(inst.status)}
                 </span>
               )}
             </div>

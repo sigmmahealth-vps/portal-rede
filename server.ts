@@ -3528,6 +3528,79 @@ async function startServer() {
     }
   });
 
+  app.get('/api/eval/dashboard/auditor.xlsx', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+
+      const cycleIdParam = req.query.cycle_id ? Number(req.query.cycle_id) : null;
+      const { rows: cycleRows } = cycleIdParam
+        ? await query('SELECT id, label FROM eval_cycles WHERE id = $1', [cycleIdParam])
+        : await query('SELECT id, label FROM eval_cycles WHERE active = true');
+      if (!cycleRows.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      const cycle = cycleRows[0];
+
+      const { rows: instances } = await query(`
+        SELECT ei.id,
+               COALESCE(p.trade_name, p.name) AS provider_name,
+               p.sgu_code AS provider_code,
+               pl.cidade AS city,
+               NULLIF(TRIM(CONCAT_WS(', ',
+                 NULLIF(pl.logradouro, ''),
+                 NULLIF(pl.numero, ''),
+                 NULLIF(pl.bairro, '')
+               )), '') AS address,
+               ei.percentual, ei.seal, ei.status,
+               to_char(ei.started_at, 'YYYY-MM-DD') AS started_at,
+               to_char(ei.completed_at, 'YYYY-MM-DD') AS completed_at
+          FROM eval_instances ei
+          JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+         WHERE ei.cycle_id = $1
+         ORDER BY pl.cidade NULLS LAST, ei.id
+      `, [cycle.id]);
+
+      const { rows: dimRows } = await query(`
+        SELECT ea.instance_id, eq.dimension,
+               ROUND((SUM(ea.score_obtained) / NULLIF(SUM(eq.max_score), 0)) * 100)::int AS pct
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+          JOIN eval_instances ei ON ei.id = ea.instance_id
+         WHERE ei.cycle_id = $1
+           AND (ea.answer_value IS NULL OR ea.answer_value <> 'NA')
+           AND eq.dimension IS NOT NULL
+         GROUP BY ea.instance_id, eq.dimension
+      `, [cycle.id]);
+
+      const dimByInst: Record<number, Record<string, number>> = {};
+      for (const d of dimRows) {
+        const k = Number(d.instance_id);
+        if (!dimByInst[k]) dimByInst[k] = {};
+        dimByInst[k][d.dimension] = Number(d.pct);
+      }
+
+      const { buildAuditorXlsxRows, serializeAuditorXlsx } = await import('./src/lib/auditorXlsx.js');
+      const rows = buildAuditorXlsxRows(instances.map((r: any) => ({
+        id: Number(r.id),
+        provider_name: r.provider_name,
+        provider_code: r.provider_code,
+        city: r.city, address: r.address,
+        percentual: Number(r.percentual) || 0,
+        seal: r.seal, status: r.status,
+        started_at: r.started_at, completed_at: r.completed_at,
+      })), dimByInst);
+      const buf = serializeAuditorXlsx(rows);
+
+      const slug = cycle.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="painel-ciclo-${slug}-${stamp}.xlsx"`);
+      res.send(buf);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   if (process.env.RETENTION_AUTO_PURGE !== 'false') {
     try {
       const { rows } = await query("SELECT value FROM settings WHERE key = 'data_retention_last_run_at'");

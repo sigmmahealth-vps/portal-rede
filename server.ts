@@ -3336,6 +3336,108 @@ async function startServer() {
     }
   });
 
+  // ==========================================================================
+  // Ciclos de qualificação (eval_cycles) — Painel do Auditor (spec 5.4.2.5)
+  // ==========================================================================
+
+  const isStaff = (role: string) => role === 'admin' || role === 'auditoria';
+
+  app.get('/api/eval/cycles', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const { rows } = await query(`
+        SELECT c.id, c.label, c.start_date, c.end_date, c.active,
+               (SELECT COUNT(*)::int FROM eval_instances ei WHERE ei.cycle_id = c.id) AS instances_count
+          FROM eval_cycles c
+         ORDER BY c.active DESC, c.start_date DESC, c.id DESC
+      `);
+      res.json(rows);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/eval/cycles', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const { label, start_date, end_date, active } = req.body || {};
+      if (!label || !start_date || !end_date) {
+        return res.status(400).json({ error: 'label, start_date, end_date obrigatórios' });
+      }
+      if (new Date(end_date) < new Date(start_date)) {
+        return res.status(400).json({ error: 'end_date < start_date' });
+      }
+      await query('BEGIN');
+      try {
+        if (active) {
+          await query('UPDATE eval_cycles SET active = false WHERE active = true');
+        }
+        const { rows } = await query(
+          `INSERT INTO eval_cycles (label, start_date, end_date, active)
+           VALUES ($1, $2, $3, COALESCE($4, false)) RETURNING *`,
+          [label, start_date, end_date, active || false]
+        );
+        await query('COMMIT');
+        res.json(rows[0]);
+      } catch (e) {
+        await query('ROLLBACK');
+        throw e;
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/eval/cycles/:id', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { label, start_date, end_date, active } = req.body || {};
+      await query('BEGIN');
+      try {
+        if (active === true) {
+          await query('UPDATE eval_cycles SET active = false WHERE active = true AND id <> $1', [id]);
+        }
+        const { rows } = await query(
+          `UPDATE eval_cycles
+              SET label      = COALESCE($1, label),
+                  start_date = COALESCE($2, start_date),
+                  end_date   = COALESCE($3, end_date),
+                  active     = COALESCE($4, active)
+            WHERE id = $5 RETURNING *`,
+          [label ?? null, start_date ?? null, end_date ?? null, active ?? null, id]
+        );
+        if (!rows.length) { await query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
+        await query('COMMIT');
+        res.json(rows[0]);
+      } catch (e) {
+        await query('ROLLBACK');
+        throw e;
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/eval/cycles/:id', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows: refs } = await query(
+        'SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [id]
+      );
+      if (refs.length) return res.status(409).json({ error: 'ciclo tem instâncias vinculadas' });
+      await query('DELETE FROM eval_cycles WHERE id = $1', [id]);
+      res.status(204).end();
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   if (process.env.RETENTION_AUTO_PURGE !== 'false') {
     try {
       const { rows } = await query("SELECT value FROM settings WHERE key = 'data_retention_last_run_at'");

@@ -18,5 +18,7 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || 'Erro na requisição');
   }
+  // 204 = sem corpo (ex.: DELETE /api/eval/cycles/:id). response.json() lançaria SyntaxError.
+  if (response.status === 204) return null;
   return response.json();
 };

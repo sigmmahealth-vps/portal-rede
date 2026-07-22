@@ -173,6 +173,7 @@ export default function AuditorPlayer({
   const [sections, setSections] = useState<Section[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answersByQ, setAnswersByQ] = useState<Record<number, Answer>>({});
+  const [filesByQ, setFilesByQ] = useState<Record<number, { id: number; url: string }[]>>({});
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [loading, setLoading] = useState(true);
@@ -212,11 +213,26 @@ export default function AuditorPlayer({
       const map: Record<number, Answer> = {};
       (inst.answers || []).forEach((a: Answer) => { map[a.question_id] = a; });
 
+      // Agrupa evidências por question_id (uma answer pode ter múltiplos anexos).
+      const files: Record<number, { id: number; url: string }[]> = {};
+      for (const ev of inst.evidences ?? []) {
+        if (ev.question_id == null) continue;
+        const bucket = files[ev.question_id] ?? (files[ev.question_id] = []);
+        bucket.push({ id: Number(ev.id), url: ev.file_url });
+      }
+      // Fallback pro anexo em eval_answers.evidence_url (bypass DL grava só ali).
+      for (const a of inst.answers ?? []) {
+        if (a.evidence_url && !(files[a.question_id]?.length)) {
+          files[a.question_id] = [{ id: -a.id, url: a.evidence_url }];
+        }
+      }
+
       setInstance(inst);
       setScript(sc);
       setSections(visibleSections);
       setQuestions(allQuestions);
       setAnswersByQ(map);
+      setFilesByQ(files);
     } catch (err) {
       console.error(err);
       alert('Erro ao carregar avaliação');
@@ -560,22 +576,36 @@ export default function AuditorPlayer({
                                     <span className={`rounded-md px-2.5 py-0.5 text-xs font-bold ${ansPill.cls}`}>
                                       {ansPill.label}
                                     </span>
-                                    {a?.evidence_url && (
-                                      <a
-                                        href={a.evidence_url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                                      >
-                                        <Paperclip className="h-3 w-3" /> Ver evidência
-                                      </a>
-                                    )}
                                     {bypass && (
                                       <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
                                         Atendido via cadastro
                                       </span>
                                     )}
                                   </div>
+                                  {(() => {
+                                    const files = filesByQ[q.id] ?? [];
+                                    if (!files.length) return null;
+                                    return (
+                                      <ul className="mt-2 space-y-1">
+                                        {files.map((f, i) => {
+                                          const name = f.url.split('/').pop() || `anexo-${i + 1}`;
+                                          return (
+                                            <li key={f.id}>
+                                              <a
+                                                href={f.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                              >
+                                                <Paperclip className="h-3 w-3 shrink-0" />
+                                                <span className="truncate">{name}</span>
+                                              </a>
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                    );
+                                  })()}
                                   {a?.provider_observation && (
                                     <p className="mt-2 flex gap-1.5 text-xs italic text-gray-600">
                                       <MessageSquare className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />

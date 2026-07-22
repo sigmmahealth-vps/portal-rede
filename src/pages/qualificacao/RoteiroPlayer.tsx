@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../../lib/api';
 import { computeScore } from '../../lib/score';
 import { questionOnly } from '../../lib/questionText';
+import IterationTimeline, { Iteration } from './IterationTimeline';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
   AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2, RotateCcw,
@@ -200,6 +201,8 @@ export default function RoteiroPlayer({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
+  const [itersByAnswer, setItersByAnswer] = useState<Record<number, Iteration[]>>({});
+  const [answerIdByQ, setAnswerIdByQ] = useState<Record<number, number>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reanalise' | 'done'>('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -280,7 +283,17 @@ export default function RoteiroPlayer({
         for (const qId of Object.keys(filesByQuestion).map(Number)) {
           if (!loadedAnswers[qId]) loadedAnswers[qId] = { answer_value: '', score_obtained: 0, files: filesByQuestion[qId] };
         }
+        // Iterations agrupadas por answer_id e map question_id → answer_id (pro render).
+        const iters: Record<number, Iteration[]> = {};
+        for (const it of (instanceData.iterations ?? []) as Iteration[]) {
+          (iters[it.answer_id] ??= []).push(it);
+        }
+        const qToA: Record<number, number> = {};
+        for (const ans of instanceData.answers ?? []) qToA[ans.question_id] = ans.id;
+
         setAnswers(loadedAnswers);
+        setItersByAnswer(iters);
+        setAnswerIdByQ(qToA);
       }
     } catch (err) {
       console.error(err);
@@ -852,6 +865,8 @@ export default function RoteiroPlayer({
                             </div>
                           );
                         })()}
+
+                        <IterationTimeline items={itersByAnswer[answerIdByQ[q.id]] ?? []} />
                       </article>
                     );
                   })}

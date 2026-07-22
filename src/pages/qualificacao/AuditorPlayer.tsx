@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { fetchApi } from '../../lib/api';
 import { questionOnly } from '../../lib/questionText';
+import IterationTimeline, { Iteration } from './IterationTimeline';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, XCircle, RotateCcw,
   Loader2, Paperclip, ShieldCheck, FileText, MessageSquare,
@@ -174,6 +175,7 @@ export default function AuditorPlayer({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answersByQ, setAnswersByQ] = useState<Record<number, Answer>>({});
   const [filesByQ, setFilesByQ] = useState<Record<number, { id: number; url: string }[]>>({});
+  const [itersByAnswer, setItersByAnswer] = useState<Record<number, Iteration[]>>({});
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [loading, setLoading] = useState(true);
@@ -227,12 +229,19 @@ export default function AuditorPlayer({
         }
       }
 
+      // Iterations agrupadas por answer_id.
+      const iters: Record<number, Iteration[]> = {};
+      for (const it of (inst.iterations ?? []) as Iteration[]) {
+        (iters[it.answer_id] ??= []).push(it);
+      }
+
       setInstance(inst);
       setScript(sc);
       setSections(visibleSections);
       setQuestions(allQuestions);
       setAnswersByQ(map);
       setFilesByQ(files);
+      setItersByAnswer(iters);
     } catch (err) {
       console.error(err);
       alert('Erro ao carregar avaliação');
@@ -662,6 +671,8 @@ export default function AuditorPlayer({
                                     )}
                                   </div>
                                 )}
+
+                                {a && <IterationTimeline items={itersByAnswer[a.id] ?? []} />}
 
                                 {showPrompt && a && (
                                   <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">

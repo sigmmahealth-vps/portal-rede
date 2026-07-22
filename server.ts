@@ -3109,7 +3109,20 @@ async function startServer() {
 
       const { rows: evidences } = await query('SELECT * FROM documents WHERE type = $1 AND reference_id = $2', ['qualificacao_evidencia', req.params.id]);
 
-      res.json({ ...instance, answers, evidences });
+      // Histórico de iterações por critério — mesma fonte de verdade pros dois lados.
+      const { rows: iterations } = await query(`
+        SELECT eai.id, eai.answer_id, eai.iteration_number, eai.actor_id, eai.actor_role,
+               eai.action, eai.answer_value, eai.score_obtained, eai.evidence_url,
+               eai.observation, eai.created_at,
+               u.name AS actor_name
+          FROM eval_answer_iterations eai
+          JOIN eval_answers ea ON ea.id = eai.answer_id
+          LEFT JOIN users u ON u.id = eai.actor_id
+         WHERE ea.instance_id = $1
+         ORDER BY eai.answer_id, eai.iteration_number
+      `, [req.params.id]);
+
+      res.json({ ...instance, answers, evidences, iterations });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -3776,6 +3789,11 @@ async function startServer() {
       if (!ans) return res.status(404).json({ error: 'answer not found' });
       if (!['em_analise', 'aguardando_evidencia'].includes(ans.instance_status)) {
         return res.status(409).json({ error: `instância em status ${ans.instance_status}, não aceita ação` });
+      }
+      // Aprovar/reprovar critério em reanálise burla o fluxo: o auditor devolveu ao
+      // prestador e a bola está com ele. Só nova reanálise pode ajustar a orientação.
+      if (ans.evidence_status === 'aguardando_reanalise' && action !== 'solicitou_reanalise') {
+        return res.status(409).json({ error: 'critério aguardando reenvio do prestador — só é possível ajustar a orientação de reanálise' });
       }
 
       const newEvidenceStatus =

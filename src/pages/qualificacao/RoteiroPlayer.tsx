@@ -200,7 +200,7 @@ export default function RoteiroPlayer({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reanalise' | 'done'>('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -482,19 +482,22 @@ export default function RoteiroPlayer({
   const answeredCount = questions.filter(isAnswered).length;
   const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
-  // "Precisa da minha atenção" — critério que ainda depende do prestador:
-  //   sem resposta, ou Sim sem evidência (quando exigida), ou Não/N/A sem observação,
-  //   ou auditor pediu reanálise (evidence_status='aguardando_reanalise').
-  //   Reprovado/aprovado pelo auditor são terminais, ficam fora.
+  // Pendente = critério sem resposta OU resposta sem o requisito da opção:
+  //   Sim → precisa de evidência SÓ quando q.evidence_required=true
+  //   Não / N/A → precisa de observação (texto)
+  //   Reanálise fica em bucket próprio (reanaliseSet) — auditor devolveu o critério.
   const pendingItems = () => questions.filter(q => {
     const a = answers[q.id];
+    if (a?.evidence_status === 'aguardando_reanalise') return false; // vai pra Reanálise
     if (!a?.answer_value) return true;
-    if (a.evidence_status === 'aguardando_reanalise') return true;
     if (a.answer_value === 'sim') return q.evidence_required && !(a.files && a.files.length > 0);
     return !a.provider_observation?.trim();
   });
   // ponytail: um Set por render (não por card) — evita o O(n²) de chamar pendingItems() no map.
   const pendingSet = new Set(pendingItems().map(q => q.id));
+  const reanaliseSet = new Set(
+    questions.filter(q => answers[q.id]?.evidence_status === 'aguardando_reanalise').map(q => q.id),
+  );
 
   const emptyGroup = renderList.every(r => (questionsBySection.get(r.section.id)?.length ?? 0) === 0);
 
@@ -592,17 +595,20 @@ export default function RoteiroPlayer({
           ) : (() => {
             // Contadores por status para o grupo atual (macro-seção selecionada).
             const groupQs = renderList.flatMap(({ section }) => questionsBySection.get(section.id) ?? []);
-            const groupPending = groupQs.filter(q => pendingSet.has(q.id)).length;
-            const groupDone = groupQs.length - groupPending;
+            const groupPending   = groupQs.filter(q => pendingSet.has(q.id)).length;
+            const groupReanalise = groupQs.filter(q => reanaliseSet.has(q.id)).length;
+            const groupDone      = groupQs.length - groupPending - groupReanalise;
             const filterMatches = (q: Question) => {
-              if (statusFilter === 'pending') return pendingSet.has(q.id);
-              if (statusFilter === 'done') return !pendingSet.has(q.id);
+              if (statusFilter === 'pending')   return pendingSet.has(q.id);
+              if (statusFilter === 'reanalise') return reanaliseSet.has(q.id);
+              if (statusFilter === 'done')      return !pendingSet.has(q.id) && !reanaliseSet.has(q.id);
               return true;
             };
             const filterTabs = [
-              { key: 'all',     label: 'Todas',                    count: groupQs.length },
-              { key: 'pending', label: 'Precisa da minha atenção', count: groupPending },
-              { key: 'done',    label: 'Respondidas',              count: groupDone },
+              { key: 'all',       label: 'Todas',       count: groupQs.length },
+              { key: 'pending',   label: 'Pendentes',   count: groupPending },
+              { key: 'reanalise', label: 'Reanálise',   count: groupReanalise },
+              { key: 'done',      label: 'Respondidas', count: groupDone },
             ] as const;
             const totalVisible = groupQs.filter(filterMatches).length;
             return (
@@ -635,7 +641,11 @@ export default function RoteiroPlayer({
             {totalVisible === 0 && (
               <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center">
                 <p className="text-sm text-gray-500">
-                  {statusFilter === 'pending' ? 'Nada pedindo sua atenção neste grupo — bom trabalho!' : 'Nenhum item respondido ainda.'}
+                  {statusFilter === 'pending'
+                    ? 'Nenhum item pendente neste grupo — bom trabalho!'
+                    : statusFilter === 'reanalise'
+                      ? 'Nenhum critério em reanálise neste grupo.'
+                      : 'Nenhum item respondido ainda.'}
                 </p>
               </div>
             )}

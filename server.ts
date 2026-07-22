@@ -258,6 +258,9 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  // Se o arquivo não existe, retorna 404 explícito — evita cair no SPA fallback
+  // (`app.get('*')`) e o React renderizar "página em construção" no lugar do anexo.
+  app.use('/uploads', (_req, res) => res.status(404).type('text').send('Arquivo não encontrado'));
 
   // Seed/init data BEFORE routes are registered.
   await initData();

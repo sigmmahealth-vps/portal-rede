@@ -482,12 +482,14 @@ export default function RoteiroPlayer({
   const answeredCount = questions.filter(isAnswered).length;
   const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
-  // Pendência = critério sem resposta OU resposta sem o requisito da opção:
-  //   Sim → precisa de evidência SÓ quando q.evidence_required=true
-  //   Não / N/A → precisa de observação (texto)
+  // "Precisa da minha atenção" — critério que ainda depende do prestador:
+  //   sem resposta, ou Sim sem evidência (quando exigida), ou Não/N/A sem observação,
+  //   ou auditor pediu reanálise (evidence_status='aguardando_reanalise').
+  //   Reprovado/aprovado pelo auditor são terminais, ficam fora.
   const pendingItems = () => questions.filter(q => {
     const a = answers[q.id];
     if (!a?.answer_value) return true;
+    if (a.evidence_status === 'aguardando_reanalise') return true;
     if (a.answer_value === 'sim') return q.evidence_required && !(a.files && a.files.length > 0);
     return !a.provider_observation?.trim();
   });
@@ -598,9 +600,9 @@ export default function RoteiroPlayer({
               return true;
             };
             const filterTabs = [
-              { key: 'all',     label: 'Todas',       count: groupQs.length },
-              { key: 'pending', label: 'Pendentes',   count: groupPending },
-              { key: 'done',    label: 'Respondidas', count: groupDone },
+              { key: 'all',     label: 'Todas',                    count: groupQs.length },
+              { key: 'pending', label: 'Precisa da minha atenção', count: groupPending },
+              { key: 'done',    label: 'Respondidas',              count: groupDone },
             ] as const;
             const totalVisible = groupQs.filter(filterMatches).length;
             return (
@@ -633,7 +635,7 @@ export default function RoteiroPlayer({
             {totalVisible === 0 && (
               <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center">
                 <p className="text-sm text-gray-500">
-                  {statusFilter === 'pending' ? 'Nenhum item pendente neste grupo — bom trabalho!' : 'Nenhum item respondido ainda.'}
+                  {statusFilter === 'pending' ? 'Nada pedindo sua atenção neste grupo — bom trabalho!' : 'Nenhum item respondido ainda.'}
                 </p>
               </div>
             )}

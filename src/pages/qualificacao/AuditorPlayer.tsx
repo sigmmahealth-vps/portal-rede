@@ -515,6 +515,7 @@ export default function AuditorPlayer({
                             const evLabel = evidenceLabel(a?.evidence_status);
                             const ansPill = answerPill(a?.answer_value);
                             const terminal = a?.evidence_status === 'aprovado' || a?.evidence_status === 'reprovado';
+                            const awaitingProvider = a?.evidence_status === 'aguardando_reanalise';
                             const bypass = (a?.auditor_observation || '').includes('Aprovado via cadastro');
                             const showPrompt = reasonPrompt?.answerId === a?.id;
 
@@ -629,7 +630,8 @@ export default function AuditorPlayer({
                                   <div className="mt-4 flex flex-wrap items-center gap-2">
                                     <button
                                       type="button"
-                                      disabled={busy || terminal}
+                                      disabled={busy || terminal || awaitingProvider}
+                                      title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
                                       onClick={() => act(a.id, 'aprovou')}
                                       className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
                                     >
@@ -637,7 +639,8 @@ export default function AuditorPlayer({
                                     </button>
                                     <button
                                       type="button"
-                                      disabled={busy || terminal}
+                                      disabled={busy || terminal || awaitingProvider}
+                                      title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
                                       onClick={() => { setReasonPrompt({ answerId: a.id, action: 'reprovou' }); setReasonText(''); }}
                                       className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                                     >
@@ -649,10 +652,13 @@ export default function AuditorPlayer({
                                       onClick={() => { setReasonPrompt({ answerId: a.id, action: 'solicitou_reanalise' }); setReasonText(''); }}
                                       className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
                                     >
-                                      <RotateCcw className="h-3.5 w-3.5" /> Solicitar reanálise
+                                      <RotateCcw className="h-3.5 w-3.5" /> {awaitingProvider ? 'Ajustar orientação' : 'Solicitar reanálise'}
                                     </button>
                                     {terminal && (
                                       <span className="ml-2 text-xs text-gray-400">Ação já registrada.</span>
+                                    )}
+                                    {awaitingProvider && !terminal && (
+                                      <span className="ml-2 text-xs text-amber-800">Aguardando reenvio do prestador.</span>
                                     )}
                                   </div>
                                 )}

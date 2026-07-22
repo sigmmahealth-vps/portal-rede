@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { Search, Download, Eye, RotateCcw, Award, Shield, Users, ClipboardList, Clock, TrendingUp, AlertTriangle, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
-import AuditorEvaluationModal from './AuditorEvaluationModal';
+import AuditorPlayer from './AuditorPlayer';
 import { statusLabel } from '../../lib/statusLabels';
 
 const SEAL_COLORS: Record<string, string> = {
@@ -187,7 +187,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
       </div>
 
       {evaluating && (
-        <AuditorEvaluationModal
+        <AuditorPlayer
           instanceId={evaluating.id}
           onClose={async () => {
             setEvaluating(null);

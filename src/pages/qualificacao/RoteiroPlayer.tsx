@@ -426,22 +426,12 @@ export default function RoteiroPlayer({
   };
 
   const finishEvaluation = async (instId: number) => {
-    const { score: totalScore, maxPossible: maxScore, percentual } = computeScore(questions, answers);
     try {
-      await fetchApi(`/eval/instances/${instId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'pendente', // Enviado para auditoria
-          score: totalScore,
-          max_possible_score: maxScore,
-          percentual: percentual,
-        }),
-      });
-      alert('Avaliação concluída e enviada com sucesso!');
+      await fetchApi(`/eval/instances/${instId}/submit`, { method: 'POST' });
+      alert('Avaliação enviada para análise!');
       onClose();
-    } catch (err) {
-      alert('Erro ao concluir avaliação');
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao enviar avaliação');
     }
   };
 

@@ -57,8 +57,12 @@ export default function CiclosAdmin({ user }: { user: any }) {
           <h2 className="text-xl font-bold text-gray-900">Ciclos de Qualificação</h2>
           <p className="text-sm text-gray-500">Só um ciclo pode estar ativo por vez.</p>
         </div>
-        <button onClick={() => setCreating(true)} className="btn btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Novo ciclo
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          <span>Novo Ciclo</span>
         </button>
       </div>
 

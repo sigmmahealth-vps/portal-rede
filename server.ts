@@ -3659,15 +3659,17 @@ async function startServer() {
       }));
     }
 
-    // Unidades no guia médico dos prestadores desses grupos.
+    // Unidades no guia médico com roteiro definido — grupo direto OU override.
     const groupList = groupsDetail.map(g => g.provider_group);
     const { rows: instRows } = await query(`
       SELECT COUNT(*)::int AS n
         FROM provider_locations pl
         JOIN providers p ON p.id = pl.provider_id
+        LEFT JOIN eval_cycle_overrides ov
+          ON ov.cycle_id = $2 AND ov.provider_id = p.id AND ov.location_id = pl.id
        WHERE pl.in_medical_guide = true
-         AND p.provider_group = ANY($1::text[])
-    `, [groupList.length ? groupList : ['__none__']]);
+         AND (p.provider_group = ANY($1::text[]) OR ov.script_id IS NOT NULL)
+    `, [groupList.length ? groupList : ['__none__'], cycleId]);
 
     // DL bypass — usa o roteiro EFETIVO por grupo (respeita saved). Junta providers ao script do grupo.
     const groupScriptPairs = groupsDetail.map(g => [g.provider_group, g.script_id]);
@@ -3719,6 +3721,26 @@ async function startServer() {
     }
   });
 
+  // Retorna os script_ids de entrada que NÃO são vigentes (maior versão por
+  // source_file). Roteiros sem source_file são sempre considerados vigentes.
+  async function findInactiveScriptIds(scriptIds: number[]): Promise<number[]> {
+    if (!scriptIds.length) return [];
+    const { rows } = await query(`
+      WITH candidatos AS (
+        SELECT id, source_file, version FROM eval_scripts WHERE id = ANY($1::bigint[])
+      ),
+      max_por_source AS (
+        SELECT source_file, MAX(version) AS max_version
+          FROM eval_scripts WHERE source_file IS NOT NULL GROUP BY source_file
+      )
+      SELECT c.id
+        FROM candidatos c
+        LEFT JOIN max_por_source m ON m.source_file = c.source_file
+       WHERE c.source_file IS NOT NULL AND c.version <> m.max_version
+    `, [scriptIds]);
+    return rows.map((r: any) => Number(r.id));
+  }
+
   // Substitui a lista de grupos participantes do ciclo (spec 5.4.2.1). Só permitido
   // antes de abrir o ciclo — depois existem instâncias vinculadas ao mapeamento.
   app.put('/api/eval/cycles/:id/groups', authenticate, async (req: any, res) => {
@@ -3733,6 +3755,13 @@ async function startServer() {
 
       const { rows: hasInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
       if (hasInst.length) return res.status(409).json({ error: 'ciclo já foi aberto — mapeamento é imutável' });
+
+      // Só permite grupo apontando pra roteiro vigente.
+      const uniqueScriptIds = Array.from(new Set((groups as any[]).map(g => Number(g.script_id)).filter(Boolean)));
+      if (uniqueScriptIds.length) {
+        const inactive = await findInactiveScriptIds(uniqueScriptIds);
+        if (inactive.length) return res.status(409).json({ error: `Roteiro(s) não vigente(s): ${inactive.join(', ')}` });
+      }
 
       // Normaliza e valida.
       const norm: Array<{ provider_group: string; script_id: number }> = [];
@@ -3777,8 +3806,8 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const cycleId = Number(req.params.id);
       // Mapeamento efetivo grupo→roteiro: saved se existe, senão sugestão automática
-      // (mesma fórmula do buildAperturaPreview). Assim a tabela mostra prestadores
-      // antes de o admin salvar os grupos.
+      // (só grupos com relação direta: 1 único script entre os prestadores). Grupos
+      // ambíguos aparecem sem default — vinculados caso a caso via override.
       const { rows } = await query(`
         WITH eff_groups AS (
           SELECT provider_group, script_id FROM eval_cycle_groups WHERE cycle_id = $1
@@ -3812,8 +3841,8 @@ async function startServer() {
           LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
           LEFT JOIN eval_scripts s_override ON s_override.id = ov.script_id
          WHERE pl.in_medical_guide = true
-           AND (g.script_id IS NOT NULL OR ov.script_id IS NOT NULL)
-         ORDER BY p.provider_group, provider_name, pl.id
+           AND p.provider_group IS NOT NULL
+         ORDER BY p.provider_group NULLS LAST, provider_name, pl.id
       `, [cycleId]);
       res.json({ rows });
     } catch (err: any) {
@@ -3832,6 +3861,13 @@ async function startServer() {
 
       const { rows: hasInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
       if (hasInst.length) return res.status(409).json({ error: 'ciclo já foi aberto — overrides são imutáveis' });
+
+      // Só permite override apontando pra roteiro vigente (maior versão por source_file).
+      const uniqueScriptIds = Array.from(new Set((overrides as any[]).map(o => Number(o.script_id)).filter(Boolean)));
+      if (uniqueScriptIds.length) {
+        const inactive = await findInactiveScriptIds(uniqueScriptIds);
+        if (inactive.length) return res.status(409).json({ error: `Roteiro(s) não vigente(s): ${inactive.join(', ')}` });
+      }
 
       const norm: Array<{ provider_id: number; location_id: number; script_id: number }> = [];
       const seen = new Set<string>();
@@ -3905,15 +3941,17 @@ async function startServer() {
 
         // 2. Cria eval_instances (1 por unidade no guia médico cujo grupo caiu no ciclo).
         //    Roteiro: override por prestador×local quando existente, senão o do grupo.
+        //    Prestadores de grupos ambíguos (sem eval_cycle_groups) só entram via override.
         const { rows: instances } = await client.query(`
           INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id, started_at)
           SELECT COALESCE(ov.script_id, ecg.script_id), p.id, pl.id, 'pendente', $1, now()
             FROM provider_locations pl
             JOIN providers p ON p.id = pl.provider_id
-            JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
+            LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
             LEFT JOIN eval_cycle_overrides ov
               ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
            WHERE pl.in_medical_guide = true
+             AND COALESCE(ov.script_id, ecg.script_id) IS NOT NULL
           RETURNING id, provider_id, script_id
         `, [cycleId]);
 

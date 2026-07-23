@@ -362,21 +362,30 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                               </td>
                               <td className="p-3">
                                 {readOnly ? (
-                                  <span className="text-xs text-secondary-900">{r.override_script_title || r.default_script_title}</span>
-                                ) : (
-                                  <select
-                                    value={effectiveSid}
-                                    onChange={e => setInstanceScript(r.provider_id, r.location_id, Number(e.target.value))}
-                                    className={`w-full rounded-lg border px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${
-                                      isOverridden ? 'border-amber-400 bg-amber-50' : 'border-gray-300 bg-white'
-                                    }`}
-                                    title={isOverridden ? `Override (padrão: ${r.default_script_title || '—'})` : undefined}
-                                  >
-                                    {scripts.map(s => (
-                                      <option key={s.id} value={s.id}>{s.title}</option>
-                                    ))}
-                                  </select>
-                                )}
+                                  <span className="text-xs text-secondary-900">{r.override_script_title || r.default_script_title || '—'}</span>
+                                ) : (() => {
+                                  const hasDefault = r.default_script_id != null;
+                                  // Só vigentes, mais o default/override atual mesmo se vieram de versão antiga.
+                                  const options = scripts.filter((s: any) =>
+                                    s.is_current || Number(s.id) === r.default_script_id || Number(s.id) === r.override_script_id
+                                  );
+                                  const unbound = !hasDefault && !r.override_script_id;
+                                  return (
+                                    <select
+                                      value={effectiveSid}
+                                      onChange={e => setInstanceScript(r.provider_id, r.location_id, Number(e.target.value))}
+                                      className={`w-full rounded-lg border px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${
+                                        isOverridden ? 'border-amber-400 bg-amber-50' : unbound ? 'border-dashed border-gray-400 bg-gray-50 text-gray-700' : 'border-gray-300 bg-white'
+                                      }`}
+                                      title={isOverridden ? `Override (padrão: ${r.default_script_title || '—'})` : undefined}
+                                    >
+                                      {!hasDefault && <option value={0}>— Não vinculado —</option>}
+                                      {options.map((s: any) => (
+                                        <option key={s.id} value={s.id}>{s.title}</option>
+                                      ))}
+                                    </select>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );

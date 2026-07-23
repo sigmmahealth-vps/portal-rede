@@ -71,6 +71,9 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   };
 
   const removeGroup = (grp: string) => {
+    const row = groups.find(g => g.provider_group === grp);
+    const count = row?.providers ?? 0;
+    if (!confirm(`Excluir o grupo "${grp}" do ciclo?\n\n${count} prestador(es) desse grupo ficariam de fora — a menos que sejam vinculados individualmente na tabela de prestadores.`)) return;
     setGroups(prev => prev.filter(g => g.provider_group !== grp));
     setDirty(true);
   };

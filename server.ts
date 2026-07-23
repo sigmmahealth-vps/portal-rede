@@ -3776,7 +3776,24 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const cycleId = Number(req.params.id);
+      // Mapeamento efetivo grupo→roteiro: saved se existe, senão sugestão automática
+      // (mesma fórmula do buildAperturaPreview). Assim a tabela mostra prestadores
+      // antes de o admin salvar os grupos.
       const { rows } = await query(`
+        WITH eff_groups AS (
+          SELECT provider_group, script_id FROM eval_cycle_groups WHERE cycle_id = $1
+          UNION ALL
+          SELECT p.provider_group, MIN(p.eval_script_id)::bigint
+            FROM providers p
+           WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
+             AND p.provider_group NOT IN (
+               SELECT provider_group FROM providers
+                WHERE provider_group IS NOT NULL AND eval_script_id IS NOT NULL
+                GROUP BY provider_group HAVING COUNT(DISTINCT eval_script_id) > 1
+             )
+             AND NOT EXISTS (SELECT 1 FROM eval_cycle_groups WHERE cycle_id = $1)
+           GROUP BY p.provider_group
+        )
         SELECT p.id AS provider_id,
                COALESCE(p.trade_name, p.name) AS provider_name,
                p.sgu_code AS provider_code,
@@ -3784,18 +3801,18 @@ async function startServer() {
                pl.id AS location_id,
                COALESCE(pl.label, pl.cidade) AS location_label,
                pl.cidade AS city,
-               ecg.script_id AS default_script_id,
+               g.script_id AS default_script_id,
                s_default.title AS default_script_title,
                ov.script_id AS override_script_id,
                s_override.title AS override_script_title
           FROM provider_locations pl
           JOIN providers p ON p.id = pl.provider_id
-          LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
-          LEFT JOIN eval_scripts s_default ON s_default.id = ecg.script_id
+          LEFT JOIN eff_groups g ON g.provider_group = p.provider_group
+          LEFT JOIN eval_scripts s_default ON s_default.id = g.script_id
           LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
           LEFT JOIN eval_scripts s_override ON s_override.id = ov.script_id
          WHERE pl.in_medical_guide = true
-           AND (ecg.script_id IS NOT NULL OR ov.script_id IS NOT NULL)
+           AND (g.script_id IS NOT NULL OR ov.script_id IS NOT NULL)
          ORDER BY p.provider_group, provider_name, pl.id
       `, [cycleId]);
       res.json({ rows });

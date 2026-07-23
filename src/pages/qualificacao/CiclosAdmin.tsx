@@ -110,7 +110,7 @@ export default function CiclosAdmin({ user }: { user: any }) {
                         <Play className="w-4 h-4" />
                       </button>
                     )}
-                    {c.active && c.instances_count > 0 && (
+                    {c.active && (
                       <button onClick={() => encerrar(c)} className="text-orange-700 hover:text-orange-900" title="Encerrar ciclo">
                         <Lock className="w-4 h-4" />
                       </button>

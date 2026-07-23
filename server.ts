@@ -3499,6 +3499,18 @@ async function startServer() {
     }
   });
 
+  // Regra 5.4.2.1: um prestador só pode ter um ciclo ativo por exercício. Como o
+  // esquema mantém partial unique WHERE active=true, isso vale sistema-wide.
+  // Endpoints de criação/edição não podem "desativar por baixo" o ciclo anterior —
+  // a spec exige encerramento explícito. Devolvemos 409 pra que o admin decida.
+  async function findConflictingActiveCycle(excludeId?: number): Promise<number | null> {
+    const { rows } = await query(
+      'SELECT id FROM eval_cycles WHERE active = true' + (excludeId ? ' AND id <> $1' : ''),
+      excludeId ? [excludeId] : [],
+    );
+    return rows.length ? Number(rows[0].id) : null;
+  }
+
   app.post('/api/eval/cycles', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
@@ -3509,18 +3521,18 @@ async function startServer() {
       if (new Date(end_date) < new Date(start_date)) {
         return res.status(400).json({ error: 'end_date < start_date' });
       }
-      const row = await withTransaction(async (client) => {
-        if (active) {
-          await client.query('UPDATE eval_cycles SET active = false WHERE active = true');
+      if (active) {
+        const other = await findConflictingActiveCycle();
+        if (other != null) {
+          return res.status(409).json({ error: 'Existe ciclo ativo — encerre-o antes de abrir um novo.', active_cycle_id: other });
         }
-        const { rows } = await client.query(
-          `INSERT INTO eval_cycles (label, start_date, end_date, active)
-           VALUES ($1, $2, $3, COALESCE($4, false)) RETURNING *`,
-          [label, start_date, end_date, active || false]
-        );
-        return rows[0];
-      });
-      res.json(row);
+      }
+      const { rows } = await query(
+        `INSERT INTO eval_cycles (label, start_date, end_date, active)
+         VALUES ($1, $2, $3, COALESCE($4, false)) RETURNING *`,
+        [label, start_date, end_date, active || false]
+      );
+      res.json(rows[0]);
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -3532,23 +3544,23 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
       const { label, start_date, end_date, active } = req.body || {};
-      const row = await withTransaction(async (client) => {
-        if (active === true) {
-          await client.query('UPDATE eval_cycles SET active = false WHERE active = true AND id <> $1', [id]);
+      if (active === true) {
+        const other = await findConflictingActiveCycle(id);
+        if (other != null) {
+          return res.status(409).json({ error: 'Existe ciclo ativo — encerre-o antes de ativar este.', active_cycle_id: other });
         }
-        const { rows } = await client.query(
-          `UPDATE eval_cycles
-              SET label      = COALESCE($1, label),
-                  start_date = COALESCE($2, start_date),
-                  end_date   = COALESCE($3, end_date),
-                  active     = COALESCE($4, active)
-            WHERE id = $5 RETURNING *`,
-          [label ?? null, start_date ?? null, end_date ?? null, active ?? null, id]
-        );
-        return rows[0] || null;
-      });
-      if (!row) return res.status(404).json({ error: 'not found' });
-      res.json(row);
+      }
+      const { rows } = await query(
+        `UPDATE eval_cycles
+            SET label      = COALESCE($1, label),
+                start_date = COALESCE($2, start_date),
+                end_date   = COALESCE($3, end_date),
+                active     = COALESCE($4, active)
+          WHERE id = $5 RETURNING *`,
+        [label ?? null, start_date ?? null, end_date ?? null, active ?? null, id]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'not found' });
+      res.json(rows[0]);
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -3582,6 +3594,12 @@ async function startServer() {
     if (!cycleRows.length) return { notFound: true } as const;
     const cycle = cycleRows[0];
 
+    // Se o admin já salvou grupos manualmente pro ciclo, respeita.
+    const { rows: savedGroups } = await query(
+      'SELECT provider_group, script_id FROM eval_cycle_groups WHERE cycle_id = $1', [cycleId]
+    );
+    const source: 'saved' | 'auto' = savedGroups.length ? 'saved' : 'auto';
+
     // Grupos ambíguos: provider_group com mais de um eval_script_id distinct.
     const { rows: ambigRows } = await query(`
       SELECT provider_group
@@ -3598,17 +3616,51 @@ async function startServer() {
         FROM providers WHERE provider_group IS NULL LIMIT 50
     `);
 
-    // Grupos que serão criados (não-ambíguos, com script definido).
-    const { rows: groups } = await query(`
-      SELECT p.provider_group, MIN(p.eval_script_id)::bigint AS script_id, COUNT(*)::int AS providers
+    // Contagem de prestadores por grupo (independente da fonte — usado pra saved e auto).
+    const { rows: countsAll } = await query(`
+      SELECT p.provider_group, COUNT(*)::int AS providers
         FROM providers p
-       WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
-         AND p.provider_group <> ALL($1::text[])
+       WHERE p.provider_group IS NOT NULL
        GROUP BY p.provider_group
-    `, [ambiguousGroups.length ? ambiguousGroups : ['__none__']]);
+    `);
+    const countsByGroup = new Map(countsAll.map((r: any) => [r.provider_group, r.providers]));
+
+    // Detalhe por grupo (nome, script_id, script_title, providers). `saved` sobrepõe `auto`.
+    let groupsDetail: Array<{ provider_group: string; script_id: number; script_title: string; providers: number }>;
+    if (source === 'saved') {
+      const { rows } = await query(`
+        SELECT ecg.provider_group, ecg.script_id, s.title AS script_title
+          FROM eval_cycle_groups ecg
+          JOIN eval_scripts s ON s.id = ecg.script_id
+         WHERE ecg.cycle_id = $1
+         ORDER BY ecg.provider_group
+      `, [cycleId]);
+      groupsDetail = rows.map((r: any) => ({
+        provider_group: r.provider_group,
+        script_id: Number(r.script_id),
+        script_title: r.script_title,
+        providers: Number(countsByGroup.get(r.provider_group) ?? 0),
+      }));
+    } else {
+      const { rows } = await query(`
+        SELECT p.provider_group, MIN(p.eval_script_id)::bigint AS script_id, s.title AS script_title, COUNT(*)::int AS providers
+          FROM providers p
+          JOIN eval_scripts s ON s.id = p.eval_script_id
+         WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
+           AND p.provider_group <> ALL($1::text[])
+         GROUP BY p.provider_group, s.title
+         ORDER BY p.provider_group
+      `, [ambiguousGroups.length ? ambiguousGroups : ['__none__']]);
+      groupsDetail = rows.map((r: any) => ({
+        provider_group: r.provider_group,
+        script_id: Number(r.script_id),
+        script_title: r.script_title,
+        providers: Number(r.providers),
+      }));
+    }
 
     // Unidades no guia médico dos prestadores desses grupos.
-    const groupList = groups.map((g: any) => g.provider_group);
+    const groupList = groupsDetail.map(g => g.provider_group);
     const { rows: instRows } = await query(`
       SELECT COUNT(*)::int AS n
         FROM provider_locations pl
@@ -3617,23 +3669,27 @@ async function startServer() {
          AND p.provider_group = ANY($1::text[])
     `, [groupList.length ? groupList : ['__none__']]);
 
-    // DL bypass — quantos crítérios DL de todos os scripts têm document_type + doc válido do prestador.
-    const { rows: bypassRows } = await query(`
+    // DL bypass — usa o roteiro EFETIVO por grupo (respeita saved). Junta providers ao script do grupo.
+    const groupScriptPairs = groupsDetail.map(g => [g.provider_group, g.script_id]);
+    const { rows: bypassRows } = groupScriptPairs.length ? await query(`
       SELECT COUNT(*)::int AS n
         FROM providers p
-        JOIN eval_scripts s ON s.id = p.eval_script_id
-        JOIN eval_sections sc ON sc.script_id = s.id
+        JOIN (SELECT UNNEST($1::text[]) AS grp, UNNEST($2::bigint[]) AS sid) map
+             ON map.grp = p.provider_group
+        JOIN eval_sections sc ON sc.script_id = map.sid
         JOIN eval_questions eq ON eq.section_id = sc.id AND eq.document_type IS NOT NULL
         JOIN documents d ON d.provider_id = p.id AND d.type = eq.document_type
                         AND d.status = 'valido'
                         AND (d.expiry_date IS NULL OR d.expiry_date >= CURRENT_DATE)
-       WHERE p.provider_group = ANY($1::text[])
-    `, [groupList.length ? groupList : ['__none__']]);
+    `, [groupScriptPairs.map(p => p[0]), groupScriptPairs.map(p => p[1])])
+    : { rows: [{ n: 0 }] };
 
     return {
       cycle: { id: Number(cycle.id), label: cycle.label },
+      source,
+      groups: groupsDetail,
       would_create: {
-        groups: groups.length,
+        groups: groupsDetail.length,
         instances: instRows[0].n,
         dl_bypass: bypassRows[0].n,
       },
@@ -3656,6 +3712,57 @@ async function startServer() {
     }
   });
 
+  // Substitui a lista de grupos participantes do ciclo (spec 5.4.2.1). Só permitido
+  // antes de abrir o ciclo — depois existem instâncias vinculadas ao mapeamento.
+  app.put('/api/eval/cycles/:id/groups', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const groups = Array.isArray(req.body?.groups) ? req.body.groups : null;
+      if (!groups) return res.status(400).json({ error: 'body.groups (array) obrigatório' });
+
+      const { rows: cy } = await query('SELECT id, active FROM eval_cycles WHERE id = $1', [cycleId]);
+      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+
+      const { rows: hasInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
+      if (hasInst.length) return res.status(409).json({ error: 'ciclo já foi aberto — mapeamento é imutável' });
+
+      // Normaliza e valida.
+      const norm: Array<{ provider_group: string; script_id: number }> = [];
+      const seen = new Set<string>();
+      for (const g of groups) {
+        const pg = (g.provider_group ?? '').trim();
+        const sid = Number(g.script_id);
+        if (!pg || !Number.isFinite(sid) || sid <= 0) {
+          return res.status(400).json({ error: `linha inválida: ${JSON.stringify(g)}` });
+        }
+        if (seen.has(pg)) return res.status(400).json({ error: `grupo duplicado: ${pg}` });
+        seen.add(pg);
+        norm.push({ provider_group: pg, script_id: sid });
+      }
+
+      await withTransaction(async (c) => {
+        await c.query('DELETE FROM eval_cycle_groups WHERE cycle_id = $1', [cycleId]);
+        for (const g of norm) {
+          await c.query(
+            'INSERT INTO eval_cycle_groups (cycle_id, provider_group, script_id) VALUES ($1, $2, $3)',
+            [cycleId, g.provider_group, g.script_id]
+          );
+        }
+      });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_groups_updated',
+        meta: { cycle_id: cycleId, count: norm.length },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true, count: norm.length });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/eval/cycles/:id/abrir', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
@@ -3672,8 +3779,12 @@ async function startServer() {
       if (existInst.length) return res.status(409).json({ error: 'ciclo já tem instâncias' });
 
       const created = await withTransaction(async (client) => {
-        // 1. Popula eval_cycle_groups (pula ambíguos).
-        const { rows: groups } = await client.query(`
+        // 1. Popula eval_cycle_groups — SÓ SE ainda não houver mapeamento salvo pro ciclo.
+        //    Se o admin gravou via PUT /cycles/:id/groups, respeita e não sobrescreve.
+        const { rows: existGroups } = await client.query(
+          'SELECT id, provider_group, script_id FROM eval_cycle_groups WHERE cycle_id = $1', [cycleId]
+        );
+        const groups = existGroups.length ? existGroups : (await client.query(`
           INSERT INTO eval_cycle_groups (cycle_id, provider_group, script_id)
           SELECT $1, p.provider_group, MIN(p.eval_script_id)::bigint
             FROM providers p
@@ -3685,7 +3796,7 @@ async function startServer() {
              )
            GROUP BY p.provider_group
           RETURNING id, provider_group, script_id
-        `, [cycleId]);
+        `, [cycleId])).rows;
 
         // 2. Cria eval_instances (1 por unidade no guia médico cujo grupo caiu no ciclo).
         const { rows: instances } = await client.query(`
@@ -3750,6 +3861,49 @@ async function startServer() {
       });
 
       res.json({ cycle_id: cycleId, created });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Encerra o ciclo (spec 5.4.2.1). Por padrão barra se houver instâncias inconclusivas
+  // — só terminais (aprovado/reprovado/finalizado) contam como fechadas. Com {force:true}
+  // encerra mesmo assim e registra quantas ficaram órfãs no auditLog.
+  app.post('/api/eval/cycles/:id/encerrar', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const force = !!req.body?.force;
+
+      const { rows: cy } = await query('SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]);
+      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      if (!cy[0].active) return res.status(409).json({ error: 'ciclo já está encerrado' });
+
+      const { rows: pending } = await query(
+        `SELECT COUNT(*)::int AS n
+           FROM eval_instances
+          WHERE cycle_id = $1
+            AND status NOT IN ('aprovado', 'reprovado', 'finalizado')`,
+        [cycleId]
+      );
+      const inconclusive = Number(pending[0]?.n ?? 0);
+      if (inconclusive > 0 && !force) {
+        return res.status(409).json({
+          error: `${inconclusive} instância(s) ainda em andamento — informe force:true para encerrar mesmo assim`,
+          inconclusive,
+        });
+      }
+
+      await query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_closed',
+        meta: { cycle_id: cycleId, forced: force, inconclusive },
+        ip: hashClientIp(req),
+      });
+
+      res.json({ success: true, cycle_id: cycleId, inconclusive });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

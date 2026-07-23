@@ -3626,21 +3626,24 @@ async function startServer() {
     const countsByGroup = new Map(countsAll.map((r: any) => [r.provider_group, r.providers]));
 
     // Detalhe por grupo (nome, script_id, script_title, providers). `saved` sobrepõe `auto`.
-    let groupsDetail: Array<{ provider_group: string; script_id: number; script_title: string; providers: number }>;
+    // Ambíguos aparecem com script_id=null → admin vincula manualmente (grupo ou row a row).
+    const groupsMap = new Map<string, { provider_group: string; script_id: number | null; script_title: string | null; providers: number; ambiguous: boolean }>();
     if (source === 'saved') {
       const { rows } = await query(`
         SELECT ecg.provider_group, ecg.script_id, s.title AS script_title
           FROM eval_cycle_groups ecg
           JOIN eval_scripts s ON s.id = ecg.script_id
          WHERE ecg.cycle_id = $1
-         ORDER BY ecg.provider_group
       `, [cycleId]);
-      groupsDetail = rows.map((r: any) => ({
-        provider_group: r.provider_group,
-        script_id: Number(r.script_id),
-        script_title: r.script_title,
-        providers: Number(countsByGroup.get(r.provider_group) ?? 0),
-      }));
+      for (const r of rows as any[]) {
+        groupsMap.set(r.provider_group, {
+          provider_group: r.provider_group,
+          script_id: Number(r.script_id),
+          script_title: r.script_title,
+          providers: Number(countsByGroup.get(r.provider_group) ?? 0),
+          ambiguous: ambiguousGroups.includes(r.provider_group),
+        });
+      }
     } else {
       const { rows } = await query(`
         SELECT p.provider_group, MIN(p.eval_script_id)::bigint AS script_id, s.title AS script_title, COUNT(*)::int AS providers
@@ -3649,18 +3652,34 @@ async function startServer() {
          WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
            AND p.provider_group <> ALL($1::text[])
          GROUP BY p.provider_group, s.title
-         ORDER BY p.provider_group
       `, [ambiguousGroups.length ? ambiguousGroups : ['__none__']]);
-      groupsDetail = rows.map((r: any) => ({
-        provider_group: r.provider_group,
-        script_id: Number(r.script_id),
-        script_title: r.script_title,
-        providers: Number(r.providers),
-      }));
+      for (const r of rows as any[]) {
+        groupsMap.set(r.provider_group, {
+          provider_group: r.provider_group,
+          script_id: Number(r.script_id),
+          script_title: r.script_title,
+          providers: Number(r.providers),
+          ambiguous: false,
+        });
+      }
     }
+    // Traz também todos os grupos com prestadores que ainda não estão no mapa
+    // (ambíguos + qualquer grupo real que ficou de fora). Aparece como "não vinculado".
+    for (const [pg, count] of countsByGroup.entries()) {
+      if (groupsMap.has(pg)) continue;
+      groupsMap.set(pg, {
+        provider_group: pg,
+        script_id: null,
+        script_title: null,
+        providers: Number(count),
+        ambiguous: ambiguousGroups.includes(pg),
+      });
+    }
+    const groupsDetail = Array.from(groupsMap.values()).sort((a, b) => a.provider_group.localeCompare(b.provider_group));
 
     // Unidades no guia médico com roteiro definido — grupo direto OU override.
-    const groupList = groupsDetail.map(g => g.provider_group);
+    // Só conta grupos com script vinculado; ambíguos sem mapa só entram via override.
+    const groupList = groupsDetail.filter(g => g.script_id != null).map(g => g.provider_group);
     const { rows: instRows } = await query(`
       SELECT COUNT(*)::int AS n
         FROM provider_locations pl
@@ -3672,7 +3691,10 @@ async function startServer() {
     `, [groupList.length ? groupList : ['__none__'], cycleId]);
 
     // DL bypass — usa o roteiro EFETIVO por grupo (respeita saved). Junta providers ao script do grupo.
-    const groupScriptPairs = groupsDetail.map(g => [g.provider_group, g.script_id]);
+    // Ambíguos sem script vinculado ficam de fora do cálculo aqui (viriam via override em outro momento).
+    const groupScriptPairs = groupsDetail
+      .filter(g => g.script_id != null)
+      .map(g => [g.provider_group, g.script_id as number]);
     const { rows: bypassRows } = groupScriptPairs.length ? await query(`
       SELECT COUNT(*)::int AS n
         FROM providers p
@@ -3698,7 +3720,7 @@ async function startServer() {
       already_opened: alreadyOpened,
       groups: groupsDetail,
       would_create: {
-        groups: groupsDetail.length,
+        groups: groupsDetail.filter(g => g.script_id != null).length,
         instances: instRows[0].n,
         dl_bypass: bypassRows[0].n,
       },

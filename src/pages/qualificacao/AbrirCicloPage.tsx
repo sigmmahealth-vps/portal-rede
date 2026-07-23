@@ -7,9 +7,10 @@ import {
 
 interface GroupRow {
   provider_group: string;
-  script_id: number;
-  script_title: string;
+  script_id: number | null;
+  script_title: string | null;
   providers: number;
+  ambiguous?: boolean;
 }
 
 interface InstanceRow {
@@ -62,6 +63,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const setGroupScript = (grp: string, newSid: number) => {
     setGroups(prev => prev.map(g => {
       if (g.provider_group !== grp) return g;
+      if (!newSid) return { ...g, script_id: null, script_title: null };
       const s = scripts.find(x => Number(x.id) === newSid);
       return { ...g, script_id: newSid, script_title: s?.title || g.script_title };
     }));
@@ -110,7 +112,11 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
     try {
       await fetchApi(`/eval/cycles/${cycle.id}/groups`, {
         method: 'PUT',
-        body: JSON.stringify({ groups: groups.map(g => ({ provider_group: g.provider_group, script_id: g.script_id })) }),
+        body: JSON.stringify({
+          groups: groups
+            .filter(g => g.script_id != null)
+            .map(g => ({ provider_group: g.provider_group, script_id: g.script_id })),
+        }),
       });
       await loadPreview();
     } catch (e: any) {
@@ -260,21 +266,39 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                         <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhum grupo mapeado.</td></tr>
                       ) : groups.map(g => (
                         <tr key={g.provider_group} className="border-t border-gray-100">
-                          <td className="p-3 font-medium text-secondary-900">{g.provider_group}</td>
+                          <td className="p-3 font-medium text-secondary-900">
+                            <div className="flex items-center gap-2">
+                              <span>{g.provider_group}</span>
+                              {g.ambiguous && (
+                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800" title="Prestadores desse grupo apontam roteiros distintos — vincule por prestador/local abaixo, ou escolha um roteiro pra todo o grupo aqui.">
+                                  Ambíguo
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="p-3">
                             {readOnly ? (
-                              <span className="text-xs text-secondary-900">{g.script_title}</span>
-                            ) : (
-                              <select
-                                value={g.script_id}
-                                onChange={e => setGroupScript(g.provider_group, Number(e.target.value))}
-                                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
-                              >
-                                {scripts.map(s => (
-                                  <option key={s.id} value={s.id}>{s.title}</option>
-                                ))}
-                              </select>
-                            )}
+                              <span className="text-xs text-secondary-900">{g.script_title || '—'}</span>
+                            ) : (() => {
+                              const options = scripts.filter((s: any) =>
+                                s.is_current || Number(s.id) === g.script_id
+                              );
+                              const unbound = g.script_id == null;
+                              return (
+                                <select
+                                  value={g.script_id ?? 0}
+                                  onChange={e => setGroupScript(g.provider_group, Number(e.target.value))}
+                                  className={`w-full rounded-lg border px-3 py-1.5 text-xs focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${
+                                    unbound ? 'border-dashed border-gray-400 bg-gray-50 text-gray-700' : 'border-gray-300 bg-white'
+                                  }`}
+                                >
+                                  <option value={0}>— Não vinculado —</option>
+                                  {options.map((s: any) => (
+                                    <option key={s.id} value={s.id}>{s.title}</option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
                           </td>
                           <td className="p-3 text-right tabular-nums text-secondary-900">{g.providers}</td>
                           <td className="p-3 text-right">

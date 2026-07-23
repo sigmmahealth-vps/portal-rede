@@ -3684,9 +3684,16 @@ async function startServer() {
     `, [groupScriptPairs.map(p => p[0]), groupScriptPairs.map(p => p[1])])
     : { rows: [{ n: 0 }] };
 
+    // Se o ciclo já foi aberto, o mapeamento vira read-only na UI.
+    const { rows: openedRows } = await query(
+      'SELECT COUNT(*)::int AS n FROM eval_instances WHERE cycle_id = $1', [cycleId]
+    );
+    const alreadyOpened = Number(openedRows[0]?.n ?? 0) > 0;
+
     return {
       cycle: { id: Number(cycle.id), label: cycle.label },
       source,
+      already_opened: alreadyOpened,
       groups: groupsDetail,
       would_create: {
         groups: groupsDetail.length,
@@ -3763,6 +3770,87 @@ async function startServer() {
     }
   });
 
+  // Detalhe por prestador × local (spec 5.4.2.1). Base para tabela editável no
+  // pré-abertura: mostra roteiro efetivo (override quando existente, senão do grupo).
+  app.get('/api/eval/cycles/:id/instances-preview', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const { rows } = await query(`
+        SELECT p.id AS provider_id,
+               COALESCE(p.trade_name, p.name) AS provider_name,
+               p.sgu_code AS provider_code,
+               p.provider_group,
+               pl.id AS location_id,
+               COALESCE(pl.label, pl.cidade) AS location_label,
+               pl.cidade AS city,
+               ecg.script_id AS default_script_id,
+               s_default.title AS default_script_title,
+               ov.script_id AS override_script_id,
+               s_override.title AS override_script_title
+          FROM provider_locations pl
+          JOIN providers p ON p.id = pl.provider_id
+          LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
+          LEFT JOIN eval_scripts s_default ON s_default.id = ecg.script_id
+          LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
+          LEFT JOIN eval_scripts s_override ON s_override.id = ov.script_id
+         WHERE pl.in_medical_guide = true
+           AND (ecg.script_id IS NOT NULL OR ov.script_id IS NOT NULL)
+         ORDER BY p.provider_group, provider_name, pl.id
+      `, [cycleId]);
+      res.json({ rows });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Substitui overrides do ciclo (batch). Só permitido antes de abrir.
+  app.put('/api/eval/cycles/:id/overrides', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const overrides = Array.isArray(req.body?.overrides) ? req.body.overrides : null;
+      if (!overrides) return res.status(400).json({ error: 'body.overrides (array) obrigatório' });
+
+      const { rows: hasInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
+      if (hasInst.length) return res.status(409).json({ error: 'ciclo já foi aberto — overrides são imutáveis' });
+
+      const norm: Array<{ provider_id: number; location_id: number; script_id: number }> = [];
+      const seen = new Set<string>();
+      for (const o of overrides) {
+        const pid = Number(o.provider_id), lid = Number(o.location_id), sid = Number(o.script_id);
+        if (!Number.isFinite(pid) || !Number.isFinite(lid) || !Number.isFinite(sid)) {
+          return res.status(400).json({ error: `linha inválida: ${JSON.stringify(o)}` });
+        }
+        const key = `${pid}:${lid}`;
+        if (seen.has(key)) return res.status(400).json({ error: `override duplicado: ${key}` });
+        seen.add(key);
+        norm.push({ provider_id: pid, location_id: lid, script_id: sid });
+      }
+
+      await withTransaction(async (c) => {
+        await c.query('DELETE FROM eval_cycle_overrides WHERE cycle_id = $1', [cycleId]);
+        for (const o of norm) {
+          await c.query(
+            'INSERT INTO eval_cycle_overrides (cycle_id, provider_id, location_id, script_id) VALUES ($1, $2, $3, $4)',
+            [cycleId, o.provider_id, o.location_id, o.script_id]
+          );
+        }
+      });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_overrides_updated',
+        meta: { cycle_id: cycleId, count: norm.length },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true, count: norm.length });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/eval/cycles/:id/abrir', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
@@ -3799,12 +3887,15 @@ async function startServer() {
         `, [cycleId])).rows;
 
         // 2. Cria eval_instances (1 por unidade no guia médico cujo grupo caiu no ciclo).
+        //    Roteiro: override por prestador×local quando existente, senão o do grupo.
         const { rows: instances } = await client.query(`
           INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id, started_at)
-          SELECT ecg.script_id, p.id, pl.id, 'pendente', $1, now()
+          SELECT COALESCE(ov.script_id, ecg.script_id), p.id, pl.id, 'pendente', $1, now()
             FROM provider_locations pl
             JOIN providers p ON p.id = pl.provider_id
             JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
+            LEFT JOIN eval_cycle_overrides ov
+              ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
            WHERE pl.in_medical_guide = true
           RETURNING id, provider_id, script_id
         `, [cycleId]);

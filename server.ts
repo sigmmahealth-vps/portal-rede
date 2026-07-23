@@ -101,16 +101,21 @@ const isEvidenceExempt = (text: string): boolean =>
 // dados de exemplo de forma idempotente, somente quando as tabelas estão vazias.
 // =============================================================================
 async function initData() {
-  // Fix cooperado provider_id if missing
+  // Seed do cooperado "Ana Souza" — só em base vazia (primeiro boot). Depois que o
+  // import de prestadores rodou, esse fallback vira lixo: inflava a base a cada
+  // startup quando o cooperado ficava sem provider por algum motivo.
   try {
-    const { rows: coopRows } = await query("SELECT id FROM users WHERE role = 'cooperado' AND provider_id IS NULL");
-    const cooperado = coopRows[0] as any;
-    if (cooperado) {
-      const { rows: provRows } = await query(
-        "INSERT INTO providers (name, cnpj, provider_group, qualification_level, status) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-        ['Consultório Dra. Ana Souza', '98.765.432/0001-10', 'Cardiologia', 'A', 'Ativo']
-      );
-      await query("UPDATE users SET provider_id = $1 WHERE id = $2", [provRows[0].id, cooperado.id]);
+    const { rows: provCount } = await query('SELECT COUNT(*)::int AS n FROM providers');
+    if (Number(provCount[0].n) === 0) {
+      const { rows: coopRows } = await query("SELECT id FROM users WHERE role = 'cooperado' AND provider_id IS NULL");
+      const cooperado = coopRows[0] as any;
+      if (cooperado) {
+        const { rows: provRows } = await query(
+          "INSERT INTO providers (name, cnpj, provider_group, qualification_level, status) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+          ['Consultório Dra. Ana Souza', '98.765.432/0001-10', 'Cardiologia', 'A', 'Ativo']
+        );
+        await query("UPDATE users SET provider_id = $1 WHERE id = $2", [provRows[0].id, cooperado.id]);
+      }
     }
   } catch (e) {
     console.error("Error fixing cooperado:", e);

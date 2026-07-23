@@ -3519,7 +3519,7 @@ async function startServer() {
   app.post('/api/eval/cycles', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
-      const { label, start_date, end_date, active } = req.body || {};
+      const { label, start_date, end_date, active, auto_open, auto_close } = req.body || {};
       if (!label || !start_date || !end_date) {
         return res.status(400).json({ error: 'label, start_date, end_date obrigatórios' });
       }
@@ -3533,9 +3533,9 @@ async function startServer() {
         }
       }
       const { rows } = await query(
-        `INSERT INTO eval_cycles (label, start_date, end_date, active)
-         VALUES ($1, $2, $3, COALESCE($4, false)) RETURNING *`,
-        [label, start_date, end_date, active || false]
+        `INSERT INTO eval_cycles (label, start_date, end_date, active, auto_open, auto_close)
+         VALUES ($1, $2, $3, COALESCE($4, false), COALESCE($5, false), COALESCE($6, false)) RETURNING *`,
+        [label, start_date, end_date, active || false, !!auto_open, !!auto_close]
       );
       res.json(rows[0]);
     } catch (err: any) {
@@ -3548,7 +3548,7 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
-      const { label, start_date, end_date, active } = req.body || {};
+      const { label, start_date, end_date, active, auto_open, auto_close } = req.body || {};
       if (active === true) {
         const other = await findConflictingActiveCycle(id);
         if (other != null) {
@@ -3560,9 +3560,13 @@ async function startServer() {
             SET label      = COALESCE($1, label),
                 start_date = COALESCE($2, start_date),
                 end_date   = COALESCE($3, end_date),
-                active     = COALESCE($4, active)
-          WHERE id = $5 RETURNING *`,
-        [label ?? null, start_date ?? null, end_date ?? null, active ?? null, id]
+                active     = COALESCE($4, active),
+                auto_open  = COALESCE($5, auto_open),
+                auto_close = COALESCE($6, auto_close)
+          WHERE id = $7 RETURNING *`,
+        [label ?? null, start_date ?? null, end_date ?? null, active ?? null,
+         typeof auto_open === 'boolean' ? auto_open : null,
+         typeof auto_close === 'boolean' ? auto_close : null, id]
       );
       if (!rows[0]) return res.status(404).json({ error: 'not found' });
       res.json(rows[0]);
@@ -3594,7 +3598,7 @@ async function startServer() {
 
   async function buildAperturaPreview(cycleId: number) {
     const { rows: cycleRows } = await query(
-      'SELECT id, label FROM eval_cycles WHERE id = $1', [cycleId]
+      'SELECT id, label, start_date, end_date, auto_open, auto_close FROM eval_cycles WHERE id = $1', [cycleId]
     );
     if (!cycleRows.length) return { notFound: true } as const;
     const cycle = cycleRows[0];
@@ -3720,7 +3724,13 @@ async function startServer() {
     const alreadyOpened = Number(openedRows[0]?.n ?? 0) > 0;
 
     return {
-      cycle: { id: Number(cycle.id), label: cycle.label },
+      cycle: {
+        id: Number(cycle.id), label: cycle.label,
+        start_date: cycle.start_date instanceof Date ? cycle.start_date.toISOString().slice(0, 10) : String(cycle.start_date),
+        end_date: cycle.end_date instanceof Date ? cycle.end_date.toISOString().slice(0, 10) : String(cycle.end_date),
+        auto_open: !!cycle.auto_open,
+        auto_close: !!cycle.auto_close,
+      },
       source,
       already_opened: alreadyOpened,
       groups: groupsDetail,
@@ -3931,22 +3941,17 @@ async function startServer() {
     }
   });
 
-  app.post('/api/eval/cycles/:id/abrir', authenticate, async (req: any, res) => {
-    try {
-      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
-      const cycleId = Number(req.params.id);
+  // Executa a abertura de um ciclo (mesma lógica do endpoint /abrir). Retorna
+  // { ok, code, error?, created? } — reutilizada tanto pelo POST manual quanto pelo
+  // job automático (5.4.1.1 abertura em data definida).
+  async function openCycleCore(cycleId: number): Promise<{ ok: boolean; code?: number; error?: string; created?: { groups: number; instances: number; dl_bypass: number } }> {
+    const { rows: cy } = await query('SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]);
+    if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado' };
+    if (!cy[0].active) return { ok: false, code: 400, error: 'ciclo não está ativo' };
+    const { rows: existInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
+    if (existInst.length) return { ok: false, code: 409, error: 'ciclo já tem instâncias' };
 
-      const { rows: cy } = await query(
-        'SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]
-      );
-      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
-      if (!cy[0].active) return res.status(400).json({ error: 'ciclo não está ativo' });
-      const { rows: existInst } = await query(
-        'SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]
-      );
-      if (existInst.length) return res.status(409).json({ error: 'ciclo já tem instâncias' });
-
-      const created = await withTransaction(async (client) => {
+    const created = await withTransaction(async (client) => {
         // 1. Popula eval_cycle_groups — SÓ SE ainda não houver mapeamento salvo pro ciclo.
         //    Se o admin gravou via PUT /cycles/:id/groups, respeita e não sobrescreve.
         const { rows: existGroups } = await client.query(
@@ -4027,13 +4032,22 @@ async function startServer() {
         return { groups: groups.length, instances: instances.length, dl_bypass: bypassAnswers.length };
       });
 
+      return { ok: true, created };
+  }
+
+  app.post('/api/eval/cycles/:id/abrir', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const result = await openCycleCore(cycleId);
+      if (!result.ok) return res.status(result.code || 500).json({ error: result.error });
+
       await auditLog({
         query, userId: req.user.id, action: 'cycle_opened',
-        meta: { cycle_id: cycleId, ...created },
+        meta: { cycle_id: cycleId, ...result.created },
         ip: hashClientIp(req),
       });
-
-      res.json({ cycle_id: cycleId, created });
+      res.json({ cycle_id: cycleId, created: result.created });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -4049,39 +4063,38 @@ async function startServer() {
       const cycleId = Number(req.params.id);
       const force = !!req.body?.force;
 
-      const { rows: cy } = await query('SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]);
-      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
-      if (!cy[0].active) return res.status(409).json({ error: 'ciclo já está encerrado' });
-
-      const { rows: pending } = await query(
-        `SELECT COUNT(*)::int AS n
-           FROM eval_instances
-          WHERE cycle_id = $1
-            AND status NOT IN ('aprovado', 'reprovado', 'finalizado')`,
-        [cycleId]
-      );
-      const inconclusive = Number(pending[0]?.n ?? 0);
-      if (inconclusive > 0 && !force) {
-        return res.status(409).json({
-          error: `${inconclusive} instância(s) ainda em andamento — informe force:true para encerrar mesmo assim`,
-          inconclusive,
-        });
-      }
-
-      await query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+      const result = await closeCycleCore(cycleId, force);
+      if (!result.ok) return res.status(result.code || 500).json({ error: result.error, inconclusive: result.inconclusive });
 
       await auditLog({
         query, userId: req.user.id, action: 'cycle_closed',
-        meta: { cycle_id: cycleId, forced: force, inconclusive },
+        meta: { cycle_id: cycleId, forced: force, inconclusive: result.inconclusive },
         ip: hashClientIp(req),
       });
-
-      res.json({ success: true, cycle_id: cycleId, inconclusive });
+      res.json({ success: true, cycle_id: cycleId, inconclusive: result.inconclusive });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
+
+  async function closeCycleCore(cycleId: number, force: boolean): Promise<{ ok: boolean; code?: number; error?: string; inconclusive: number }> {
+    const { rows: cy } = await query('SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]);
+    if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado', inconclusive: 0 };
+    if (!cy[0].active) return { ok: false, code: 409, error: 'ciclo já está encerrado', inconclusive: 0 };
+
+    const { rows: pending } = await query(
+      `SELECT COUNT(*)::int AS n FROM eval_instances
+        WHERE cycle_id = $1 AND status NOT IN ('aprovado', 'reprovado', 'finalizado')`,
+      [cycleId]
+    );
+    const inconclusive = Number(pending[0]?.n ?? 0);
+    if (inconclusive > 0 && !force) {
+      return { ok: false, code: 409, error: `${inconclusive} instância(s) ainda em andamento — informe force:true para encerrar mesmo assim`, inconclusive };
+    }
+    await query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+    return { ok: true, inconclusive };
+  }
 
   // ==========================================================================
   // Ações do auditor por critério (spec 5.4.1.2 etapa 4)
@@ -4421,6 +4434,49 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Job automático de abertura/encerramento de ciclos (spec 5.4.1.1).
+  // Roda 1× no boot + a cada 1h. Idempotente: openCycleCore/closeCycleCore checam
+  // estado antes de agir. Sem retries agressivos — se falhar, próximo tick tenta.
+  async function runAutoCycleJobs() {
+    try {
+      const { rows: toOpen } = await query(`
+        SELECT c.id, c.label FROM eval_cycles c
+         WHERE c.auto_open = true
+           AND c.active = true
+           AND c.start_date <= CURRENT_DATE
+           AND NOT EXISTS (SELECT 1 FROM eval_instances WHERE cycle_id = c.id)
+           AND EXISTS (SELECT 1 FROM eval_cycle_groups WHERE cycle_id = c.id)
+      `);
+      for (const c of toOpen) {
+        const r = await openCycleCore(Number(c.id));
+        if (r.ok) {
+          console.log(`[auto] ciclo ${c.label} aberto: ${JSON.stringify(r.created)}`);
+          await auditLog({ query, userId: null as any, action: 'cycle_opened', meta: { cycle_id: Number(c.id), auto: true, ...r.created }, ip: null as any });
+        } else {
+          console.warn(`[auto] falha ao abrir ${c.label}: ${r.error}`);
+        }
+      }
+
+      const { rows: toClose } = await query(`
+        SELECT c.id, c.label FROM eval_cycles c
+         WHERE c.auto_close = true AND c.active = true AND c.end_date < CURRENT_DATE
+      `);
+      for (const c of toClose) {
+        const r = await closeCycleCore(Number(c.id), true);
+        if (r.ok) {
+          console.log(`[auto] ciclo ${c.label} encerrado (inconclusive=${r.inconclusive})`);
+          await auditLog({ query, userId: null as any, action: 'cycle_closed', meta: { cycle_id: Number(c.id), auto: true, inconclusive: r.inconclusive }, ip: null as any });
+        } else {
+          console.warn(`[auto] falha ao encerrar ${c.label}: ${r.error}`);
+        }
+      }
+    } catch (e) {
+      console.error('[auto] erro no job de ciclos:', e);
+    }
+  }
+  runAutoCycleJobs();
+  setInterval(runAutoCycleJobs, 60 * 60 * 1000);
 
   console.log("=== ROUTES REGISTERED ===");
   // Se existe build do cliente (dist/index.html), serve-o estaticamente — caminho de produção.

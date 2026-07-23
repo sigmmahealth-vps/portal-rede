@@ -145,6 +145,21 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
     }
   };
 
+  const toggleAuto = async (field: 'auto_open' | 'auto_close', value: boolean) => {
+    setSaving(true); setErr(null);
+    try {
+      await fetchApi(`/eval/cycles/${cycle.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: value }),
+      });
+      await loadPreview();
+    } catch (e: any) {
+      setErr(e?.message || `Erro ao atualizar ${field}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const abrir = async () => {
     if ((dirty || overridesDirty) && !confirm('Você tem alterações não salvas. Abrir usará a última versão salva. Continuar?')) return;
     setBusy(true); setErr(null);
@@ -222,6 +237,38 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                 <KpiCard icon={<Users className="h-5 w-5" />} tone="sky" label="Instâncias" value={preview.would_create.instances} sub={`${totalProviders} prestadores`} />
                 <KpiCard icon={<ClipboardList className="h-5 w-5" />} tone="amber" label="DL bypass" value={preview.would_create.dl_bypass} sub="via cadastro" />
               </div>
+
+              <section className="rounded-2xl border border-gray-200 bg-white p-4">
+                <h2 className="mb-3 text-base font-bold text-secondary-900">Automação por data</h2>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className={`flex items-start gap-3 rounded-lg border p-3 ${preview.cycle.auto_open ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!preview.cycle.auto_open}
+                      disabled={readOnly || saving}
+                      onChange={e => toggleAuto('auto_open', e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-emerald-600"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-secondary-900">Iniciar automaticamente</p>
+                      <p className="text-xs text-secondary-700">Abre o ciclo em <strong>{preview.cycle.start_date}</strong> (respeita grupos já configurados).</p>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-3 rounded-lg border p-3 ${preview.cycle.auto_close ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!preview.cycle.auto_close}
+                      disabled={saving}
+                      onChange={e => toggleAuto('auto_close', e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-emerald-600"
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-secondary-900">Encerrar automaticamente</p>
+                      <p className="text-xs text-gray-600">Encerra em <strong>{preview.cycle.end_date}</strong> (instâncias inconclusivas ficam registradas).</p>
+                    </div>
+                  </label>
+                </div>
+              </section>
 
               <section className="rounded-2xl border border-gray-200 bg-white">
                 <div className="flex items-center justify-between border-b border-gray-100 p-4">

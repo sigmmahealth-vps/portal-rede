@@ -3318,6 +3318,13 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
+      // Só faz sentido devolver o que está em análise. Estados terminais (aprovado/
+      // finalizado) e o que já foi devolvido (aguardando_evidencia) ficam de fora.
+      const { rows: curr } = await query('SELECT status FROM eval_instances WHERE id = $1', [id]);
+      if (!curr.length) return res.status(404).json({ error: 'Instância não encontrada' });
+      if (curr[0].status !== 'em_analise') {
+        return res.status(409).json({ error: `instância em status ${curr[0].status} não pode ser devolvida` });
+      }
       const { rows } = await query(
         `UPDATE eval_instances SET status = 'aguardando_evidencia'
           WHERE id = $1 RETURNING id, provider_id, location_id, status`,

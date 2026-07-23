@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Download, Eye, RotateCcw, Award, Shield, Users, ClipboardList, Clock, TrendingUp, AlertTriangle, Building2 } from 'lucide-react';
+import { Search, Download, Eye, Undo2, Award, Shield, Users, ClipboardList, Clock, TrendingUp, AlertTriangle, Building2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import AuditorPlayer from './AuditorPlayer';
 import { statusLabel } from '../../lib/statusLabels';
@@ -175,7 +175,9 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                   <td className="p-3">
                     <div className="flex gap-2">
                       <button onClick={() => setEvaluating(i)} className="px-2 py-1 text-xs rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-1"><Eye className="w-3 h-3" /> Analisar</button>
-                      <button onClick={() => reopen(i)} className="px-2 py-1 text-xs rounded bg-orange-50 text-orange-700 hover:bg-orange-100 flex items-center gap-1"><RotateCcw className="w-3 h-3" /> Editar</button>
+                      {i.status === 'em_analise' && (
+                        <button onClick={() => reopen(i)} title="Devolver a avaliação para o prestador reeditar" className="px-2 py-1 text-xs rounded bg-orange-50 text-orange-700 hover:bg-orange-100 flex items-center gap-1"><Undo2 className="w-3 h-3" /> Devolver</button>
+                      )}
                       <button disabled={!i.has_certificate} title={i.has_certificate ? 'Ver certificado' : 'Certificado disponível após parecer final'} className="px-2 py-1 text-xs rounded bg-gray-50 text-gray-500 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"><Award className="w-3 h-3" /> Certificado</button>
                     </div>
                   </td>

@@ -178,7 +178,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                       {i.status === 'em_analise' && (
                         <button onClick={() => reopen(i)} title="Devolver a avaliação para o prestador reeditar" className="px-2 py-1 text-xs rounded bg-orange-50 text-orange-700 hover:bg-orange-100 flex items-center gap-1"><Undo2 className="w-3 h-3" /> Devolver</button>
                       )}
-                      <button disabled={!i.has_certificate} title={i.has_certificate ? 'Ver certificado' : 'Certificado disponível após parecer final'} className="px-2 py-1 text-xs rounded bg-gray-50 text-gray-500 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"><Award className="w-3 h-3" /> Certificado</button>
+                      <button disabled={!i.has_certificate} title={i.has_certificate ? 'Ver certificado' : 'Certificado disponível após parecer final'} className="ml-auto px-2 py-1 text-xs rounded bg-gray-50 text-gray-500 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"><Award className="w-3 h-3" /> Certificado</button>
                     </div>
                   </td>
                 </tr>

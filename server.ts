@@ -3782,9 +3782,6 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const answerId = Number(req.params.id);
       const observation = (req.body?.observation ?? '').trim();
-      if (observationRequired && !observation) {
-        return res.status(400).json({ error: 'observação obrigatória' });
-      }
       const ans = await loadAnswerForAuditor(answerId);
       if (!ans) return res.status(404).json({ error: 'answer not found' });
       if (!['em_analise', 'aguardando_evidencia'].includes(ans.instance_status)) {
@@ -3794,6 +3791,12 @@ async function startServer() {
       // prestador e a bola está com ele. Só nova reanálise pode ajustar a orientação.
       if (ans.evidence_status === 'aguardando_reanalise' && action !== 'solicitou_reanalise') {
         return res.status(409).json({ error: 'critério aguardando reenvio do prestador — só é possível ajustar a orientação de reanálise' });
+      }
+      // Revisão de decisão: se já havia veredito terminal, exigir justificativa em
+      // qualquer nova ação — inclusive Aprovar. Trilha fica em eval_answer_iterations.
+      const isRevision = ans.evidence_status === 'aprovado' || ans.evidence_status === 'reprovado';
+      if ((observationRequired || isRevision) && !observation) {
+        return res.status(400).json({ error: isRevision ? 'justificativa obrigatória para revisar a decisão' : 'observação obrigatória' });
       }
 
       const newEvidenceStatus =

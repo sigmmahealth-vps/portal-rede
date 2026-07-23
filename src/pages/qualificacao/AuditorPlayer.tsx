@@ -180,8 +180,9 @@ export default function AuditorPlayer({
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [reasonPrompt, setReasonPrompt] = useState<{ answerId: number; action: 'reprovou' | 'solicitou_reanalise' } | null>(null);
+  const [reasonPrompt, setReasonPrompt] = useState<{ answerId: number; action: 'aprovou' | 'reprovou' | 'solicitou_reanalise' } | null>(null);
   const [reasonText, setReasonText] = useState('');
+  const [revising, setRevising] = useState<Set<number>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -330,6 +331,7 @@ export default function AuditorPlayer({
         body: JSON.stringify({ observation: observation || '' }),
       });
       await load();
+      setRevising(prev => { const n = new Set(prev); n.delete(answerId); return n; });
     } catch (e: any) {
       alert(e?.message || 'Erro na ação');
     } finally {
@@ -635,81 +637,113 @@ export default function AuditorPlayer({
                                 {/* Ações do auditor */}
                                 {!a ? (
                                   <p className="mt-4 text-xs italic text-gray-400">Prestador ainda não respondeu — nada a analisar.</p>
-                                ) : (
-                                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                                    <button
-                                      type="button"
-                                      disabled={busy || terminal || awaitingProvider}
-                                      title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
-                                      onClick={() => act(a.id, 'aprovou')}
-                                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      <Check className="h-3.5 w-3.5" strokeWidth={3} /> Aprovar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={busy || terminal || awaitingProvider}
-                                      title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
-                                      onClick={() => { setReasonPrompt({ answerId: a.id, action: 'reprovou' }); setReasonText(''); }}
-                                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      <XCircle className="h-3.5 w-3.5" /> Reprovar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={busy || terminal}
-                                      onClick={() => { setReasonPrompt({ answerId: a.id, action: 'solicitou_reanalise' }); setReasonText(''); }}
-                                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                    >
-                                      <RotateCcw className="h-3.5 w-3.5" /> {awaitingProvider ? 'Ajustar orientação' : 'Solicitar reanálise'}
-                                    </button>
-                                    {terminal && (
-                                      <span className="ml-2 text-xs text-gray-400">Ação já registrada.</span>
-                                    )}
-                                    {awaitingProvider && !terminal && (
-                                      <span className="ml-2 text-xs text-amber-800">Aguardando reenvio do prestador.</span>
-                                    )}
-                                  </div>
-                                )}
+                                ) : (() => {
+                                  const isRevising = revising.has(a.id);
+                                  const locked = terminal && !isRevising;
+                                  if (locked) {
+                                    return (
+                                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                                        <span className="text-xs text-gray-500">Ação já registrada.</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setRevising(prev => new Set(prev).add(a.id))}
+                                          className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                                        >
+                                          <RotateCcw className="h-3.5 w-3.5" /> Rever decisão
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+                                  // Em revisão de decisão, mesmo "Aprovar" exige justificativa.
+                                  const approveNeedsReason = isRevising;
+                                  return (
+                                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={busy || awaitingProvider}
+                                        title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
+                                        onClick={() => approveNeedsReason
+                                          ? (setReasonPrompt({ answerId: a.id, action: 'aprovou' }), setReasonText(''))
+                                          : act(a.id, 'aprovou')}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        <Check className="h-3.5 w-3.5" strokeWidth={3} /> Aprovar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={busy || awaitingProvider}
+                                        title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
+                                        onClick={() => { setReasonPrompt({ answerId: a.id, action: 'reprovou' }); setReasonText(''); }}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        <XCircle className="h-3.5 w-3.5" /> Reprovar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => { setReasonPrompt({ answerId: a.id, action: 'solicitou_reanalise' }); setReasonText(''); }}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        <RotateCcw className="h-3.5 w-3.5" /> {awaitingProvider ? 'Ajustar orientação' : 'Solicitar reanálise'}
+                                      </button>
+                                      {isRevising && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setRevising(prev => { const n = new Set(prev); n.delete(a.id); return n; })}
+                                          className="text-xs text-gray-500 underline"
+                                        >
+                                          Cancelar revisão
+                                        </button>
+                                      )}
+                                      {awaitingProvider && !isRevising && (
+                                        <span className="ml-2 text-xs text-amber-800">Aguardando reenvio do prestador.</span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
 
                                 {a && <IterationTimeline items={itersByAnswer[a.id] ?? []} />}
 
-                                {showPrompt && a && (
-                                  <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                                    <label className="mb-1 block text-xs font-semibold text-secondary-900">
-                                      {reasonPrompt?.action === 'reprovou' ? 'Motivo da reprovação' : 'Orientação para reanálise'}{' '}
-                                      <span className="font-normal text-red-600">(obrigatório)</span>
-                                    </label>
-                                    <textarea
-                                      value={reasonText}
-                                      onChange={e => setReasonText(e.target.value)}
-                                      rows={2}
-                                      placeholder={
-                                        reasonPrompt?.action === 'reprovou'
-                                          ? 'Descreva por que o critério foi reprovado.'
-                                          : 'Descreva o que o prestador deve corrigir/enviar.'
-                                      }
-                                      className="w-full rounded-lg border border-gray-300 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
-                                    />
-                                    <div className="mt-2 flex justify-end gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => { setReasonPrompt(null); setReasonText(''); }}
-                                        className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                                      >
-                                        Cancelar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={!reasonText.trim() || busy}
-                                        onClick={() => act(a.id, reasonPrompt!.action, reasonText.trim())}
-                                        className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-40"
-                                      >
-                                        Confirmar
-                                      </button>
+                                {showPrompt && a && (() => {
+                                  const act2 = reasonPrompt!.action;
+                                  const label = act2 === 'aprovou' ? 'Justificativa da revisão'
+                                    : act2 === 'reprovou' ? 'Motivo da reprovação'
+                                    : 'Orientação para reanálise';
+                                  const placeholder = act2 === 'aprovou' ? 'Explique por que está revendo a decisão anterior.'
+                                    : act2 === 'reprovou' ? 'Descreva por que o critério foi reprovado.'
+                                    : 'Descreva o que o prestador deve corrigir/enviar.';
+                                  return (
+                                    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                      <label className="mb-1 block text-xs font-semibold text-secondary-900">
+                                        {label} <span className="font-normal text-red-600">(obrigatório)</span>
+                                      </label>
+                                      <textarea
+                                        value={reasonText}
+                                        onChange={e => setReasonText(e.target.value)}
+                                        rows={2}
+                                        placeholder={placeholder}
+                                        className="w-full rounded-lg border border-gray-300 p-2.5 text-sm text-secondary-900 placeholder:text-gray-400 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+                                      />
+                                      <div className="mt-2 flex justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => { setReasonPrompt(null); setReasonText(''); }}
+                                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                        >
+                                          Cancelar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={!reasonText.trim() || busy}
+                                          onClick={() => act(a.id, act2, reasonText.trim())}
+                                          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-40"
+                                        >
+                                          Confirmar
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
                               </article>
                             );
                           })}

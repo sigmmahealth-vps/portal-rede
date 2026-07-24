@@ -20,7 +20,7 @@ type TabKey = typeof TABS[number]['key'];
 const OPEN_STATES = ['finalizado', 'aprovado', 'reprovado'];
 // Estados em que o prestador ainda pode editar respostas e enviar para análise
 // (POST /submit). Fora daqui (pendente/em_analise/terminais) a instância é só leitura.
-const EDITABLE_STATES = ['em_andamento', 'aguardando_evidencia'];
+const EDITABLE_STATES = ['pendente', 'em_andamento', 'aguardando_evidencia'];
 
 function EmBreve({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
   return (

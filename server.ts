@@ -3168,6 +3168,10 @@ async function startServer() {
 
       const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' ? 'prestador' : 'auditor';
       await withTransaction(async (client) => {
+        // Ao primeiro save, sai de 'pendente' pra 'em_andamento' (5.4.2.2).
+        if (instance.status === 'pendente') {
+          await client.query(`UPDATE eval_instances SET status = 'em_andamento' WHERE id = $1 AND status = 'pendente'`, [instanceId]);
+        }
         for (const ans of answers as any[]) {
           // Lê o valor anterior pra decidir se grava iteration (só quando de fato mudou).
           const { rows: prevRows } = await client.query(

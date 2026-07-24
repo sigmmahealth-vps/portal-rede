@@ -10,6 +10,7 @@ export const STATUS_LABEL: Record<string, string> = {
   aprovado:              'Concluído — Aprovado',
   reprovado:             'Concluído — Aprovado',
   finalizado:            'Concluído — Aprovado',
+  ciclo_encerrado:       'Ciclo Encerrado',
 };
 
 export function statusLabel(status: string): string {

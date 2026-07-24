@@ -18,6 +18,7 @@ function statusPill(status: string) {
     aprovado: 'bg-emerald-100 text-emerald-800',
     reprovado: 'bg-red-100 text-red-700',
     finalizado: 'bg-emerald-100 text-emerald-800',
+    ciclo_encerrado: 'bg-slate-200 text-slate-700',
   };
   return map[status] || 'bg-gray-100 text-gray-600';
 }

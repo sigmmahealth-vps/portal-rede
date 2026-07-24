@@ -17,7 +17,10 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key'];
 
-const OPEN_STATES = ['finalizado', 'aprovado', 'reprovado'];
+// Estados que consideramos "fechados" — a instância vira histórico (não é o
+// trabalho corrente do prestador). ciclo_encerrado entra aqui: quando o auditor
+// encerra o ciclo com instância não-terminal, ela vira histórico do prestador.
+const OPEN_STATES = ['finalizado', 'aprovado', 'reprovado', 'ciclo_encerrado'];
 // Estados em que o prestador ainda pode editar respostas e enviar para análise
 // (POST /submit). Fora daqui (pendente/em_analise/terminais) a instância é só leitura.
 const EDITABLE_STATES = ['pendente', 'em_andamento', 'aguardando_evidencia'];

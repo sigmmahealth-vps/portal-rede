@@ -4113,7 +4113,19 @@ async function startServer() {
     if (inconclusive > 0 && !force) {
       return { ok: false, code: 409, error: `${inconclusive} instância(s) ainda em andamento — informe force:true para encerrar mesmo assim`, inconclusive };
     }
-    await query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+    await withTransaction(async (c) => {
+      // Instâncias não-terminais vão pro 'ciclo_encerrado' — viram histórico do
+      // prestador (spec: quando o ciclo fecha, avaliações inconclusas ficam
+      // registradas com esse marcador em vez de sumir).
+      await c.query(
+        `UPDATE eval_instances
+            SET status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
+          WHERE cycle_id = $1
+            AND status NOT IN ('aprovado', 'reprovado', 'finalizado')`,
+        [cycleId]
+      );
+      await c.query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+    });
     return { ok: true, inconclusive };
   }
 

@@ -73,7 +73,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const removeGroup = (grp: string) => {
     const row = groups.find(g => g.provider_group === grp);
     const count = row?.providers ?? 0;
-    if (!confirm(`Excluir o grupo "${grp}" do ciclo?\n\n${count} prestador(es) desse grupo ficariam de fora — a menos que sejam vinculados individualmente na tabela de prestadores.`)) return;
+    if (!confirm(`Excluir o grupo "${grp}" do ciclo?\n\n${count} prestador(es) desse grupo ficariam de fora.`)) return;
     setGroups(prev => prev.filter(g => g.provider_group !== grp));
     setDirty(true);
   };
@@ -178,6 +178,10 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
 
   const totalProviders = groups.reduce((n, g) => n + g.providers, 0);
   const readOnly = !!preview?.already_opened;
+  // Filtra localmente pra refletir remoção de grupo ANTES do save. Depois do save
+  // o backend já entrega só esses; antes do save a UI mostrava rows órfãos.
+  const activeGroupNames = new Set(groups.map(g => g.provider_group));
+  const visibleInstances = instances.filter(i => activeGroupNames.has(i.provider_group));
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#f4f4f4] lg:left-20">
@@ -389,9 +393,9 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                       onChange={e => setGroupFilter(e.target.value)}
                       className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
                     >
-                      <option value="">Todos ({instances.length})</option>
-                      {Array.from(new Set(instances.map(i => i.provider_group))).sort().map(g => (
-                        <option key={g} value={g}>{g} ({instances.filter(i => i.provider_group === g).length})</option>
+                      <option value="">Todos ({visibleInstances.length})</option>
+                      {Array.from(new Set(visibleInstances.map(i => i.provider_group))).sort().map(g => (
+                        <option key={g} value={g}>{g} ({visibleInstances.filter(i => i.provider_group === g).length})</option>
                       ))}
                     </select>
                     {!readOnly && (
@@ -418,7 +422,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                     </thead>
                     <tbody>
                       {(() => {
-                        const filtered = groupFilter ? instances.filter(i => i.provider_group === groupFilter) : instances;
+                        const filtered = groupFilter ? visibleInstances.filter(i => i.provider_group === groupFilter) : visibleInstances;
                         if (filtered.length === 0) {
                           return <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhum prestador nesse filtro.</td></tr>;
                         }

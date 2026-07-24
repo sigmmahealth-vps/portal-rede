@@ -116,9 +116,9 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
       await fetchApi(`/eval/cycles/${cycle.id}/groups`, {
         method: 'PUT',
         body: JSON.stringify({
-          groups: groups
-            .filter(g => g.script_id != null)
-            .map(g => ({ provider_group: g.provider_group, script_id: g.script_id })),
+          // envia TODOS os grupos presentes na tabela — inclusive os "não vinculados"
+          // (script_id null). Grupo removido pelo X some da lista e o back exclui do ciclo.
+          groups: groups.map(g => ({ provider_group: g.provider_group, script_id: g.script_id })),
         }),
       });
       await loadPreview();

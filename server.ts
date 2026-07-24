@@ -3654,13 +3654,13 @@ async function startServer() {
       const { rows } = await query(`
         SELECT ecg.provider_group, ecg.script_id, s.title AS script_title
           FROM eval_cycle_groups ecg
-          JOIN eval_scripts s ON s.id = ecg.script_id
+          LEFT JOIN eval_scripts s ON s.id = ecg.script_id
          WHERE ecg.cycle_id = $1
       `, [cycleId]);
       for (const r of rows as any[]) {
         groupsMap.set(r.provider_group, {
           provider_group: r.provider_group,
-          script_id: Number(r.script_id),
+          script_id: r.script_id != null ? Number(r.script_id) : null,
           script_title: r.script_title,
           providers: Number(countsByGroup.get(r.provider_group) ?? 0),
           ambiguous: ambiguousGroups.includes(r.provider_group),
@@ -3685,17 +3685,21 @@ async function startServer() {
         });
       }
     }
-    // Traz também todos os grupos com prestadores que ainda não estão no mapa
-    // (ambíguos + qualquer grupo real que ficou de fora). Aparece como "não vinculado".
-    for (const [pg, count] of countsByGroup.entries()) {
-      if (groupsMap.has(pg)) continue;
-      groupsMap.set(pg, {
-        provider_group: pg,
-        script_id: null,
-        script_title: null,
-        providers: Number(count),
-        ambiguous: ambiguousGroups.includes(pg),
-      });
+    // Quando ainda não há grupos salvos (source=auto), completa com os que ficaram
+    // fora da sugestão (ambíguos ou sem eval_script_id nos providers) — assim o admin
+    // enxerga TODOS os grupos e decide caso a caso. Se já é 'saved', respeita a
+    // exclusão explícita (grupo que não está em eval_cycle_groups foi tirado do ciclo).
+    if (source === 'auto') {
+      for (const [pg, count] of countsByGroup.entries()) {
+        if (groupsMap.has(pg)) continue;
+        groupsMap.set(pg, {
+          provider_group: pg,
+          script_id: null,
+          script_title: null,
+          providers: Number(count),
+          ambiguous: ambiguousGroups.includes(pg),
+        });
+      }
     }
     const groupsDetail = Array.from(groupsMap.values()).sort((a, b) => a.provider_group.localeCompare(b.provider_group));
 
@@ -3813,13 +3817,14 @@ async function startServer() {
         if (inactive.length) return res.status(409).json({ error: `Roteiro(s) não vigente(s): ${inactive.join(', ')}` });
       }
 
-      // Normaliza e valida.
-      const norm: Array<{ provider_group: string; script_id: number }> = [];
+      // Normaliza e valida. script_id null = grupo participa mas roteiro vem por override.
+      const norm: Array<{ provider_group: string; script_id: number | null }> = [];
       const seen = new Set<string>();
       for (const g of groups) {
         const pg = (g.provider_group ?? '').trim();
-        const sid = Number(g.script_id);
-        if (!pg || !Number.isFinite(sid) || sid <= 0) {
+        const rawSid = g.script_id;
+        const sid = rawSid == null || rawSid === 0 || rawSid === '' ? null : Number(rawSid);
+        if (!pg || (sid !== null && (!Number.isFinite(sid) || sid <= 0))) {
           return res.status(400).json({ error: `linha inválida: ${JSON.stringify(g)}` });
         }
         if (seen.has(pg)) return res.status(400).json({ error: `grupo duplicado: ${pg}` });
@@ -3892,6 +3897,9 @@ async function startServer() {
           LEFT JOIN eval_scripts s_override ON s_override.id = ov.script_id
          WHERE pl.in_medical_guide = true
            AND p.provider_group IS NOT NULL
+           -- Só mostra prestadores de grupos participantes (na eff_groups) OU com override
+           -- explícito. Grupo excluído do ciclo → prestadores somem da tabela.
+           AND (g.provider_group IS NOT NULL OR ov.provider_id IS NOT NULL)
          ORDER BY p.provider_group NULLS LAST, provider_name, pl.id
       `, [cycleId]);
       res.json({ rows });

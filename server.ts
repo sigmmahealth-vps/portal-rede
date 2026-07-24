@@ -3888,16 +3888,19 @@ async function startServer() {
       // ambíguos aparecem sem default — vinculados caso a caso via override.
       const { rows } = await query(`
         WITH eff_groups AS (
+          -- Fonte 1: mapeamento salvo (source='saved')
           SELECT provider_group, script_id FROM eval_cycle_groups WHERE cycle_id = $1
           UNION ALL
-          SELECT p.provider_group, MIN(p.eval_script_id)::bigint
+          -- Fonte 2: se nada salvo (source='auto'), inclui TODOS os grupos existentes.
+          -- Grupo com 1 único script entre os prestadores → script sugerido.
+          -- Ambíguo ou sem script → script_id NULL (prestadores aparecem pra decidir caso a caso).
+          SELECT p.provider_group,
+                 CASE WHEN COUNT(DISTINCT p.eval_script_id) FILTER (WHERE p.eval_script_id IS NOT NULL) = 1
+                      THEN MAX(p.eval_script_id)::bigint
+                      ELSE NULL::bigint
+                 END AS script_id
             FROM providers p
-           WHERE p.provider_group IS NOT NULL AND p.eval_script_id IS NOT NULL
-             AND p.provider_group NOT IN (
-               SELECT provider_group FROM providers
-                WHERE provider_group IS NOT NULL AND eval_script_id IS NOT NULL
-                GROUP BY provider_group HAVING COUNT(DISTINCT eval_script_id) > 1
-             )
+           WHERE p.provider_group IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM eval_cycle_groups WHERE cycle_id = $1)
            GROUP BY p.provider_group
         )

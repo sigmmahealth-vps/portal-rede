@@ -135,9 +135,11 @@ export default function PrestadorView({ user }: { user: any }) {
         {inProgress ? (
           <>
             <p className="mt-1 text-sm text-gray-500">
-              {EDITABLE_STATES.includes(inProgress.status)
-                ? 'Você tem uma qualificação em andamento.'
-                : 'Sua qualificação foi enviada e está aguardando auditoria.'}
+              {inProgress.status === 'pendente'
+                ? 'Você tem uma nova qualificação disponível para preenchimento.'
+                : EDITABLE_STATES.includes(inProgress.status)
+                  ? 'Você tem uma qualificação em andamento.'
+                  : 'Sua qualificação foi enviada e está aguardando auditoria.'}
             </p>
             <div className="mt-4 rounded-xl bg-emerald-50/60 p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -152,9 +154,11 @@ export default function PrestadorView({ user }: { user: any }) {
                     onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id, readOnly: !EDITABLE_STATES.includes(inProgress.status) })}
                     className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
                   >
-                    {EDITABLE_STATES.includes(inProgress.status)
-                      ? (<><Clock className="h-4 w-4" /> Continuar avaliação</>)
-                      : (<><Eye className="h-4 w-4" /> Visualizar avaliação</>)}
+                    {inProgress.status === 'pendente'
+                      ? (<><Play className="h-4 w-4" /> Iniciar avaliação</>)
+                      : EDITABLE_STATES.includes(inProgress.status)
+                        ? (<><Clock className="h-4 w-4" /> Continuar avaliação</>)
+                        : (<><Eye className="h-4 w-4" /> Visualizar avaliação</>)}
                   </button>
                   {EDITABLE_STATES.includes(inProgress.status) && (
                     <button

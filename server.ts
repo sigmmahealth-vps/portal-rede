@@ -95,6 +95,12 @@ const isoToBR = (iso: unknown): string => {
 const isEvidenceExempt = (text: string): boolean =>
   /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(text || '');
 
+// Critérios opcionais — não bloqueiam /submit nem contam como pendente. Mesmo
+// alvo do isEvidenceExempt: a pesquisa de satisfação é preenchida pela Unimed
+// após a visita, então o prestador não é obrigado a responder pra enviar.
+const isOptionalQuestion = (text: string): boolean =>
+  /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(text || '');
+
 // =============================================================================
 // Seed inicial / dados de demonstração.
 // O schema vive nas migrations (db/migrations/*.sql). Aqui apenas semeamos
@@ -3244,8 +3250,10 @@ async function startServer() {
       }
 
       // Completude: toda eval_questions do script precisa ter answer com answer_value não vazio.
-      const { rows: missing } = await query(`
-        SELECT eq.id
+      // Opcionais (isOptionalQuestion) ficam de fora — a pesquisa de satisfação é coletada
+      // pela Unimed após a visita, não bloqueia o envio.
+      const { rows: missingRaw } = await query(`
+        SELECT eq.id, eq.text
           FROM eval_questions eq
           JOIN eval_sections sc ON sc.id = eq.section_id
          WHERE sc.script_id = $1
@@ -3255,6 +3263,7 @@ async function startServer() {
                 AND ea.answer_value IS NOT NULL AND ea.answer_value <> ''
            )
       `, [instance.script_id, req.params.id]);
+      const missing = missingRaw.filter((r: any) => !isOptionalQuestion(r.text));
       if (missing.length) {
         return res.status(409).json({ error: 'critérios sem resposta', missing_question_ids: missing.map((r: any) => Number(r.id)) });
       }

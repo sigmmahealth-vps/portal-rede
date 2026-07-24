@@ -499,7 +499,11 @@ export default function RoteiroPlayer({
   //   Sim → precisa de evidência SÓ quando q.evidence_required=true
   //   Não / N/A → precisa de observação (texto)
   //   Reanálise fica em bucket próprio (reanaliseSet) — auditor devolveu o critério.
+  //   Opcionais (pesquisa de satisfação) nunca pendem — enviam mesmo em branco.
+  const isOptional = (q: Question): boolean =>
+    /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(q.text || '');
   const pendingItems = () => questions.filter(q => {
+    if (isOptional(q)) return false;
     const a = answers[q.id];
     if (a?.evidence_status === 'aguardando_reanalise') return false; // vai pra Reanálise
     if (!a?.answer_value) return true;

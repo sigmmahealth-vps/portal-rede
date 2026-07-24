@@ -4281,17 +4281,30 @@ async function startServer() {
       }
       const cycle = cycleRows[0];
 
+      // Pontuação parcial em tempo real (spec 5.4.2.5): score/max sobre as answers
+      // já registradas, ignorando 'NA' — mesma fórmula do /parecer. Assim antes do
+      // parecer o painel mostra o progresso ao invés de sempre 0.
       const { rows: instances } = await query(`
         SELECT ei.id, ei.provider_id, ei.location_id,
                COALESCE(p.trade_name, p.name) AS provider_name,
                p.sgu_code AS provider_code,
                pl.cidade AS city,
                p.provider_group,
-               ei.status, ei.percentual, ei.seal,
+               ei.status, ei.seal,
+               COALESCE(partial.pct, 0) AS percentual,
                false AS has_certificate
           FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          LEFT JOIN (
+            SELECT ea.instance_id,
+                   (SUM(CASE WHEN LOWER(COALESCE(ea.answer_value,'')) <> 'na' THEN COALESCE(ea.score_obtained, 0) ELSE 0 END)
+                    / NULLIF(SUM(CASE WHEN LOWER(COALESCE(ea.answer_value,'')) <> 'na' THEN eq.max_score ELSE 0 END), 0)) * 100 AS pct
+              FROM eval_answers ea
+              JOIN eval_questions eq ON eq.id = ea.question_id
+              JOIN eval_instances ei2 ON ei2.id = ea.instance_id AND ei2.cycle_id = $1
+             GROUP BY ea.instance_id
+          ) partial ON partial.instance_id = ei.id
          WHERE ei.cycle_id = $1
          ORDER BY ei.id
       `, [cycle.id]);

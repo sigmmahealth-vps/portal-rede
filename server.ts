@@ -3582,6 +3582,17 @@ async function startServer() {
          typeof auto_close === 'boolean' ? auto_close : null, id]
       );
       if (!rows[0]) return res.status(404).json({ error: 'not found' });
+      // Ao desativar o ciclo por PATCH, garante o mesmo efeito do /encerrar:
+      // instâncias não-terminais viram 'ciclo_encerrado' (viram histórico).
+      if (active === false) {
+        await query(
+          `UPDATE eval_instances
+              SET status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
+            WHERE cycle_id = $1
+              AND status NOT IN ('aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado')`,
+          [id]
+        );
+      }
       res.json(rows[0]);
     } catch (err: any) {
       console.error(err);

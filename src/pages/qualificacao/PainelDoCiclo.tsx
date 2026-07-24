@@ -29,6 +29,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [evaluating, setEvaluating] = useState<any>(null);
 
   useEffect(() => { (async () => {
@@ -50,12 +51,19 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return data.instances;
-    return data.instances.filter((i: any) =>
-      (i.provider_name || '').toLowerCase().includes(q) ||
-      (i.provider_code || '').toLowerCase().includes(q),
-    );
-  }, [data, search]);
+    return data.instances.filter((i: any) => {
+      if (statusFilter && i.status !== statusFilter) return false;
+      if (!q) return true;
+      return (i.provider_name || '').toLowerCase().includes(q)
+        || (i.provider_code || '').toLowerCase().includes(q);
+    });
+  }, [data, search, statusFilter]);
+
+  // Status presentes no ciclo (pra montar as opções do dropdown).
+  const statusesPresent = useMemo(() => {
+    if (!data) return [] as string[];
+    return Array.from(new Set(data.instances.map((i: any) => i.status))) as string[];
+  }, [data]);
 
   const reopen = async (inst: any) => {
     if (!confirm(`Devolver a avaliação de "${inst.provider_name}" para o prestador?`)) return;
@@ -135,8 +143,8 @@ export default function PainelDoCiclo({ user }: { user: any }) {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 border-b border-gray-100">
-          <div className="relative max-w-md">
+        <div className="p-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -146,6 +154,18 @@ export default function PainelDoCiclo({ user }: { user: any }) {
               className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
             />
           </div>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="bg-gray-50 border-none rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value="">Todos os status ({data.instances.length})</option>
+            {statusesPresent.map(st => (
+              <option key={st} value={st}>
+                {statusLabel(st)} ({data.instances.filter((i: any) => i.status === st).length})
+              </option>
+            ))}
+          </select>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">

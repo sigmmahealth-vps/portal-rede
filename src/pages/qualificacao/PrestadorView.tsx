@@ -225,7 +225,10 @@ export default function PrestadorView({ user }: { user: any }) {
               && !OPEN_STATES.includes(i.status)
               && (loc ? String(i.location_id) === String(loc.id) : true),
             );
-            const sent = existing ? !EDITABLE_STATES.includes(existing.status) : false;
+            // Sem instância corrente (admin não abriu ciclo pra esse local, ou o
+            // ciclo já encerrou), o prestador não tem o que fazer — esconde o card.
+            if (!existing) return null;
+            const sent = !EDITABLE_STATES.includes(existing.status);
             const cityUf = loc && loc.cidade ? `${loc.cidade}${loc.uf ? '/' + String(loc.uf).toUpperCase() : ''}` : null;
             return (
               <div key={key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
@@ -238,18 +241,16 @@ export default function PrestadorView({ user }: { user: any }) {
                 )}
                 {!loc && <p className="mt-1 text-sm text-gray-500">{s.description}</p>}
                 <button
-                  onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing?.id, locationId: loc?.id, readOnly: sent })}
+                  onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing.id, locationId: loc?.id, readOnly: sent })}
                   className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
                 >
                   {sent
                     ? (<><Eye className="h-4 w-4" /> Visualizar Avaliação</>)
-                    : existing
-                      ? (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)
-                      : (<><Play className="h-4 w-4" /> Iniciar Avaliação</>)}
+                    : (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)}
                 </button>
               </div>
             );
-          });
+          }).filter(Boolean);
         })}
       </div>
 

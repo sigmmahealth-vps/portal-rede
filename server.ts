@@ -4086,6 +4086,20 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const cycleId = Number(req.params.id);
+
+      // "Confirmar abertura" ativa o ciclo no mesmo passo. Se estiver inativo e não
+      // houver conflito (regra 1-ativo, spec 5.4.2.1), ativa antes de abrir. Se já
+      // existe outro ativo, devolve mensagem clara em vez do genérico 'não está ativo'.
+      const { rows: cy } = await query('SELECT active FROM eval_cycles WHERE id = $1', [cycleId]);
+      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      if (!cy[0].active) {
+        const other = await findConflictingActiveCycle(cycleId);
+        if (other != null) {
+          return res.status(409).json({ error: 'Existe outro ciclo ativo — encerre-o antes de abrir este.', active_cycle_id: other });
+        }
+        await query('UPDATE eval_cycles SET active = true WHERE id = $1', [cycleId]);
+      }
+
       const result = await openCycleCore(cycleId);
       if (!result.ok) return res.status(result.code || 500).json({ error: result.error });
 

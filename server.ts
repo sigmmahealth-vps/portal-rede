@@ -3851,6 +3851,18 @@ async function startServer() {
             [cycleId, g.provider_group, g.script_id]
           );
         }
+        // Overrides de prestadores cujo grupo saiu da lista viram lixo — apaga.
+        const kept = norm.map(g => g.provider_group);
+        await c.query(
+          `DELETE FROM eval_cycle_overrides
+            WHERE cycle_id = $1
+              AND provider_id IN (
+                SELECT id FROM providers
+                 WHERE provider_group IS NULL
+                    OR provider_group <> ALL($2::text[])
+              )`,
+          [cycleId, kept.length ? kept : ['__none__']]
+        );
       });
 
       await auditLog({

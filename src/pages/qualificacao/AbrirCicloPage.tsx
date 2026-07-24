@@ -81,12 +81,14 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const setInstanceScript = (providerId: number, locationId: number, newSid: number) => {
     setInstances(prev => prev.map(r => {
       if (r.provider_id !== providerId || r.location_id !== locationId) return r;
-      const isDefault = newSid === r.default_script_id;
+      // 0 (Não vinculado) ou igual ao default = sem override (null). Evita mandar
+      // script_id inválido pro back (FK violation).
+      const shouldClear = !newSid || newSid === r.default_script_id;
       const s = scripts.find(x => Number(x.id) === newSid);
       return {
         ...r,
-        override_script_id: isDefault ? null : newSid,
-        override_script_title: isDefault ? null : (s?.title || r.override_script_title),
+        override_script_id: shouldClear ? null : newSid,
+        override_script_title: shouldClear ? null : (s?.title || r.override_script_title),
       };
     }));
     setOverridesDirty(true);

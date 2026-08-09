@@ -4274,6 +4274,39 @@ async function startServer() {
   app.post('/api/eval/answers/:id/reprovar',             authenticate, (req, res) => auditorAction(req, res, 'reprovou', true));
   app.post('/api/eval/answers/:id/solicitar-reanalise',  authenticate, (req, res) => auditorAction(req, res, 'solicitou_reanalise', true));
 
+  // Candidatos a plano de ação (não conformes) da instância — usado no modal do parecer
+  app.get('/api/eval/instances/:id/plano-candidatos', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows } = await query(`
+        SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
+               eq.legislation, eq.dimension, eq.guidance,
+               ea.is_non_compliant, ea.evidence_status
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+         WHERE ea.instance_id = $1
+           AND (ea.is_non_compliant OR ea.evidence_status = 'reprovado')
+         ORDER BY eq.dimension, eq.code
+      `, [id]);
+
+      const { rows: [seg] } = await query(`
+        SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
+               COALESCE(SUM(eq.max_score)      FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS max
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+         WHERE ea.instance_id = $1 AND eq.dimension IN ('Segurança','Documento Legal')
+      `, [id]);
+      const segurancaPct = Number(seg.max) > 0 ? Math.round(Number(seg.score) / Number(seg.max) * 10000) / 100 : 100;
+
+      const { buildAutoItems } = await import('./src/lib/actionPlan.js');
+      res.json({ seguranca_pct: segurancaPct, items: buildAutoItems(rows as any, { segurancaPct }) });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/eval/instances/:id/parecer', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
@@ -4332,7 +4365,76 @@ async function startServer() {
         ip: hashClientIp(req),
       });
 
-      res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed });
+      // ---- Geração do Plano de Ação 5W2H (spec 5.4.4.1) ----
+      const { rows: candRows } = await query(`
+        SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
+               eq.legislation, eq.dimension, eq.guidance,
+               ea.is_non_compliant, ea.evidence_status
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+         WHERE ea.instance_id = $1
+           AND (ea.is_non_compliant OR ea.evidence_status = 'reprovado')
+      `, [id]);
+
+      let planId: number | null = null;
+      if (candRows.length) {
+        const { rows: [segT] } = await query(`
+          SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
+                 COALESCE(SUM(eq.max_score)      FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS max
+            FROM eval_answers ea
+            JOIN eval_questions eq ON eq.id = ea.question_id
+           WHERE ea.instance_id = $1 AND eq.dimension IN ('Segurança','Documento Legal')
+        `, [id]);
+        const segurancaPct = Number(segT.max) > 0
+          ? Math.round(Number(segT.score) / Number(segT.max) * 10000) / 100 : 100;
+
+        const { buildAutoItems, ITEM_DEFAULT_TERM_DAYS } = await import('./src/lib/actionPlan.js');
+        const auto = buildAutoItems(candRows as any, { segurancaPct });
+
+        const selected = Array.isArray(req.body?.plan_answer_ids)
+          ? new Set(req.body.plan_answer_ids.map(Number)) : null;
+        // obrigatórios entram SEMPRE (spec: "sem possibilidade de omissão")
+        const chosen = auto.filter(i => i.is_mandatory || !selected || selected.has(i.answer_id));
+
+        if (chosen.length) {
+          const origin = selected ? 'semiautomatica' : 'automatica';
+          await withTransaction(async (client) => {
+            const { rows: [plan] } = await client.query(`
+              INSERT INTO eval_action_plans (cycle_id, instance_id, provider_id, location_id, origin, created_by)
+              SELECT cycle_id, id, provider_id, location_id, $2, $3 FROM eval_instances WHERE id = $1
+              ON CONFLICT (instance_id) WHERE instance_id IS NOT NULL DO NOTHING
+              RETURNING id
+            `, [id, origin, req.user.id]);
+            if (!plan) return; // parecer re-executado: plano já existe, não duplica
+            planId = Number(plan.id);
+            for (const it of chosen) {
+              const { rows: [item] } = await client.query(`
+                INSERT INTO eval_action_items
+                  (plan_id, answer_id, question_code, question_text, dimension, is_mandatory,
+                   what, why, how, start_date, due_date)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CURRENT_DATE,
+                        CURRENT_DATE + ($10 || ' days')::interval)
+                RETURNING id
+              `, [planId, it.answer_id, it.question_code, it.question_text, it.dimension,
+                  it.is_mandatory, it.what, it.why, it.how, ITEM_DEFAULT_TERM_DAYS]);
+              await client.query(`
+                INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+                VALUES ($1, $2, $3, 'auditor', 'criou')
+              `, [item.id, req.user.id, req.user.name]);
+            }
+          });
+          if (planId) {
+            await auditLog({
+              query, userId: req.user.id, action: 'action_plan_generated',
+              meta: { provider_id: Number(inst.provider_id), instance_id: id, plan_id: planId,
+                      origin, items: chosen.length, seguranca_pct: segurancaPct },
+              ip: hashClientIp(req),
+            });
+          }
+        }
+      }
+
+      res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed, plan_id: planId });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

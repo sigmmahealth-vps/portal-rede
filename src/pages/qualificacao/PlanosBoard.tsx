@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { Search, Plus, ClipboardList, Clock, AlertTriangle, MapPin } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
+import PlanoDetail from './PlanoDetail';
 
 const FINAL_STATUSES = ['concluido', 'encerrado_sem_conclusao'];
 
@@ -147,7 +148,15 @@ export default function PlanosBoard() {
         })}
       </div>
 
-      {/* PlanoDetail (Task 8) — abrir usando selectedPlanId */}
+      {selectedPlanId != null && (
+        <PlanoDetail
+          planId={selectedPlanId}
+          onClose={() => {
+            setSelectedPlanId(null);
+            if (cycleId != null) loadPlans(cycleId);
+          }}
+        />
+      )}
 
       {showNewModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">

@@ -4325,6 +4325,8 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
+      const { rows: [exists] } = await query('SELECT id FROM eval_instances WHERE id = $1', [id]);
+      if (!exists) return res.status(404).json({ error: 'not found' });
       const { rows } = await query(`
         SELECT DISTINCT i.question_code, i.question_text, i.status,
                c.label AS cycle_label

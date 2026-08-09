@@ -4634,6 +4634,107 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
+  // -----------------------------------------------------------------------
+  // Plano de Ação 5W2H — rotas do prestador (spec 5.4.4.6). Anti-IDOR: o
+  // prestador é sempre escopado por req.user.provider_id, nunca pelo body.
+  // -----------------------------------------------------------------------
+
+  // Carrega item + plano garantindo que pertence ao prestador logado
+  const loadItemForProvider = async (itemId: number, providerId: number) => {
+    const { rows: [row] } = await query(`
+      SELECT i.*, p.provider_id, p.closed_without_completion
+        FROM eval_action_items i JOIN eval_action_plans p ON p.id = i.plan_id
+       WHERE i.id = $1
+    `, [itemId]);
+    if (!row || Number(row.provider_id) !== Number(providerId)) return null;
+    return row;
+  };
+
+  // Meus planos (spec 5.4.4.5 — visão do prestador)
+  app.get('/api/me/action-plans', authenticate, async (req: any, res) => {
+    try {
+      const providerId = req.user.provider_id;
+      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+      const { rows } = await query(`
+        SELECT p.id, p.cycle_id, c.label AS cycle_label, p.created_at, p.closed_without_completion
+          FROM eval_action_plans p LEFT JOIN eval_cycles c ON c.id = p.cycle_id
+         WHERE p.provider_id = $1
+         ORDER BY p.created_at DESC
+      `, [providerId]);
+      res.json(rows);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // "Iniciar ação" (mockup 5.4.4.6)
+  app.post('/api/eval/action-items/:id/iniciar', authenticate, async (req: any, res) => {
+    try {
+      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id);
+      if (!item) return res.status(403).json({ error: 'Unauthorized' });
+      if (item.status !== 'nao_iniciada') return res.status(409).json({ error: 'ação já iniciada' });
+      if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
+      await query(`UPDATE eval_action_items SET status = 'em_andamento' WHERE id = $1`, [item.id]);
+      await query(`
+        INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+        VALUES ($1,$2,$3,'prestador','iniciou')
+      `, [item.id, req.user.id, req.user.name]);
+      res.json({ ok: true });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Responder: multipart (campo file opcional) + comment + conclude ('true'/'false')
+  // Estados válidos: em_andamento | solicitada_revisao | reprovada (re-tentativa) | nao_iniciada (auto-inicia)
+  app.post('/api/eval/action-items/:id/responder', authenticate, upload.single('file'), async (req: any, res) => {
+    try {
+      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id);
+      if (!item) return res.status(403).json({ error: 'Unauthorized' });
+      if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
+      if (['aguardando_revisao','concluida'].includes(item.status)) {
+        return res.status(409).json({ error: 'ação em revisão ou concluída' });
+      }
+      const comment = (req.body?.comment || '').trim() || null;
+      const conclude = req.body?.conclude === 'true';
+      if (!req.file && !comment && !conclude) {
+        return res.status(400).json({ error: 'envie evidência, comentário ou marque conclusão' });
+      }
+
+      let documentId: number | null = null;
+      if (req.file) {
+        const fileUrl = '/uploads/' + req.file.filename;
+        const { rows: [doc] } = await query(`
+          INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id)
+          VALUES ($1,'plano_acao_evidencia',$2,'valido',$3,$4,$5) RETURNING id
+        `, [req.user.provider_id, new Date().toISOString(), fileUrl, req.user.id, item.plan_id]);
+        documentId = Number(doc.id);
+        await query(`
+          INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment, document_id)
+          VALUES ($1,$2,$3,'prestador','anexou_evidencia',$4,$5)
+        `, [item.id, req.user.id, req.user.name, comment, documentId]);
+      } else if (comment) {
+        await query(`
+          INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment)
+          VALUES ($1,$2,$3,'prestador','comentou',$4)
+        `, [item.id, req.user.id, req.user.name, comment]);
+      }
+
+      const newStatus = conclude ? 'aguardando_revisao' : 'em_andamento';
+      await query(`
+        UPDATE eval_action_items
+           SET status = $1::text,
+               completed_at = CASE WHEN $1::text = 'aguardando_revisao' THEN now() ELSE completed_at END
+         WHERE id = $2
+      `, [newStatus, item.id]);
+      if (conclude) {
+        await query(`
+          INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+          VALUES ($1,$2,$3,'prestador','marcou_concluida')
+        `, [item.id, req.user.id, req.user.name]);
+      }
+      await auditLog({ query, userId: req.user.id, action: 'action_item_responded',
+        meta: { item_id: Number(item.id), conclude, has_file: !!req.file }, ip: hashClientIp(req) });
+      res.json({ status: newStatus });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });

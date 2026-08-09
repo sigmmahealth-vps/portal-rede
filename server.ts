@@ -4297,8 +4297,8 @@ async function startServer() {
 
       const { rows: [totals] } = await query(`
         SELECT
-          COALESCE(SUM(ea.score_obtained) FILTER (WHERE ea.answer_value <> 'NA'), 0)::numeric AS score,
-          COALESCE(SUM(eq.max_score)      FILTER (WHERE ea.answer_value <> 'NA'), 0)::numeric AS max_possible,
+          COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
+          COALESCE(SUM(eq.max_score)      FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS max_possible,
           COALESCE(BOOL_OR(ea.evidence_status = 'reprovado' AND eq.is_eliminatory), false) AS elim_fail
         FROM eval_answers ea
         JOIN eval_questions eq ON eq.id = ea.question_id
@@ -4392,7 +4392,7 @@ async function startServer() {
           JOIN eval_questions eq ON eq.id = ea.question_id
           JOIN eval_instances ei ON ei.id = ea.instance_id
          WHERE ei.cycle_id = $1
-           AND (ea.answer_value IS NULL OR ea.answer_value <> 'NA')
+           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
            AND eq.dimension IS NOT NULL
          GROUP BY ea.instance_id,
                   CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END
@@ -4464,7 +4464,7 @@ async function startServer() {
           JOIN eval_questions eq ON eq.id = ea.question_id
           JOIN eval_instances ei ON ei.id = ea.instance_id
          WHERE ei.cycle_id = $1
-           AND (ea.answer_value IS NULL OR ea.answer_value <> 'NA')
+           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
            AND eq.dimension IS NOT NULL
          GROUP BY ea.instance_id,
                   CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END

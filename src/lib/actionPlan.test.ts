@@ -119,3 +119,12 @@ test('buildAutoItems: Segurança < 60% torna itens de Segurança obrigatórios',
   const items = buildAutoItems(answers, { segurancaPct: 45 });
   assert.equal(items[0].is_mandatory, true);
 });
+
+test('buildAutoItems: coage answer_id string (bigint do pg) para number', () => {
+  const items = buildAutoItems([
+    { id: '7' as any, question_code: 'S-01', question_text: 'X',
+      legislation: null, dimension: 'Segurança',
+      is_non_compliant: true, evidence_status: null, guidance: null },
+  ], { segurancaPct: 100 });
+  assert.equal(items[0].answer_id, 7);
+});

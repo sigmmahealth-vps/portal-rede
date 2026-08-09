@@ -81,7 +81,7 @@ export function buildAutoItems(
     const isDL = a.dimension === 'Documento Legal';
     const isSeg = a.dimension === 'Segurança';
     return {
-      answer_id: a.id,
+      answer_id: Number(a.id), // pg retorna bigint como string; Number() evita Set.has() falso-negativo
       question_code: a.question_code,
       question_text: a.question_text,
       dimension: a.dimension,

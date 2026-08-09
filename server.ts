@@ -4672,7 +4672,13 @@ async function startServer() {
       if (!item) return res.status(403).json({ error: 'Unauthorized' });
       if (item.status !== 'nao_iniciada') return res.status(409).json({ error: 'ação já iniciada' });
       if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
-      await query(`UPDATE eval_action_items SET status = 'em_andamento' WHERE id = $1`, [item.id]);
+      // Guarda de status na própria UPDATE — evita corrida com uma validação
+      // do auditor concorrente (mesmo idioma do /validar: WHERE ... AND status = ...).
+      const { rows: updated } = await query(
+        `UPDATE eval_action_items SET status = 'em_andamento' WHERE id = $1 AND status = 'nao_iniciada' RETURNING id`,
+        [item.id]
+      );
+      if (!updated.length) return res.status(409).json({ error: 'ação já iniciada' });
       await query(`
         INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
         VALUES ($1,$2,$3,'prestador','iniciou')
@@ -4697,42 +4703,56 @@ async function startServer() {
         return res.status(400).json({ error: 'envie evidência, comentário ou marque conclusão' });
       }
 
-      let documentId: number | null = null;
-      if (req.file) {
-        const fileUrl = '/uploads/' + req.file.filename;
-        const { rows: [doc] } = await query(`
-          INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id)
-          VALUES ($1,'plano_acao_evidencia',$2,'valido',$3,$4,$5) RETURNING id
-        `, [req.user.provider_id, new Date().toISOString(), fileUrl, req.user.id, item.plan_id]);
-        documentId = Number(doc.id);
-        await query(`
-          INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment, document_id)
-          VALUES ($1,$2,$3,'prestador','anexou_evidencia',$4,$5)
-        `, [item.id, req.user.id, req.user.name, comment, documentId]);
-      } else if (comment) {
-        await query(`
-          INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment)
-          VALUES ($1,$2,$3,'prestador','comentou',$4)
-        `, [item.id, req.user.id, req.user.name, comment]);
-      }
-
       const newStatus = conclude ? 'aguardando_revisao' : 'em_andamento';
-      await query(`
-        UPDATE eval_action_items
-           SET status = $1::text,
-               completed_at = CASE WHEN $1::text = 'aguardando_revisao' THEN now() ELSE completed_at END
-         WHERE id = $2
-      `, [newStatus, item.id]);
-      if (conclude) {
-        await query(`
-          INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
-          VALUES ($1,$2,$3,'prestador','marcou_concluida')
-        `, [item.id, req.user.id, req.user.name]);
-      }
+      await withTransaction(async (client) => {
+        // Guarda a UPDATE primeiro e dentro da transação: se um /validar do
+        // auditor correu enquanto este request estava em voo, a linha já não
+        // bate mais no predicado e a resposta inteira (doc + eventos) rola back
+        // em vez de sobrescrever/anexar depois da decisão do auditor.
+        const { rows: updated } = await client.query(`
+          UPDATE eval_action_items
+             SET status = $1::text,
+                 completed_at = CASE WHEN $1::text = 'aguardando_revisao' THEN now() ELSE completed_at END
+           WHERE id = $2 AND status NOT IN ('aguardando_revisao','concluida')
+           RETURNING id
+        `, [newStatus, item.id]);
+        if (!updated.length) throw new Error('action_item_conflict');
+
+        let documentId: number | null = null;
+        if (req.file) {
+          const fileUrl = '/uploads/' + req.file.filename;
+          const { rows: [doc] } = await client.query(`
+            INSERT INTO documents (provider_id, type, issue_date, status, file_url, uploaded_by, reference_id)
+            VALUES ($1,'plano_acao_evidencia',$2,'valido',$3,$4,$5) RETURNING id
+          `, [req.user.provider_id, new Date().toISOString(), fileUrl, req.user.id, item.plan_id]);
+          documentId = Number(doc.id);
+          await client.query(`
+            INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment, document_id)
+            VALUES ($1,$2,$3,'prestador','anexou_evidencia',$4,$5)
+          `, [item.id, req.user.id, req.user.name, comment, documentId]);
+        } else if (comment) {
+          await client.query(`
+            INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment)
+            VALUES ($1,$2,$3,'prestador','comentou',$4)
+          `, [item.id, req.user.id, req.user.name, comment]);
+        }
+        if (conclude) {
+          await client.query(`
+            INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+            VALUES ($1,$2,$3,'prestador','marcou_concluida')
+          `, [item.id, req.user.id, req.user.name]);
+        }
+      });
+
       await auditLog({ query, userId: req.user.id, action: 'action_item_responded',
         meta: { item_id: Number(item.id), conclude, has_file: !!req.file }, ip: hashClientIp(req) });
       res.json({ status: newStatus });
-    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (err?.message === 'action_item_conflict') {
+        return res.status(409).json({ error: 'ação em revisão ou concluída' });
+      }
+      console.error(err); res.status(500).json({ error: err.message });
+    }
   });
 
   app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {

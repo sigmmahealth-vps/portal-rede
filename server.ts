@@ -4451,6 +4451,183 @@ async function startServer() {
     }
   });
 
+  // -----------------------------------------------------------------------
+  // Plano de Ação 5W2H — board, detalhe, CRUD e validação (spec 5.4.4)
+  // -----------------------------------------------------------------------
+
+  // Lista planos do ciclo com agregados p/ o Kanban (spec 5.4.4.5)
+  app.get('/api/eval/action-plans', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = req.query.cycle_id ? Number(req.query.cycle_id) : null;
+      const { rows } = await query(`
+        SELECT p.id, p.cycle_id, p.instance_id, p.provider_id, p.location_id,
+               p.origin, p.closed_without_completion, p.created_at,
+               COALESCE(pr.trade_name, pr.name) AS provider_name,
+               pr.sgu_code AS provider_code, pl.cidade AS city,
+               COALESCE(json_agg(json_build_object('status', i.status, 'due_date', i.due_date))
+                        FILTER (WHERE i.id IS NOT NULL), '[]') AS items,
+               EXISTS (SELECT 1 FROM eval_action_events e
+                        JOIN eval_action_items ii ON ii.id = e.item_id
+                       WHERE ii.plan_id = p.id AND e.actor_role = 'prestador') AS has_provider_interaction
+          FROM eval_action_plans p
+          JOIN providers pr ON pr.id = p.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = p.location_id
+          LEFT JOIN eval_action_items i ON i.plan_id = p.id
+         WHERE ($1::bigint IS NULL OR p.cycle_id = $1)
+         GROUP BY p.id, pr.trade_name, pr.name, pr.sgu_code, pl.cidade
+         ORDER BY p.created_at DESC
+      `, [cycleId]);
+
+      const { computePlanStatus, planColor } = await import('./src/lib/actionPlan.js');
+      const now = new Date();
+      res.json(rows.map((r: any) => {
+        const status = computePlanStatus({
+          items: r.items, hasProviderInteraction: r.has_provider_interaction,
+          closedWithoutCompletion: r.closed_without_completion, now,
+        });
+        return { ...r, status, color: planColor(status) };
+      }));
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Plano avulso (spec 5.4.4.1 - Manual). Body: { provider_id, location_id?, cycle_id? }
+  app.post('/api/eval/action-plans', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const { provider_id, location_id, cycle_id } = req.body || {};
+      if (!provider_id) return res.status(400).json({ error: 'provider_id obrigatório' });
+      const { rows: [plan] } = await query(`
+        INSERT INTO eval_action_plans (cycle_id, provider_id, location_id, origin, created_by)
+        VALUES ($1,$2,$3,'manual',$4) RETURNING *
+      `, [cycle_id ?? null, provider_id, location_id ?? null, req.user.id]);
+      await auditLog({ query, userId: req.user.id, action: 'action_plan_generated',
+        meta: { provider_id: Number(provider_id), plan_id: Number(plan.id), origin: 'manual' },
+        ip: hashClientIp(req) });
+      res.status(201).json(plan);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Detalhe do plano: itens + histórico + janelas (spec 5.4.4). Prestador só vê o próprio plano.
+  app.get('/api/eval/action-plans/:id', authenticate, async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { rows: [plan] } = await query(`
+        SELECT p.*, COALESCE(pr.trade_name, pr.name) AS provider_name, pr.sgu_code AS provider_code
+          FROM eval_action_plans p JOIN providers pr ON pr.id = p.provider_id
+         WHERE p.id = $1
+      `, [id]);
+      if (!plan) return res.status(404).json({ error: 'not found' });
+      if (!isStaff(req.user.role) && Number(plan.provider_id) !== Number(req.user.provider_id)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const { rows: items } = await query(`
+        SELECT * FROM eval_action_items WHERE plan_id = $1 ORDER BY is_mandatory DESC, id
+      `, [id]);
+      const { rows: events } = await query(`
+        SELECT e.*, d.file_url AS document_url, d.type AS document_title
+          FROM eval_action_events e
+          LEFT JOIN documents d ON d.id = e.document_id
+         WHERE e.item_id = ANY($1::bigint[])
+         ORDER BY e.created_at
+      `, [items.map((i: any) => i.id)]);
+
+      const { computeWindows, computePlanStatus, planColor } = await import('./src/lib/actionPlan.js');
+      const status = computePlanStatus({
+        items, hasProviderInteraction: events.some((e: any) => e.actor_role === 'prestador'),
+        closedWithoutCompletion: plan.closed_without_completion, now: new Date(),
+      });
+      res.json({
+        ...plan, status, color: planColor(status),
+        windows: computeWindows(new Date(plan.created_at)),
+        items: items.map((i: any) => ({ ...i, events: events.filter((e: any) => Number(e.item_id) === Number(i.id)) })),
+      });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Adicionar item 5W2H. Body: what (obrig.), why, who_name, who_role, start_date, due_date, how, how_much
+  app.post('/api/eval/action-plans/:id/items', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const planId = Number(req.params.id);
+      const b = req.body || {};
+      if (!b.what?.trim()) return res.status(400).json({ error: 'Campo "O quê?" é obrigatório' });
+      const { rows: [item] } = await query(`
+        INSERT INTO eval_action_items
+          (plan_id, what, why, who_name, who_role, start_date, due_date, how, how_much)
+        VALUES ($1,$2,$3,$4,$5,
+                COALESCE($6::date, CURRENT_DATE),
+                COALESCE($7::date, COALESCE($6::date, CURRENT_DATE) + interval '90 days'),
+                $8,$9)
+        RETURNING *
+      `, [planId, b.what.trim(), b.why ?? null, b.who_name ?? null, b.who_role ?? null,
+          b.start_date ?? null, b.due_date ?? null, b.how ?? null, b.how_much ?? null]);
+      await query(`
+        INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+        VALUES ($1,$2,$3,'auditor','criou')
+      `, [item.id, req.user.id, req.user.name]);
+      res.status(201).json(item);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Editar campos 5W2H (staff; prestador NUNCA edita descrições - spec 5.4.4.6)
+  app.patch('/api/eval/action-items/:id', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const allowed = ['what','why','who_name','who_role','start_date','due_date','how','how_much'] as const;
+      const sets: string[] = []; const vals: any[] = [];
+      for (const k of allowed) if (k in (req.body || {})) { vals.push(req.body[k]); sets.push(`${k} = $${vals.length}`); }
+      if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
+      vals.push(id);
+      const { rows: [item] } = await query(
+        `UPDATE eval_action_items SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+      if (!item) return res.status(404).json({ error: 'not found' });
+      await query(`
+        INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+        VALUES ($1,$2,$3,'auditor','editou')
+      `, [id, req.user.id, req.user.name]);
+      res.json(item);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Validação do auditor (Concluir | Solicitar revisão | Reprovar — spec 5.4.4.3)
+  // Body: { decisao: 'concluir'|'solicitar_revisao'|'reprovar', observacao? }
+  // observacao obrigatória para solicitar_revisao e reprovar
+  app.post('/api/eval/action-items/:id/validar', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { decisao, observacao } = req.body || {};
+      const map: Record<string, { status: string; action: string }> = {
+        concluir:          { status: 'concluida',          action: 'concluiu' },
+        solicitar_revisao: { status: 'solicitada_revisao', action: 'solicitou_revisao' },
+        reprovar:          { status: 'reprovada',          action: 'reprovou' },
+      };
+      const m = map[decisao];
+      if (!m) return res.status(400).json({ error: 'decisao inválida' });
+      if (decisao !== 'concluir' && !observacao?.trim()) {
+        return res.status(400).json({ error: 'observação obrigatória' });
+      }
+      const { rows: [item] } = await query(`
+        UPDATE eval_action_items
+           SET status = $1::text,
+               validated_by = CASE WHEN $1::text = 'concluida' THEN $2::bigint ELSE validated_by END,
+               validated_at = CASE WHEN $1::text = 'concluida' THEN now() ELSE validated_at END
+         WHERE id = $3 AND status = 'aguardando_revisao'
+         RETURNING *
+      `, [m.status, req.user.id, id]);
+      if (!item) return res.status(409).json({ error: 'item não está aguardando revisão' });
+      await query(`
+        INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment)
+        VALUES ($1,$2,$3,'auditor',$4,$5)
+      `, [id, req.user.id, req.user.name, m.action, observacao ?? null]);
+      await auditLog({ query, userId: req.user.id, action: 'action_item_validated',
+        meta: { item_id: id, decisao }, ip: hashClientIp(req) });
+      res.json(item);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   app.get('/api/eval/dashboard/auditor', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });

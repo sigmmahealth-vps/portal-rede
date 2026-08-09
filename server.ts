@@ -4279,6 +4279,9 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
+      const { rows: [exists] } = await query('SELECT id FROM eval_instances WHERE id = $1', [id]);
+      if (!exists) return res.status(404).json({ error: 'instance not found' });
+
       const { rows } = await query(`
         SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
                eq.legislation, eq.dimension, eq.guidance,
@@ -4346,26 +4349,10 @@ async function startServer() {
       const { computeSeal } = await import('./src/lib/computeSeal.js');
       const seal = computeSeal(percentual, hasEliminatoryFailed);
 
-      await query(`
-        UPDATE eval_instances
-           SET status = 'aprovado',
-               score = $1, max_possible_score = $2, percentual = $3, seal = $4,
-               completed_at = now()
-         WHERE id = $5
-      `, [score, maxPossible, percentual, seal, id]);
-
-      await auditLog({
-        query, userId: req.user.id, action: 'evaluation_finalized',
-        meta: {
-          provider_id: Number(inst.provider_id),
-          instance_id: id,
-          location_id: inst.location_id ?? null,
-          seal, percentual, has_eliminatory_failed: hasEliminatoryFailed,
-        },
-        ip: hashClientIp(req),
-      });
-
-      // ---- Geração do Plano de Ação 5W2H (spec 5.4.4.1) ----
+      // ---- Plano de Ação 5W2H (spec 5.4.4.1): leituras puras ANTES do UPDATE —
+      // status ainda é 'em_analise' aqui, seguro ler. O resultado (chosen/origin)
+      // é gravado na MESMA transação do UPDATE abaixo, pra não perder o plano
+      // obrigatório se o parecer for aprovado mas a geração falhar.
       const { rows: candRows } = await query(`
         SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
                eq.legislation, eq.dimension, eq.guidance,
@@ -4376,7 +4363,10 @@ async function startServer() {
            AND (ea.is_non_compliant OR ea.evidence_status = 'reprovado')
       `, [id]);
 
-      let planId: number | null = null;
+      const { buildAutoItems, ITEM_DEFAULT_TERM_DAYS } = await import('./src/lib/actionPlan.js');
+      let chosen: ReturnType<typeof buildAutoItems> = [];
+      let origin: 'automatica' | 'semiautomatica' = 'automatica';
+      let segurancaPct = 100;
       if (candRows.length) {
         const { rows: [segT] } = await query(`
           SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
@@ -4385,53 +4375,73 @@ async function startServer() {
             JOIN eval_questions eq ON eq.id = ea.question_id
            WHERE ea.instance_id = $1 AND eq.dimension IN ('Segurança','Documento Legal')
         `, [id]);
-        const segurancaPct = Number(segT.max) > 0
+        segurancaPct = Number(segT.max) > 0
           ? Math.round(Number(segT.score) / Number(segT.max) * 10000) / 100 : 100;
 
-        const { buildAutoItems, ITEM_DEFAULT_TERM_DAYS } = await import('./src/lib/actionPlan.js');
         const auto = buildAutoItems(candRows as any, { segurancaPct });
-
         const selected = Array.isArray(req.body?.plan_answer_ids)
           ? new Set(req.body.plan_answer_ids.map(Number)) : null;
         // obrigatórios entram SEMPRE (spec: "sem possibilidade de omissão")
-        const chosen = auto.filter(i => i.is_mandatory || !selected || selected.has(i.answer_id));
+        chosen = auto.filter(i => i.is_mandatory || !selected || selected.has(i.answer_id));
+        origin = selected ? 'semiautomatica' : 'automatica';
+      }
 
-        if (chosen.length) {
-          const origin = selected ? 'semiautomatica' : 'automatica';
-          await withTransaction(async (client) => {
-            const { rows: [plan] } = await client.query(`
-              INSERT INTO eval_action_plans (cycle_id, instance_id, provider_id, location_id, origin, created_by)
-              SELECT cycle_id, id, provider_id, location_id, $2, $3 FROM eval_instances WHERE id = $1
-              ON CONFLICT (instance_id) WHERE instance_id IS NOT NULL DO NOTHING
-              RETURNING id
-            `, [id, origin, req.user.id]);
-            if (!plan) return; // parecer re-executado: plano já existe, não duplica
-            planId = Number(plan.id);
-            for (const it of chosen) {
-              const { rows: [item] } = await client.query(`
-                INSERT INTO eval_action_items
-                  (plan_id, answer_id, question_code, question_text, dimension, is_mandatory,
-                   what, why, how, start_date, due_date)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CURRENT_DATE,
-                        CURRENT_DATE + ($10 || ' days')::interval)
-                RETURNING id
-              `, [planId, it.answer_id, it.question_code, it.question_text, it.dimension,
-                  it.is_mandatory, it.what, it.why, it.how, ITEM_DEFAULT_TERM_DAYS]);
-              await client.query(`
-                INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
-                VALUES ($1, $2, $3, 'auditor', 'criou')
-              `, [item.id, req.user.id, req.user.name]);
-            }
-          });
-          if (planId) {
-            await auditLog({
-              query, userId: req.user.id, action: 'action_plan_generated',
-              meta: { provider_id: Number(inst.provider_id), instance_id: id, plan_id: planId,
-                      origin, items: chosen.length, seguranca_pct: segurancaPct },
-              ip: hashClientIp(req),
-            });
-          }
+      // ---- UPDATE do parecer + geração do plano numa única transação ----
+      let planId: number | null = null;
+      await withTransaction(async (client) => {
+        await client.query(`
+          UPDATE eval_instances
+             SET status = 'aprovado',
+                 score = $1, max_possible_score = $2, percentual = $3, seal = $4,
+                 completed_at = now()
+           WHERE id = $5
+        `, [score, maxPossible, percentual, seal, id]);
+
+        if (!chosen.length) return;
+
+        const { rows: [plan] } = await client.query(`
+          INSERT INTO eval_action_plans (cycle_id, instance_id, provider_id, location_id, origin, created_by)
+          SELECT cycle_id, id, provider_id, location_id, $2, $3 FROM eval_instances WHERE id = $1
+          ON CONFLICT (instance_id) WHERE instance_id IS NOT NULL DO NOTHING
+          RETURNING id
+        `, [id, origin, req.user.id]);
+        if (!plan) return; // parecer re-executado: plano já existe, não duplica (commit normal)
+        planId = Number(plan.id);
+        for (const it of chosen) {
+          const { rows: [item] } = await client.query(`
+            INSERT INTO eval_action_items
+              (plan_id, answer_id, question_code, question_text, dimension, is_mandatory,
+               what, why, how, start_date, due_date)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, CURRENT_DATE,
+                    CURRENT_DATE + ($10 || ' days')::interval)
+            RETURNING id
+          `, [planId, it.answer_id, it.question_code, it.question_text, it.dimension,
+              it.is_mandatory, it.what, it.why, it.how, ITEM_DEFAULT_TERM_DAYS]);
+          await client.query(`
+            INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
+            VALUES ($1, $2, $3, 'auditor', 'criou')
+          `, [item.id, req.user.id, req.user.name]);
         }
+      });
+
+      // auditLog fica FORA da transação (roda após commit; falhas de log não revertem o parecer).
+      await auditLog({
+        query, userId: req.user.id, action: 'evaluation_finalized',
+        meta: {
+          provider_id: Number(inst.provider_id),
+          instance_id: id,
+          location_id: inst.location_id ?? null,
+          seal, percentual, has_eliminatory_failed: hasEliminatoryFailed,
+        },
+        ip: hashClientIp(req),
+      });
+      if (planId) {
+        await auditLog({
+          query, userId: req.user.id, action: 'action_plan_generated',
+          meta: { provider_id: Number(inst.provider_id), instance_id: id, plan_id: planId,
+                  origin, items: chosen.length, seguranca_pct: segurancaPct },
+          ip: hashClientIp(req),
+        });
       }
 
       res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed, plan_id: planId });

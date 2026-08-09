@@ -5,12 +5,13 @@ import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
 } from 'lucide-react';
 import RoteiroPlayer from './RoteiroPlayer';
+import MeuPlanoAcao from './MeuPlanoAcao';
 import { statusLabel } from '../../lib/statusLabels';
 
 const TABS = [
   { key: 'inicio', label: 'Início', icon: LayoutGrid, soon: false },
   { key: 'roteiros', label: 'Meus Roteiros', icon: ClipboardList, soon: false },
-  { key: 'planos', label: 'Planos de Ação', icon: Target, soon: true },
+  { key: 'planos', label: 'Planos de Ação', icon: Target, soon: false },
   { key: 'certificados', label: 'Certificados', icon: Award, soon: true },
   { key: 'pesquisa', label: 'Pesquisa de Satisfação', icon: Smile, soon: true },
 ] as const;
@@ -337,7 +338,7 @@ export default function PrestadorView({ user }: { user: any }) {
       ) : activeTab === 'roteiros' ? (
         roteirosTab
       ) : activeTab === 'planos' ? (
-        <EmBreve icon={Target} title="Planos de Ação" desc="Aqui você acompanhará os planos de ação (5W2H) gerados a partir das não conformidades da sua qualificação." />
+        <MeuPlanoAcao />
       ) : activeTab === 'certificados' ? (
         <EmBreve icon={Award} title="Certificados" desc="Seus certificados de qualificação e selos (Bronze, Prata, Ouro) ficarão disponíveis aqui após a conclusão da análise." />
       ) : (

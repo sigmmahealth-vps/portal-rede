@@ -74,6 +74,8 @@ export default function PlanosBoard() {
       setShowNewModal(false);
       setNewProviderId('');
       await loadPlans(cycleId);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao criar plano');
     } finally {
       setSaving(false);
     }

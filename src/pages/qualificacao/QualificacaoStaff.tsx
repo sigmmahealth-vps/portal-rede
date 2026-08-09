@@ -2,13 +2,15 @@ import React, { useEffect, useState } from 'react';
 import GestorDashboard from './GestorDashboard';
 import PainelDoCiclo from './PainelDoCiclo';
 import CiclosAdmin from './CiclosAdmin';
+import PlanosBoard from './PlanosBoard';
 
-type TabSlug = 'estrategico' | 'painel-ciclo' | 'ciclos';
+type TabSlug = 'estrategico' | 'painel-ciclo' | 'ciclos' | 'planos';
 
 const TABS: { slug: TabSlug; label: string; Comp: React.ComponentType<{ user: any }> }[] = [
   { slug: 'estrategico',  label: 'Estratégico',     Comp: GestorDashboard },
   { slug: 'painel-ciclo', label: 'Painel do Ciclo', Comp: PainelDoCiclo },
   { slug: 'ciclos',       label: 'Ciclos',          Comp: CiclosAdmin },
+  { slug: 'planos',       label: 'Plano de Ação',   Comp: PlanosBoard },
 ];
 
 function defaultTabFor(role: string): TabSlug {

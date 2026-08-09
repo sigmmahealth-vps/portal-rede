@@ -183,6 +183,9 @@ export default function AuditorPlayer({
   const [reasonPrompt, setReasonPrompt] = useState<{ answerId: number; action: 'aprovou' | 'reprovou' | 'solicitou_reanalise' } | null>(null);
   const [reasonText, setReasonText] = useState('');
   const [revising, setRevising] = useState<Set<number>>(new Set());
+  const [planCandidates, setPlanCandidates] = useState<{ seguranca_pct: number; items: any[] } | null>(null);
+  const [planChecked, setPlanChecked] = useState<Set<number>>(new Set());
+  const [planSaving, setPlanSaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -341,17 +344,44 @@ export default function AuditorPlayer({
     }
   };
 
+  const emitirParecerFinal = async (planAnswerIds?: number[]) => {
+    const res = await fetchApi(`/eval/instances/${instanceId}/parecer`, {
+      method: 'POST',
+      ...(planAnswerIds ? { body: JSON.stringify({ plan_answer_ids: planAnswerIds }) } : {}),
+    });
+    let msg = `Parecer emitido: selo ${res.seal} (${Number(res.percentual).toFixed(2)}%)`;
+    if (res.plan_id != null && planAnswerIds) msg += ` — Plano de ação gerado com ${planAnswerIds.length} ações`;
+    alert(msg);
+    onClose();
+  };
+
   const emitirParecer = async () => {
-    if (!confirm('Emitir parecer final? Isto fecha a avaliação e calcula o selo.')) return;
     setBusy(true);
     try {
-      const res = await fetchApi(`/eval/instances/${instanceId}/parecer`, { method: 'POST' });
-      alert(`Parecer emitido: selo ${res.seal} (${Number(res.percentual).toFixed(2)}%)`);
-      onClose();
+      const cand = await fetchApi(`/eval/instances/${instanceId}/plano-candidatos`);
+      if (!cand.items || cand.items.length === 0) {
+        if (!confirm('Emitir parecer final? Isto fecha a avaliação e calcula o selo.')) return;
+        await emitirParecerFinal();
+        return;
+      }
+      setPlanChecked(new Set(cand.items.map((it: any) => it.answer_id)));
+      setPlanCandidates(cand);
     } catch (e: any) {
       alert(e?.message || 'Erro ao emitir parecer');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const confirmParecerComPlano = async () => {
+    setPlanSaving(true);
+    try {
+      await emitirParecerFinal(Array.from(planChecked));
+      setPlanCandidates(null);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao emitir parecer');
+    } finally {
+      setPlanSaving(false);
     }
   };
 
@@ -840,6 +870,102 @@ export default function AuditorPlayer({
               </div>
             </aside>
           </div>
+        </div>
+      </div>
+
+      {planCandidates && (
+        <PlanoAcaoModal
+          candidates={planCandidates}
+          checked={planChecked}
+          setChecked={setPlanChecked}
+          saving={planSaving}
+          onCancel={() => setPlanCandidates(null)}
+          onConfirm={confirmParecerComPlano}
+        />
+      )}
+    </div>
+  );
+}
+
+// --- Modal: plano de ação semiautomático no parecer final --------------------
+
+function PlanoAcaoModal(props: any) {
+  const { candidates, checked, setChecked, saving, onCancel, onConfirm } = props;
+  const toggle = (answerId: number) => setChecked((prev: Set<number>) => {
+    const n = new Set(prev);
+    if (n.has(answerId)) n.delete(answerId); else n.add(answerId);
+    return n;
+  });
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
+        <h2 className="mb-1 text-lg font-bold text-secondary-900">Plano de Ação será gerado</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          Selecione os critérios não conformes que devem virar ações no plano. Critérios obrigatórios não podem ser removidos.
+        </p>
+
+        {candidates.seguranca_pct < 60 && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+            Quesito Segurança abaixo de 60% — plano obrigatório
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {candidates.items.map((it: any) => (
+            <label
+              key={it.answer_id}
+              className="flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3"
+            >
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={checked.has(it.answer_id)}
+                disabled={it.is_mandatory}
+                onChange={() => toggle(it.answer_id)}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {it.question_code && (
+                    <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-gray-700">
+                      {it.question_code}
+                    </span>
+                  )}
+                  {it.dimension && (
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${dimClass(it.dimension)}`}>
+                      {it.dimension}
+                    </span>
+                  )}
+                  {it.is_mandatory && (
+                    <span className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-red-700">
+                      Obrigatório
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-secondary-900">{questionOnly(it.question_text)}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-40"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {saving ? 'Emitindo...' : 'Emitir parecer'}
+          </button>
         </div>
       </div>
     </div>

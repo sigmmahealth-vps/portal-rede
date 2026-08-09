@@ -68,6 +68,19 @@ test('computePlanStatus: todas concluídas = concluido; encerrado domina tudo', 
   assert.equal(computePlanStatus({ ...base, closedWithoutCompletion: true }), 'encerrado_sem_conclusao');
 });
 
+test('computePlanStatus: atrasado vence aguardando_revisao quando coexistem', () => {
+  const s = computePlanStatus({
+    items: [
+      { status: 'em_andamento', due_date: '2026-10-01' },      // vencido
+      { status: 'aguardando_revisao', due_date: '2027-06-01' },
+    ],
+    hasProviderInteraction: true,
+    closedWithoutCompletion: false,
+    now: D('2026-11-01'),
+  });
+  assert.equal(s, 'atrasado');
+});
+
 test('planColor: mapeamento 5.4.4.5', () => {
   assert.equal(planColor('em_andamento'), 'verde');
   assert.equal(planColor('aberto'), 'azul');

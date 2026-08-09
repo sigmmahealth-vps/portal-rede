@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { fetchApi } from '../../lib/api';
 import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
+import { ITEM_STATUS_LABEL } from './planoStatus';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, XCircle, RotateCcw,
   Loader2, Paperclip, ShieldCheck, FileText, MessageSquare,
@@ -176,6 +177,7 @@ export default function AuditorPlayer({
   const [answersByQ, setAnswersByQ] = useState<Record<number, Answer>>({});
   const [filesByQ, setFilesByQ] = useState<Record<number, { id: number; url: string }[]>>({});
   const [itersByAnswer, setItersByAnswer] = useState<Record<number, Iteration[]>>({});
+  const [recorrencias, setRecorrencias] = useState<Map<string, { status: string; cycle_label: string | null }>>(new Map());
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [loading, setLoading] = useState(true);
@@ -251,6 +253,21 @@ export default function AuditorPlayer({
       alert('Erro ao carregar avaliação');
     } finally {
       setLoading(false);
+    }
+
+    // Alerta de recorrência — não bloqueia o player se falhar.
+    try {
+      const rec = await fetchApi(`/eval/instances/${instanceId}/recorrencias`);
+      const m = new Map<string, { status: string; cycle_label: string | null }>();
+      for (const r of rec ?? []) {
+        const prev = m.get(r.question_code);
+        if (!prev || (!prev.cycle_label && r.cycle_label)) {
+          m.set(r.question_code, { status: r.status, cycle_label: r.cycle_label ?? null });
+        }
+      }
+      setRecorrencias(m);
+    } catch (err) {
+      console.error('Erro ao carregar recorrências', err);
     }
   };
 
@@ -578,6 +595,21 @@ export default function AuditorPlayer({
                                         {q.code}
                                       </span>
                                     )}
+                                    {q.code && recorrencias.has(q.code) && (() => {
+                                      const rec = recorrencias.get(q.code)!;
+                                      const label = rec.cycle_label
+                                        ? `Recorrente — não conforme no ${rec.cycle_label}`
+                                        : 'Recorrente — plano avulso anterior';
+                                      const statusLabel = ITEM_STATUS_LABEL[rec.status] || rec.status;
+                                      return (
+                                        <span
+                                          title={`Situação anterior: ${statusLabel}`}
+                                          className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800"
+                                        >
+                                          {label}
+                                        </span>
+                                      );
+                                    })()}
                                     {q.dimension && (
                                       <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${dimClass(q.dimension)}`}>
                                         {q.dimension}

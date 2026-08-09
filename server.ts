@@ -4552,6 +4552,8 @@ async function startServer() {
       const planId = Number(req.params.id);
       const b = req.body || {};
       if (!b.what?.trim()) return res.status(400).json({ error: 'Campo "O quê?" é obrigatório' });
+      const { rows: [plan] } = await query('SELECT id FROM eval_action_plans WHERE id = $1', [planId]);
+      if (!plan) return res.status(404).json({ error: 'plano não encontrado' });
       const { rows: [item] } = await query(`
         INSERT INTO eval_action_items
           (plan_id, what, why, who_name, who_role, start_date, due_date, how, how_much)
@@ -4581,8 +4583,12 @@ async function startServer() {
       if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
       vals.push(id);
       const { rows: [item] } = await query(
-        `UPDATE eval_action_items SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
-      if (!item) return res.status(404).json({ error: 'not found' });
+        `UPDATE eval_action_items SET ${sets.join(', ')} WHERE id = $${vals.length} AND status <> 'concluida' RETURNING *`, vals);
+      if (!item) {
+        const { rows: [existing] } = await query('SELECT status FROM eval_action_items WHERE id = $1', [id]);
+        if (!existing) return res.status(404).json({ error: 'not found' });
+        return res.status(409).json({ error: 'item concluído não pode ser editado' });
+      }
       await query(`
         INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action)
         VALUES ($1,$2,$3,'auditor','editou')

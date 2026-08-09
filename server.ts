@@ -4165,6 +4165,16 @@ async function startServer() {
         [cycleId]
       );
       await c.query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+
+      // Planos com itens abertos viram 'encerrado sem conclusão' (spec 5.4.4.4/5.4.4.7)
+      await c.query(`
+        UPDATE eval_action_plans p
+           SET closed_without_completion = true
+         WHERE p.cycle_id = $1
+           AND NOT p.closed_without_completion
+           AND EXISTS (SELECT 1 FROM eval_action_items i
+                        WHERE i.plan_id = p.id AND i.status <> 'concluida')
+      `, [cycleId]);
     });
     return { ok: true, inconclusive };
   }
@@ -4308,6 +4318,25 @@ async function startServer() {
       console.error(err);
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Critérios recorrentes: question_codes com item de plano de ciclos anteriores do mesmo prestador
+  app.get('/api/eval/instances/:id/recorrencias', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows } = await query(`
+        SELECT DISTINCT i.question_code, i.question_text, i.status,
+               c.label AS cycle_label
+          FROM eval_instances cur
+          JOIN eval_action_plans p ON p.provider_id = cur.provider_id
+               AND (p.cycle_id IS DISTINCT FROM cur.cycle_id)
+          JOIN eval_action_items i ON i.plan_id = p.id AND i.question_code IS NOT NULL
+          LEFT JOIN eval_cycles c ON c.id = p.cycle_id
+         WHERE cur.id = $1
+      `, [id]);
+      res.json(rows);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
   app.post('/api/eval/instances/:id/parecer', authenticate, async (req: any, res) => {

@@ -32,6 +32,7 @@ import PoliticaPrivacidade from './pages/PoliticaPrivacidade';
 import MeusDados from './pages/MeusDados';
 import ProviderDetail from './pages/admin/ProviderDetail';
 import CertificadoPrint from './pages/qualificacao/CertificadoPrint';
+import VerificarCertificado from './pages/VerificarCertificado';
 
 export default function App() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/definir-senha" element={<DefinirSenha />} />
         <Route path="/politica-privacidade" element={<PoliticaPrivacidade />} />
         <Route path="/qualificacao/certificado/:id/imprimir" element={<CertificadoPrint />} />
+        <Route path="/verificar/:codigo" element={<VerificarCertificado />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />

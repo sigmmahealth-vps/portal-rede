@@ -69,9 +69,25 @@ export default function CertificadoPrint() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 print:bg-white">
-      <style>{`@page { size: A4 landscape; margin: 0; } @media print { html, body { background: white; } }`}</style>
-      <div className="mx-auto my-6 flex aspect-[297/210] w-[1122px] max-w-full flex-col border-[10px] border-emerald-700 bg-white p-10 shadow-lg print:my-0 print:w-full print:shadow-none">
+    <div className="cert-wrap min-h-screen bg-gray-100 print:bg-white">
+      <style>{`
+        @page { size: A4 landscape; margin: 0; }
+        @media print {
+          html, body { background: white !important; }
+          .cert-wrap { min-height: 0 !important; }
+          /* Pin exato em A4 paisagem: garante uma única folha e corta sobra. */
+          .cert-page {
+            width: 297mm !important;
+            height: 210mm !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            overflow: hidden;
+            break-inside: avoid;
+            page-break-after: avoid;
+          }
+        }
+      `}</style>
+      <div className="cert-page mx-auto my-6 flex aspect-[297/210] w-[1122px] max-w-full flex-col border-[10px] border-emerald-700 bg-white p-10 shadow-lg print:my-0 print:w-full print:shadow-none">
         {/* Cabeçalho */}
         <div className="flex items-start justify-between">
           <div>

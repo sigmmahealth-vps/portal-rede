@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Plus, ClipboardList, Clock, AlertTriangle, MapPin, Filter, X, CalendarClock, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, MapPin, Filter, X } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
@@ -17,10 +17,6 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
 // Cards de status: mesmo esquema de cores dos status de plano (planoStatus.ts).
 const CARD_TONE: Record<string, 'blue' | 'orange' | 'amber' | 'red' | 'emerald'> = {
   aberto: 'blue', aguardando_revisao: 'orange', a_vencer: 'amber', atrasado: 'red', final: 'emerald',
-};
-const CARD_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
-  aberto: ClipboardList, aguardando_revisao: Clock, a_vencer: CalendarClock,
-  atrasado: AlertTriangle, final: CheckCircle2,
 };
 
 export default function PlanosBoard() {
@@ -250,9 +246,8 @@ export default function PlanosBoard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {COLUMNS.map(col => {
-          const Icon = CARD_ICON[col.key];
           const n = filtered.filter((p: any) => col.statuses.includes(p.status)).length;
-          return <Kpi key={col.key} icon={<Icon className="w-5 h-5" />} label={col.label} value={n} tone={CARD_TONE[col.key]} />;
+          return <Kpi key={col.key} label={col.label} value={n} tone={CARD_TONE[col.key]} />;
         })}
       </div>
 
@@ -339,21 +334,18 @@ function PlanoCard({ plan, onOpen }: any) {
   );
 }
 
-function Kpi({ icon, label, value, tone }: { key?: React.Key; icon: React.ReactNode; label: string; value: React.ReactNode; tone: 'blue'|'orange'|'amber'|'red'|'emerald'|'gray' }) {
-  const bg = {
-    blue: 'bg-blue-50 text-blue-600', orange: 'bg-orange-50 text-orange-600',
-    amber: 'bg-amber-50 text-amber-600', red: 'bg-red-50 text-red-600',
-    emerald: 'bg-emerald-50 text-emerald-600', gray: 'bg-gray-50 text-gray-500',
+function Kpi({ label, value, tone }: { key?: React.Key; label: string; value: React.ReactNode; tone: 'blue'|'orange'|'amber'|'red'|'emerald'|'gray' }) {
+  const dot = {
+    blue: 'bg-blue-500', orange: 'bg-orange-500', amber: 'bg-amber-500',
+    red: 'bg-red-500', emerald: 'bg-emerald-500', gray: 'bg-gray-400',
   }[tone];
   return (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${bg}`}>{icon}</div>
-        <div>
-          <p className="text-xs text-gray-500 font-medium leading-4 min-h-[2rem]">{label}</p>
-          <p className="text-xl font-bold text-gray-900">{value}</p>
-        </div>
+    <div className="flex items-center justify-between gap-3 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} aria-hidden="true" />
+        <p className="text-sm font-bold text-gray-900 truncate">{label}</p>
       </div>
+      <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 tabular-nums">{value}</span>
     </div>
   );
 }

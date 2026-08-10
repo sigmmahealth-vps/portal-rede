@@ -37,6 +37,9 @@ export default function CertificadoPrint() {
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
+    setError('');
+    setCert(null);
+    setQr('');
     fetchApi('/me/certificates')
       .then((data: Certificate[]) => {
         const found = data.find(c => c.id === Number(id));

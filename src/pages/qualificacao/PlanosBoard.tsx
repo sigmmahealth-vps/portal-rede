@@ -350,7 +350,7 @@ function Kpi({ icon, label, value, tone }: { key?: React.Key; icon: React.ReactN
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${bg}`}>{icon}</div>
         <div>
-          <p className="text-xs text-gray-500 font-medium">{label}</p>
+          <p className="text-xs text-gray-500 font-medium leading-4 min-h-[2rem]">{label}</p>
           <p className="text-xl font-bold text-gray-900">{value}</p>
         </div>
       </div>

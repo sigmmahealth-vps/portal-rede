@@ -11,7 +11,7 @@ interface VerifyResult {
   seal?: string;
   percentual?: number;
   provider_name?: string;
-  location_label?: string | null;
+  location_address?: string | null;
   cycle_label?: string | null;
   issued_at?: string;
   valid_until?: string;
@@ -81,7 +81,7 @@ export default function VerificarCertificado() {
               <dl className="mt-6 space-y-2 border-t pt-4 text-sm">
                 {([
                   ['Prestador', result.provider_name],
-                  ['Unidade', result.location_label],
+                  ['Endereço', result.location_address],
                   ['Selo', result.seal],
                   ['Pontuação', result.percentual != null ? `${result.percentual.toFixed(1)}%` : null],
                   ['Ciclo', result.cycle_label],

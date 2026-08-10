@@ -4844,24 +4844,41 @@ async function startServer() {
         SELECT ec.issued_at, ec.valid_until, ei.seal, ei.percentual,
                c.label AS cycle_label,
                p.name AS provider_name,
-               pl.label AS location_label
+               COALESCE(pl.logradouro, fpl.logradouro) AS logradouro,
+               COALESCE(pl.numero, fpl.numero) AS numero,
+               COALESCE(pl.bairro, fpl.bairro) AS bairro,
+               COALESCE(pl.cidade, fpl.cidade) AS cidade
           FROM eval_certificates ec
           JOIN eval_instances ei ON ei.id = ec.instance_id
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          -- Fallback: unidade comercial principal do prestador quando a avaliação não tem unidade.
+          LEFT JOIN LATERAL (
+            SELECT logradouro, numero, bairro, cidade
+              FROM provider_locations fp
+             WHERE fp.provider_id = p.id
+               AND COALESCE(fp.label,'') NOT ILIKE 'residencial%'
+               AND COALESCE(fp.sgu_location_code,'') !~ '-RES$'
+             ORDER BY fp.is_primary DESC NULLS LAST, fp.id ASC
+             LIMIT 1
+          ) fpl ON ei.location_id IS NULL
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ec.verify_code = $1
       `, [code]);
       if (!cert) return res.json({ valido: false });
 
       const expirado = new Date(cert.valid_until) < new Date();
+      const endereco = [
+        [cert.logradouro, cert.numero].filter(Boolean).join(', '),
+        cert.bairro, cert.cidade,
+      ].filter(Boolean).join(', ') || null;
       res.json({
         valido: true,
         expirado,
         seal: cert.seal,
         percentual: Number(cert.percentual) || 0,
         provider_name: cert.provider_name,
-        location_label: cert.location_label,
+        location_address: endereco,
         cycle_label: cert.cycle_label,
         issued_at: cert.issued_at,
         valid_until: cert.valid_until,

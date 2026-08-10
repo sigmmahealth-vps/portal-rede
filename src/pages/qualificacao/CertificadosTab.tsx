@@ -138,10 +138,9 @@ export default function CertificadosTab() {
                 <div className="space-y-4 p-5">
                   <p className="text-sm text-gray-600">
                     Certificamos que <span className="font-bold text-secondary-900">{c.provider_name}</span>
-                    {c.location_label ? ', unidade:' : ''}
                   </p>
-                  {c.location_label && (
-                    <p className="text-lg font-extrabold text-emerald-700">{c.location_label}</p>
+                  {c.location_address && (
+                    <p className="text-sm font-semibold text-secondary-900">{c.location_address}</p>
                   )}
 
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

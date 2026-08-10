@@ -107,9 +107,9 @@ export default function CertificadoPrint() {
         {/* Nome e endereço */}
         <div className="mt-6 border-b-2 border-emerald-700 pb-2 text-center">
           <p className="text-3xl font-extrabold uppercase text-secondary-900">{cert.provider_name}</p>
-          {(cert.location_label || cert.location_address) && (
+          {cert.location_address && (
             <p className="mt-1 text-sm font-semibold text-gray-600">
-              {[cert.location_label, cert.location_address].filter(Boolean).join(' — ')}
+              {cert.location_address}
             </p>
           )}
         </div>

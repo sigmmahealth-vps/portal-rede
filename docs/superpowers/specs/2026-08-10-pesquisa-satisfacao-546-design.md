@@ -38,7 +38,7 @@ disparada ao fim do envio do roteiro de qualificação, com:
 | Q6 | *"De 0 a 10, o quanto você recomendaria o Portal da Rede Credenciada da Unimed Criciúma a outro prestador?"* (0 = não recomendaria · 10 = recomendaria com certeza) | escala 0–10 | **NPS** |
 | — | Comentários e sugestões (opcional) | texto | elogios/críticas/demandas de treinamento |
 
-Q3 — opções: `sim_totalmente`, `sim_parcialmente`, `nao_precisei_ajuda`, `nao_insuficientes`.
+Q3 — opções (da mais positiva à mais negativa, com uma neutra no meio): `sim_totalmente`, `sim_parcialmente`, `neutro` ("Indiferente — não ajudaram nem atrapalharam"), `nao_precisei_ajuda`, `nao_insuficientes`.
 
 ## Modelo de dados
 

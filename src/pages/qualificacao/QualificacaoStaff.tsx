@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { TrendingUp, LayoutGrid, CalendarRange, Target } from 'lucide-react';
 import GestorDashboard from './GestorDashboard';
 import PainelDoCiclo from './PainelDoCiclo';
 import CiclosAdmin from './CiclosAdmin';
@@ -6,11 +7,11 @@ import PlanosBoard from './PlanosBoard';
 
 type TabSlug = 'estrategico' | 'painel-ciclo' | 'ciclos' | 'planos';
 
-const TABS: { slug: TabSlug; label: string; Comp: React.ComponentType<{ user: any }> }[] = [
-  { slug: 'estrategico',  label: 'Estratégico',     Comp: GestorDashboard },
-  { slug: 'painel-ciclo', label: 'Painel do Ciclo', Comp: PainelDoCiclo },
-  { slug: 'ciclos',       label: 'Ciclos',          Comp: CiclosAdmin },
-  { slug: 'planos',       label: 'Plano de Ação',   Comp: PlanosBoard },
+const TABS: { slug: TabSlug; label: string; icon: React.ComponentType<{ className?: string }>; Comp: React.ComponentType<{ user: any }> }[] = [
+  { slug: 'estrategico',  label: 'Estratégico',     icon: TrendingUp,    Comp: GestorDashboard },
+  { slug: 'painel-ciclo', label: 'Painel do Ciclo', icon: LayoutGrid,    Comp: PainelDoCiclo },
+  { slug: 'ciclos',       label: 'Ciclos',          icon: CalendarRange, Comp: CiclosAdmin },
+  { slug: 'planos',       label: 'Plano de Ação',   icon: Target,        Comp: PlanosBoard },
 ];
 
 function defaultTabFor(role: string): TabSlug {
@@ -35,22 +36,21 @@ export default function QualificacaoStaff({ user }: { user: any }) {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex gap-6">
-          {TABS.map(t => (
+      <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
+        {TABS.map(t => {
+          const active = tab === t.slug;
+          return (
             <button
               key={t.slug}
               onClick={() => setTab(t.slug)}
-              className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-                tab === t.slug
-                  ? 'border-emerald-600 text-emerald-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                active ? 'bg-emerald-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
               }`}
             >
-              {t.label}
+              <t.icon className="h-4 w-4" /> {t.label}
             </button>
-          ))}
-        </nav>
+          );
+        })}
       </div>
       <Comp user={user} />
     </div>

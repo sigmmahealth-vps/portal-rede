@@ -182,7 +182,6 @@ export default function CertificadosTab() {
                       {qrs[c.id] && <img src={qrs[c.id]} alt="QR code de verificação" className="h-14 w-14 rounded border border-gray-200" />}
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Autenticidade Verificada</p>
-                        <p className="text-xs font-bold text-emerald-600">✓ Assinado Digitalmente</p>
                       </div>
                     </div>
                     <button

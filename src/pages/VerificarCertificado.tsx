@@ -38,6 +38,7 @@ export default function VerificarCertificado() {
   return (
     <div className="grid min-h-screen place-items-center bg-gray-50 p-4">
       <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+        <img src="/logo.svg" alt="Unimed Criciúma" className="mx-auto mb-4 h-12" />
         <h1 className="text-center text-lg font-bold text-secondary-900">
           Verificação de Certificado
         </h1>

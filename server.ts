@@ -4746,12 +4746,26 @@ async function startServer() {
                ei.id AS instance_id, ei.seal, ei.percentual,
                c.id AS cycle_id, c.label AS cycle_label, c.active AS cycle_active,
                p.name AS provider_name,
-               pl.label AS location_label,
-               pl.logradouro, pl.numero, pl.bairro, pl.cidade, pl.uf
+               COALESCE(pl.label, fpl.label) AS location_label,
+               COALESCE(pl.logradouro, fpl.logradouro) AS logradouro,
+               COALESCE(pl.numero, fpl.numero) AS numero,
+               COALESCE(pl.bairro, fpl.bairro) AS bairro,
+               COALESCE(pl.cidade, fpl.cidade) AS cidade,
+               COALESCE(pl.uf, fpl.uf) AS uf
           FROM eval_certificates ec
           JOIN eval_instances ei ON ei.id = ec.instance_id
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          -- Fallback: unidade comercial principal do prestador quando a avaliação não tem unidade.
+          LEFT JOIN LATERAL (
+            SELECT label, logradouro, numero, bairro, cidade, uf
+              FROM provider_locations fp
+             WHERE fp.provider_id = p.id
+               AND COALESCE(fp.label,'') NOT ILIKE 'residencial%'
+               AND COALESCE(fp.sgu_location_code,'') !~ '-RES$'
+             ORDER BY fp.is_primary DESC NULLS LAST, fp.id ASC
+             LIMIT 1
+          ) fpl ON ei.location_id IS NULL
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.provider_id = $1
          ORDER BY ec.issued_at DESC, ec.id DESC

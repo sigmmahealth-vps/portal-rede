@@ -4794,6 +4794,56 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
+  // Verificação pública de autenticidade (spec 5.4.5) — alvo do QR code.
+  // Sem login. Rate-limited por IP (hasheado) e audit-logado; a mesma action
+  // alimenta a contagem do rate-limit.
+  app.get('/api/certificados/verificar/:code', async (req: any, res) => {
+    try {
+      const code = String(req.params.code || '').toLowerCase();
+      const ipHashed = hashClientIp(req) ?? '';
+      const allowed = await checkRateLimit('', ipHashed, 'certificate_verify', 15, 30);
+      if (!allowed) {
+        return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos.' });
+      }
+      await auditLog({
+        query, action: 'certificate_verify',
+        meta: { code_prefix: code.slice(0, 8) },
+        ip: ipHashed,
+      });
+
+      // Formato inválido nem toca o banco. Resposta idêntica à de código
+      // inexistente — não vazar distinção.
+      if (!/^[0-9a-f]{32}$/.test(code)) return res.json({ valido: false });
+
+      const { rows: [cert] } = await query(`
+        SELECT ec.issued_at, ec.valid_until, ei.seal, ei.percentual,
+               c.label AS cycle_label,
+               COALESCE(p.trade_name, p.name) AS provider_name,
+               pl.label AS location_label
+          FROM eval_certificates ec
+          JOIN eval_instances ei ON ei.id = ec.instance_id
+          JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
+         WHERE ec.verify_code = $1
+      `, [code]);
+      if (!cert) return res.json({ valido: false });
+
+      const expirado = new Date(cert.valid_until) < new Date();
+      res.json({
+        valido: true,
+        expirado,
+        seal: cert.seal,
+        percentual: Number(cert.percentual) || 0,
+        provider_name: cert.provider_name,
+        location_label: cert.location_label,
+        cycle_label: cert.cycle_label,
+        issued_at: cert.issued_at,
+        valid_until: cert.valid_until,
+      });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   // "Iniciar ação" (mockup 5.4.4.6)
   app.post('/api/eval/action-items/:id/iniciar', authenticate, async (req: any, res) => {
     try {

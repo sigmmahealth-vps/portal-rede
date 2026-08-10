@@ -56,6 +56,8 @@ export async function checkRateLimit(
                 AND ip_hash = $3`;
       params = [action, interval, ip];
     } else {
+      // Chamada sem email nem IP (ex.: hashClientIp falhou) — não limita, mas avisa.
+      console.warn(`checkRateLimit: sem email/ip para action=${action} - pulando limite`);
       return true;
     }
     const { rows } = await query(sql, params);

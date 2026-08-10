@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Plus, ClipboardList, Clock, AlertTriangle, MapPin } from 'lucide-react';
+import { Search, Plus, ClipboardList, Clock, AlertTriangle, MapPin, Filter, X } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
@@ -25,6 +25,10 @@ export default function PlanosBoard() {
   const [providers, setProviders] = useState<any[]>([]);
   const [newProviderId, setNewProviderId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [providerFilter, setProviderFilter] = useState<{ id: number; label: string } | null>(null);
+  const [providerQuery, setProviderQuery] = useState('');
 
   useEffect(() => { (async () => {
     const cs = await fetchApi('/eval/cycles');
@@ -46,12 +50,43 @@ export default function PlanosBoard() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return plans;
-    return plans.filter((p: any) =>
-      (p.provider_name || '').toLowerCase().includes(q) ||
-      (p.provider_code || '').toLowerCase().includes(q)
-    );
-  }, [plans, search]);
+    return plans.filter((p: any) => {
+      if (q && !((p.provider_name || '').toLowerCase().includes(q) ||
+                 (p.provider_code || '').toLowerCase().includes(q))) return false;
+      if (statusFilter && p.status !== statusFilter) return false;
+      if (providerFilter && Number(p.provider_id) !== providerFilter.id) return false;
+      return true;
+    });
+  }, [plans, search, statusFilter, providerFilter]);
+
+  // Prestadores presentes nos planos do ciclo (dedup por id) — sem fetch extra.
+  const providerOptions = useMemo(() => {
+    const seen = new Map<number, { id: number; name: string; code: string }>();
+    for (const p of plans) {
+      const id = Number(p.provider_id);
+      if (!Number.isNaN(id) && !seen.has(id)) {
+        seen.set(id, { id, name: p.provider_name || '', code: p.provider_code || '' });
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [plans]);
+
+  const providerSuggestions = useMemo(() => {
+    const q = providerQuery.trim().toLowerCase();
+    if (!q) return providerOptions;
+    return providerOptions.filter(p =>
+      p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
+  }, [providerOptions, providerQuery]);
+
+  const activeFilterCount = (statusFilter ? 1 : 0) + (providerFilter ? 1 : 0);
+
+  const clearFilters = () => {
+    setStatusFilter('');
+    setProviderFilter(null);
+    setProviderQuery('');
+    const active = cycles.find((c: any) => c.active) || cycles[0];
+    if (active) setCycleId(active.id);
+  };
 
   const kpis = useMemo(() => ({
     ativos: plans.filter((p: any) => !FINAL_STATUSES.includes(p.status)).length,
@@ -94,17 +129,6 @@ export default function PlanosBoard() {
           <p className="text-sm text-gray-500">Acompanhamento dos planos de ação dos prestadores</p>
         </div>
         <div className="flex gap-3 items-center">
-          {cycles.length > 0 && (
-            <select
-              className="border rounded-lg px-3 py-2 text-sm bg-white"
-              value={cycleId ?? ''}
-              onChange={e => setCycleId(Number(e.target.value))}
-            >
-              {cycles.map(c => (
-                <option key={c.id} value={c.id}>{c.label}{c.active ? ' (ativo)' : ''}</option>
-              ))}
-            </select>
-          )}
           <button
             onClick={openNewModal}
             className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
@@ -120,16 +144,112 @@ export default function PlanosBoard() {
         <Kpi icon={<Clock className="w-5 h-5" />} label="Aguardando validação" value={kpis.aguardandoValidacao} tone="orange" />
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Buscar por prestador ou código..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
-        />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[220px] max-w-md flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar por prestador ou código..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        <button
+          onClick={() => setShowFilters(v => !v)}
+          className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+            showFilters || activeFilterCount > 0
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+              : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <Filter className="w-4 h-4" />
+          Filtros{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
+        </button>
+        {activeFilterCount > 0 && (
+          <button onClick={clearFilters} className="text-sm font-medium text-gray-500 hover:text-gray-700">
+            Limpar
+          </button>
+        )}
       </div>
+
+      {showFilters && (
+        <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Ciclo</span>
+              <select
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                value={cycleId ?? ''}
+                onChange={e => setCycleId(Number(e.target.value))}
+              >
+                {cycles.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.label}{c.active ? ' (ativo)' : ''}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</span>
+              <select
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+              >
+                <option value="">Todos</option>
+                {Object.entries(PLAN_STATUS_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="relative text-sm">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Prestador</span>
+              {providerFilter ? (
+                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <span className="truncate text-sm font-medium text-emerald-800">{providerFilter.label}</span>
+                  <button
+                    onClick={() => { setProviderFilter(null); setProviderQuery(''); }}
+                    className="ml-2 text-emerald-700 hover:text-emerald-900"
+                    aria-label="Limpar prestador"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Nome ou código..."
+                    value={providerQuery}
+                    onChange={e => setProviderQuery(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  />
+                  {providerQuery.trim() !== '' && (
+                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                      {providerSuggestions.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-gray-400">Nenhum prestador encontrado</p>
+                      ) : providerSuggestions.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            setProviderFilter({ id: p.id, label: `${p.name}${p.code ? ` (${p.code})` : ''}` });
+                            setProviderQuery('');
+                          }}
+                          className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                        >
+                          <span className="font-medium text-gray-900">{p.name}</span>
+                          {p.code && <span className="ml-1 text-xs text-gray-500">({p.code})</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {COLUMNS.map(col => {

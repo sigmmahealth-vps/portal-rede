@@ -4347,7 +4347,11 @@ async function startServer() {
       const id = Number(req.params.id);
 
       const { rows: [inst] } = await query(`
-        SELECT id, status, provider_id, location_id FROM eval_instances WHERE id = $1
+        SELECT ei.id, ei.status, ei.provider_id, ei.location_id,
+               c.end_date AS cycle_end_date
+          FROM eval_instances ei
+          LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
+         WHERE ei.id = $1
       `, [id]);
       if (!inst) return res.status(404).json({ error: 'instance not found' });
       if (inst.status !== 'em_analise') {
@@ -4417,8 +4421,15 @@ async function startServer() {
         origin = selected ? 'semiautomatica' : 'automatica';
       }
 
+      // ---- Certificado (spec 5.4.5): emitido na mesma transação do parecer ----
+      const { randomBytes } = await import('node:crypto');
+      const { computeValidUntil } = await import('./src/lib/certValidity.js');
+      const verifyCode = randomBytes(16).toString('hex');
+      const validUntil = computeValidUntil(inst.cycle_end_date ?? null, new Date());
+
       // ---- UPDATE do parecer + geração do plano numa única transação ----
       let planId: number | null = null;
+      let certificateId: number | null = null;
       await withTransaction(async (client) => {
         await client.query(`
           UPDATE eval_instances
@@ -4427,6 +4438,14 @@ async function startServer() {
                  completed_at = now()
            WHERE id = $5
         `, [score, maxPossible, percentual, seal, id]);
+
+        const { rows: [cert] } = await client.query(`
+          INSERT INTO eval_certificates (instance_id, verify_code, valid_until)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (instance_id) DO NOTHING
+          RETURNING id
+        `, [id, verifyCode, validUntil]);
+        certificateId = cert ? Number(cert.id) : null;
 
         if (!chosen.length) return;
 
@@ -4474,8 +4493,16 @@ async function startServer() {
           ip: hashClientIp(req),
         });
       }
+      if (certificateId) {
+        await auditLog({
+          query, userId: req.user.id, action: 'certificate_issued',
+          meta: { provider_id: Number(inst.provider_id), instance_id: id,
+                  certificate_id: certificateId, seal, valid_until: validUntil },
+          ip: hashClientIp(req),
+        });
+      }
 
-      res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed, plan_id: planId });
+      res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed, plan_id: planId, certificate_id: certificateId });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

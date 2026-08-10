@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Plus, ClipboardList, Clock, AlertTriangle, MapPin, Filter, X } from 'lucide-react';
+import { Search, Plus, ClipboardList, Clock, AlertTriangle, MapPin, Filter, X, CalendarClock, CheckCircle2 } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
@@ -13,6 +13,15 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: 'atrasado', label: 'Atrasado', statuses: ['atrasado'] },
   { key: 'final', label: 'Finalizados', statuses: FINAL_STATUSES },
 ];
+
+// Cards de status: mesmo esquema de cores dos status de plano (planoStatus.ts).
+const CARD_TONE: Record<string, 'blue' | 'orange' | 'amber' | 'red' | 'emerald'> = {
+  aberto: 'blue', aguardando_revisao: 'orange', a_vencer: 'amber', atrasado: 'red', final: 'emerald',
+};
+const CARD_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  aberto: ClipboardList, aguardando_revisao: Clock, a_vencer: CalendarClock,
+  atrasado: AlertTriangle, final: CheckCircle2,
+};
 
 export default function PlanosBoard() {
   const [cycles, setCycles] = useState<any[]>([]);
@@ -86,12 +95,6 @@ export default function PlanosBoard() {
     setProviderQuery('');
   };
 
-  const kpis = useMemo(() => ({
-    ativos: plans.filter((p: any) => !FINAL_STATUSES.includes(p.status)).length,
-    atrasados: plans.filter((p: any) => p.status === 'atrasado').length,
-    aguardandoValidacao: plans.filter((p: any) => p.status === 'aguardando_revisao').length,
-  }), [plans]);
-
   const openNewModal = async () => {
     setShowNewModal(true);
     if (providers.length === 0) setProviders(await fetchApi('/providers'));
@@ -134,12 +137,6 @@ export default function PlanosBoard() {
             <Plus className="w-5 h-5" /> <span>Novo Plano</span>
           </button>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Kpi icon={<ClipboardList className="w-5 h-5" />} label="Planos ativos" value={kpis.ativos} tone="blue" />
-        <Kpi icon={<AlertTriangle className="w-5 h-5" />} label="Atrasados" value={kpis.atrasados} tone={kpis.atrasados > 0 ? 'red' : 'gray'} />
-        <Kpi icon={<Clock className="w-5 h-5" />} label="Aguardando validação" value={kpis.aguardandoValidacao} tone="orange" />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -251,6 +248,14 @@ export default function PlanosBoard() {
         </div>
       )}
 
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {COLUMNS.map(col => {
+          const Icon = CARD_ICON[col.key];
+          const n = filtered.filter((p: any) => col.statuses.includes(p.status)).length;
+          return <Kpi key={col.key} icon={<Icon className="w-5 h-5" />} label={col.label} value={n} tone={CARD_TONE[col.key]} />;
+        })}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {COLUMNS.map(col => {
           const colPlans = filtered.filter((p: any) => col.statuses.includes(p.status));
@@ -334,8 +339,12 @@ function PlanoCard({ plan, onOpen }: any) {
   );
 }
 
-function Kpi({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: React.ReactNode; tone: 'blue'|'orange'|'red'|'gray' }) {
-  const bg = { blue: 'bg-blue-50 text-blue-600', orange: 'bg-orange-50 text-orange-600', red: 'bg-red-50 text-red-600', gray: 'bg-gray-50 text-gray-500' }[tone];
+function Kpi({ icon, label, value, tone }: { key?: React.Key; icon: React.ReactNode; label: string; value: React.ReactNode; tone: 'blue'|'orange'|'amber'|'red'|'emerald'|'gray' }) {
+  const bg = {
+    blue: 'bg-blue-50 text-blue-600', orange: 'bg-orange-50 text-orange-600',
+    amber: 'bg-amber-50 text-amber-600', red: 'bg-red-50 text-red-600',
+    emerald: 'bg-emerald-50 text-emerald-600', gray: 'bg-gray-50 text-gray-500',
+  }[tone];
   return (
     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
       <div className="flex items-center gap-3">

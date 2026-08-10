@@ -26,7 +26,7 @@ export function isRateLimited(
  * Rate limit por (e-mail OU IP) + action, contando registros recentes em access_logs.
  *
  * Passe apenas uma das chaves (email ou ip) — a outra deve ser string vazia.
- *   - Por IP:     checkRateLimit('', req.ip, 'action', 60, 10)
+ *   - Por IP:     checkRateLimit('', hashClientIp(req) ?? '', 'action', 60, 10)  // IP já hasheado
  *   - Por e-mail: checkRateLimit(email, '', 'action', 60, 5)
  *
  * Retorna true se AINDA estiver dentro do limite (permitido) e false se bloqueado.
@@ -53,7 +53,7 @@ export async function checkRateLimit(
       sql = `SELECT count(*)::int AS n FROM access_logs
               WHERE action = $1
                 AND created_at > now() - $2::interval
-                AND ip = $3`;
+                AND ip_hash = $3`;
       params = [action, interval, ip];
     } else {
       return true;

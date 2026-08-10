@@ -557,7 +557,7 @@ async function startServer() {
 
       const emailLc = email.trim().toLowerCase();
 
-      const ipOk = await checkRateLimit('', req.ip ?? '', 'password_reset_requested', 60, 10);
+      const ipOk = await checkRateLimit('', hashClientIp(req) ?? '', 'password_reset_requested', 60, 10);
       const emailOk = await checkRateLimit(emailLc, '', 'password_reset_requested', 60, 5);
       if (!ipOk || !emailOk) return res.json({ ok: true });
 
@@ -650,7 +650,7 @@ async function startServer() {
         return res.status(400).json({ error: 'Senha obrigatória.' });
       }
 
-      const ipOk = await checkRateLimit('', req.ip ?? '', 'redeem_token', 60, 10);
+      const ipOk = await checkRateLimit('', hashClientIp(req) ?? '', 'redeem_token', 60, 10);
       if (!ipOk) return res.status(429).json({ error: 'Muitas tentativas. Tente novamente em 1 hora.' });
 
       const policy = validatePassword(new_password);

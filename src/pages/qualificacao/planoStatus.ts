@@ -12,6 +12,13 @@ export const PLAN_COLOR_CLASS: Record<string, string> = {
   vermelho: 'bg-red-100 text-red-800',
   cinza: 'bg-gray-100 text-gray-600',
 };
+export const PLAN_BORDER_CLASS: Record<string, string> = {
+  verde: 'border-l-emerald-500',
+  azul: 'border-l-blue-500',
+  laranja: 'border-l-orange-500',
+  vermelho: 'border-l-red-500',
+  cinza: 'border-l-gray-300',
+};
 export const ITEM_STATUS_LABEL: Record<string, string> = {
   nao_iniciada: 'Não iniciada', em_andamento: 'Em andamento',
   aguardando_revisao: 'Aguardando revisão', solicitada_revisao: 'Solicitada revisão',

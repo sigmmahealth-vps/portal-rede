@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { Search, Plus, MapPin, Filter, X } from 'lucide-react';
-import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
+import { PLAN_STATUS_LABEL, PLAN_BORDER_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
 const FINAL_STATUSES = ['concluido', 'encerrado_sem_conclusao'];
@@ -256,9 +256,6 @@ export default function PlanosBoard() {
           const colPlans = filtered.filter((p: any) => col.statuses.includes(p.status));
           return (
             <div key={col.key} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3 flex items-center justify-between">
-                {col.label} <span className="text-gray-400">{colPlans.length}</span>
-              </p>
               <div className="space-y-3">
                 {colPlans.length === 0 ? (
                   <p className="text-xs text-gray-400 text-center py-4">Nenhum plano</p>
@@ -314,23 +311,20 @@ export default function PlanosBoard() {
 
 function PlanoCard({ plan, onOpen }: any) {
   const openItems = (plan.items || []).filter((it: any) => it.status !== 'concluida').length;
+  const borderColor = PLAN_BORDER_CLASS[plan.color] || 'border-l-gray-300';
   return (
-    <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-3 space-y-2">
-      <div>
-        <p className="font-medium text-gray-900 text-sm leading-tight">{plan.provider_name}</p>
-        <p className="text-xs text-gray-500">{plan.provider_code || '—'}</p>
-        {plan.city && (
-          <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" /> {plan.city}</p>
-        )}
-      </div>
-      <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase rounded-full tracking-wide ${PLAN_COLOR_CLASS[plan.color] || 'bg-gray-100 text-gray-600'}`}>
-        {PLAN_STATUS_LABEL[plan.status] || plan.status}
-      </span>
-      <p className="text-xs text-gray-500">{openItems} item{openItems === 1 ? '' : 's'} em aberto</p>
-      <button onClick={onOpen} className="w-full px-2 py-1 text-xs rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
-        Ver plano
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`block w-full text-left bg-white rounded-lg border border-gray-100 border-l-4 ${borderColor} shadow-sm p-3 space-y-1 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40`}
+    >
+      <p className="font-medium text-gray-900 text-sm leading-tight">{plan.provider_name}</p>
+      <p className="text-xs text-gray-500">{plan.provider_code || '—'}</p>
+      {plan.city && (
+        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" /> {plan.city}</p>
+      )}
+      <p className="text-xs text-gray-500 pt-1">{openItems} item{openItems === 1 ? '' : 's'} em aberto</p>
+    </button>
   );
 }
 

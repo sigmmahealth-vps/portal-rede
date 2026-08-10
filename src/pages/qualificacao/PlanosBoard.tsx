@@ -29,6 +29,7 @@ export default function PlanosBoard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [newProviderId, setNewProviderId] = useState('');
+  const [providerSearch, setProviderSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
@@ -61,6 +62,16 @@ export default function PlanosBoard() {
     });
   }, [plans, search, statusFilter]);
 
+  const providerOptions = useMemo(() => {
+    const q = providerSearch.trim().toLowerCase();
+    const list = q
+      ? providers.filter((p: any) =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.code || '').toLowerCase().includes(q))
+      : providers;
+    return list.slice(0, 50); // ponytail: cap render; busca estreita antes de rolar
+  }, [providers, providerSearch]);
+
   const activeFilterCount = statusFilter ? 1 : 0;
 
   const clearFilters = () => {
@@ -68,6 +79,8 @@ export default function PlanosBoard() {
   };
 
   const openNewModal = async () => {
+    setProviderSearch('');
+    setNewProviderId('');
     setShowNewModal(true);
     if (providers.length === 0) setProviders(await fetchApi('/providers'));
   };
@@ -82,6 +95,7 @@ export default function PlanosBoard() {
       });
       setShowNewModal(false);
       setNewProviderId('');
+      setProviderSearch('');
       await loadPlans(cycleId);
     } catch (e: any) {
       alert(e?.message || 'Erro ao criar plano');
@@ -213,18 +227,36 @@ export default function PlanosBoard() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md space-y-4">
             <h2 className="text-lg font-bold text-gray-900">Novo plano avulso</h2>
-            <select
-              className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-              value={newProviderId}
-              onChange={e => setNewProviderId(e.target.value)}
-            >
-              <option value="">Selecione o prestador...</option>
-              {providers.map((p: any) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.cnpj})</option>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                autoFocus
+                placeholder="Buscar por nome ou código..."
+                value={providerSearch}
+                onChange={e => { setProviderSearch(e.target.value); setNewProviderId(''); }}
+                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
+              {providerOptions.length === 0 ? (
+                <p className="p-4 text-center text-sm text-gray-400">Nenhum prestador encontrado.</p>
+              ) : providerOptions.map((p: any) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setNewProviderId(String(p.id))}
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                    String(p.id) === newProviderId ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-gray-50 text-gray-700'
+                  }`}
+                >
+                  <span className="font-medium">{p.name}</span>
+                  {p.code && <span className="ml-2 text-xs text-gray-500">{p.code}</span>}
+                </button>
               ))}
-            </select>
+            </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowNewModal(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+              <button onClick={() => { setShowNewModal(false); setProviderSearch(''); setNewProviderId(''); }} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
               <button
                 onClick={createPlan}
                 disabled={!newProviderId || saving}

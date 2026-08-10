@@ -37,6 +37,7 @@ export const fmtDateOnly = (d: string) => {
 export default function CertificadosTab() {
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [cycleId, setCycleId] = useState<number | 'todos'>('todos');
   const [qrs, setQrs] = useState<Record<number, string>>({});
 
@@ -48,7 +49,10 @@ export default function CertificadosTab() {
         const active = data.find(c => c.cycle_active);
         if (active?.cycle_id != null) setCycleId(active.cycle_id);
       })
-      .catch(console.error)
+      .catch((e: any) => {
+        console.error(e);
+        setError(e?.message || 'Erro ao carregar certificados.');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -72,6 +76,14 @@ export default function CertificadosTab() {
     return (
       <div className="flex justify-center py-20">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-emerald-600" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm font-semibold text-red-700">
+        {error}
       </div>
     );
   }

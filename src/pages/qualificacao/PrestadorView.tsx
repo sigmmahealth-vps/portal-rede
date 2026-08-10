@@ -312,7 +312,7 @@ export default function PrestadorView({ user }: { user: any }) {
       </div>
 
       {/* Barra de abas */}
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
+      <nav aria-label="Abas da qualificação" className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
         {TABS.map(t => {
           const active = activeTab === t.key;
           return (
@@ -327,7 +327,7 @@ export default function PrestadorView({ user }: { user: any }) {
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {/* Conteúdo da aba */}
       {loading ? (

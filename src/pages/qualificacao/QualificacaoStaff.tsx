@@ -36,7 +36,7 @@ export default function QualificacaoStaff({ user }: { user: any }) {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
+      <nav aria-label="Abas da qualificação" className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
         {TABS.map(t => {
           const active = tab === t.slug;
           return (
@@ -51,7 +51,7 @@ export default function QualificacaoStaff({ user }: { user: any }) {
             </button>
           );
         })}
-      </div>
+      </nav>
       <Comp user={user} />
     </div>
   );

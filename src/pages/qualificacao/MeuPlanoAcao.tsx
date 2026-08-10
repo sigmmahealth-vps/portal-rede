@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
-import { Loader2, Paperclip } from 'lucide-react';
+import { Loader2, Paperclip, UploadCloud, Trash2 } from 'lucide-react';
 
 function fmtDate(d?: string | null): string {
   if (!d) return '—';
@@ -157,14 +157,31 @@ function ItemCard({ item, locked, showHistory, onToggleHistory, form, setForm, s
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-600">Enviar atualização ou evidência</p>
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-xs text-gray-600">
-                <Paperclip className="h-3.5 w-3.5" />
-                <input
-                  type="file" disabled={locked || saving}
-                  onChange={e => setForm({ file: e.target.files?.[0] ?? null })}
-                  className="text-xs"
-                />
-              </label>
+              {form.file ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                  <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-emerald-700">
+                    <Paperclip className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{form.file.name}</span>
+                  </span>
+                  <button
+                    type="button" disabled={saving} onClick={() => setForm({ file: null })}
+                    className="shrink-0 rounded-md p-1 text-emerald-700/70 transition-colors hover:bg-emerald-100 hover:text-red-600 disabled:opacity-40"
+                    title="Remover anexo" aria-label="Remover anexo"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50/40 hover:text-emerald-700">
+                  <UploadCloud className="h-5 w-5 shrink-0" />
+                  Anexar arquivo (PDF, JPG ou PNG · até 20 MB)
+                  <input
+                    type="file" className="hidden" disabled={locked || saving}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={e => setForm({ file: e.target.files?.[0] ?? null })}
+                  />
+                </label>
+              )}
               <textarea
                 value={form.comment} onChange={e => setForm({ comment: e.target.value })}
                 disabled={locked || saving} rows={2} placeholder="Comentário (opcional)"

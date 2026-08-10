@@ -105,8 +105,11 @@ export default function PlanosBoard() {
               ))}
             </select>
           )}
-          <button onClick={openNewModal} className="btn btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Novo plano avulso
+          <button
+            onClick={openNewModal}
+            className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors"
+          >
+            <Plus className="w-5 h-5" /> <span>Novo Plano</span>
           </button>
         </div>
       </div>
@@ -173,8 +176,12 @@ export default function PlanosBoard() {
               ))}
             </select>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowNewModal(false)} className="btn btn-outline">Cancelar</button>
-              <button onClick={createPlan} disabled={!newProviderId || saving} className="btn btn-primary disabled:opacity-50">
+              <button onClick={() => setShowNewModal(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+              <button
+                onClick={createPlan}
+                disabled={!newProviderId || saving}
+                className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#007A4A] transition-colors disabled:opacity-50"
+              >
                 {saving ? 'Criando...' : 'Criar plano'}
               </button>
             </div>

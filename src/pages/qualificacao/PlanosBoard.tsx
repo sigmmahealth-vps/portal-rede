@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Plus, MapPin, Filter, X } from 'lucide-react';
+import { Search, Plus, MapPin, Filter } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_BORDER_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
@@ -32,8 +32,6 @@ export default function PlanosBoard() {
   const [saving, setSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
-  const [providerFilter, setProviderFilter] = useState<{ id: number; label: string } | null>(null);
-  const [providerQuery, setProviderQuery] = useState('');
 
   useEffect(() => { (async () => {
     const cs = await fetchApi('/eval/cycles');
@@ -59,36 +57,14 @@ export default function PlanosBoard() {
       if (q && !((p.provider_name || '').toLowerCase().includes(q) ||
                  (p.provider_code || '').toLowerCase().includes(q))) return false;
       if (statusFilter && p.status !== statusFilter) return false;
-      if (providerFilter && Number(p.provider_id) !== providerFilter.id) return false;
       return true;
     });
-  }, [plans, search, statusFilter, providerFilter]);
+  }, [plans, search, statusFilter]);
 
-  // Prestadores presentes nos planos do ciclo (dedup por id) — sem fetch extra.
-  const providerOptions = useMemo(() => {
-    const seen = new Map<number, { id: number; name: string; code: string }>();
-    for (const p of plans) {
-      const id = Number(p.provider_id);
-      if (!Number.isNaN(id) && !seen.has(id)) {
-        seen.set(id, { id, name: p.provider_name || '', code: p.provider_code || '' });
-      }
-    }
-    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [plans]);
-
-  const providerSuggestions = useMemo(() => {
-    const q = providerQuery.trim().toLowerCase();
-    if (!q) return providerOptions;
-    return providerOptions.filter(p =>
-      p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
-  }, [providerOptions, providerQuery]);
-
-  const activeFilterCount = (statusFilter ? 1 : 0) + (providerFilter ? 1 : 0);
+  const activeFilterCount = statusFilter ? 1 : 0;
 
   const clearFilters = () => {
     setStatusFilter('');
-    setProviderFilter(null);
-    setProviderQuery('');
   };
 
   const openNewModal = async () => {
@@ -168,7 +144,7 @@ export default function PlanosBoard() {
 
       {showFilters && (
         <div id="planos-filtros-panel" className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <label className="block text-sm">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Ciclo</span>
               <select
@@ -194,51 +170,6 @@ export default function PlanosBoard() {
                   <option key={value} value={value}>{label}</option>
                 ))}
               </select>
-            </label>
-
-            <label className="relative block text-sm">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Prestador</span>
-              {providerFilter ? (
-                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <span className="truncate text-sm font-medium text-emerald-800">{providerFilter.label}</span>
-                  <button
-                    onClick={() => { setProviderFilter(null); setProviderQuery(''); }}
-                    className="ml-2 text-emerald-700 hover:text-emerald-900"
-                    aria-label="Limpar prestador"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    type="text"
-                    placeholder="Nome ou código..."
-                    value={providerQuery}
-                    onChange={e => setProviderQuery(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                  />
-                  {providerQuery.trim() !== '' && (
-                    <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                      {providerSuggestions.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-400">Nenhum prestador encontrado</p>
-                      ) : providerSuggestions.map(p => (
-                        <button
-                          key={p.id}
-                          onClick={() => {
-                            setProviderFilter({ id: p.id, label: `${p.name}${p.code ? ` (${p.code})` : ''}` });
-                            setProviderQuery('');
-                          }}
-                          className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                        >
-                          <span className="font-medium text-gray-900">{p.name}</span>
-                          {p.code && <span className="ml-1 text-xs text-gray-500">({p.code})</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
             </label>
           </div>
         </div>

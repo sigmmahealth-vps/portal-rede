@@ -1044,7 +1044,7 @@ async function startServer() {
           return res.json(rows);
         }
         const { rows } = await query(
-          'SELECT pc.*, p.name as provider_name FROM provider_contacts pc JOIN providers p ON pc.provider_id = p.id ORDER BY pc.created_at DESC'
+          'SELECT pc.*, COALESCE(p.trade_name, p.name) as provider_name FROM provider_contacts pc JOIN providers p ON pc.provider_id = p.id ORDER BY pc.created_at DESC'
         );
         return res.json(rows);
       }
@@ -1169,8 +1169,8 @@ async function startServer() {
         const { rows: pendingDocsCountRows } = await query('SELECT COUNT(*) as count FROM documents WHERE status = $1', ['pendente']);
         const { rows: pendingCredentialingCountRows } = await query('SELECT COUNT(*) as count FROM credentialing_requests WHERE status = $1', ['pendente']);
 
-        const { rows: recentPendingDocs } = await query('SELECT d.*, p.name as provider_name FROM documents d JOIN providers p ON d.provider_id = p.id WHERE d.status = $1 ORDER BY d.id DESC LIMIT 5', ['pendente']);
-        const { rows: recentOpenTickets } = await query('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 5', ['aberto']);
+        const { rows: recentPendingDocs } = await query('SELECT d.*, COALESCE(p.trade_name, p.name) as provider_name FROM documents d JOIN providers p ON d.provider_id = p.id WHERE d.status = $1 ORDER BY d.id DESC LIMIT 5', ['pendente']);
+        const { rows: recentOpenTickets } = await query('SELECT t.*, COALESCE(p.trade_name, p.name) as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 5', ['aberto']);
 
         // Distribuição de selos: por prestador, considera a avaliação finalizada mais recente.
         const { rows: sealDistribution } = await query(
@@ -1447,7 +1447,7 @@ async function startServer() {
       if (role !== 'admin' && role !== 'auditoria') {
         return res.status(403).json({ error: 'Unauthorized' });
       }
-      const { rows: provRows } = await query('SELECT id, name FROM providers WHERE id = $1', [req.params.id]);
+      const { rows: provRows } = await query('SELECT id, COALESCE(trade_name, name) AS name FROM providers WHERE id = $1', [req.params.id]);
       if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
       const user = await findProviderUser(req.params.id);
       res.json({ exists: !!user, provider_name: provRows[0].name, user });
@@ -1629,7 +1629,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: docs } = await query('SELECT d.*, p.name as provider_name, u.name as uploaded_by_name FROM documents d JOIN providers p ON d.provider_id = p.id LEFT JOIN users u ON d.uploaded_by = u.id ORDER BY d.id DESC');
+        const { rows: docs } = await query('SELECT d.*, COALESCE(p.trade_name, p.name) as provider_name, u.name as uploaded_by_name FROM documents d JOIN providers p ON d.provider_id = p.id LEFT JOIN users u ON d.uploaded_by = u.id ORDER BY d.id DESC');
         res.json(docs);
       } else if (provider_id) {
         const { rows: docs } = await query('SELECT d.*, u.name as uploaded_by_name FROM documents d LEFT JOIN users u ON d.uploaded_by = u.id WHERE d.provider_id = $1 ORDER BY d.id DESC', [provider_id]);
@@ -1804,7 +1804,7 @@ async function startServer() {
       }
 
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: tickets } = await query('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id ORDER BY created_at DESC');
+        const { rows: tickets } = await query('SELECT t.*, COALESCE(p.trade_name, p.name) as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id ORDER BY created_at DESC');
         res.json(tickets);
       } else if (provider_id) {
         const { rows: tickets } = await query('SELECT * FROM tickets WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
@@ -2083,7 +2083,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: financials } = await query('SELECT f.*, p.name as provider_name FROM financials f JOIN providers p ON f.provider_id = p.id ORDER BY competence DESC');
+        const { rows: financials } = await query('SELECT f.*, COALESCE(p.trade_name, p.name) as provider_name FROM financials f JOIN providers p ON f.provider_id = p.id ORDER BY competence DESC');
         res.json(financials);
       } else if (provider_id) {
         const { rows: financials } = await query('SELECT * FROM financials WHERE provider_id = $1 ORDER BY competence DESC', [provider_id]);
@@ -2113,7 +2113,7 @@ async function startServer() {
 
       if (role === 'admin' || role === 'auditoria') {
         const { rows: surveys } = await query(`
-          SELECT s.*, p.name as provider_name, p.cnpj as provider_cnpj
+          SELECT s.*, COALESCE(p.trade_name, p.name) as provider_name, p.cnpj as provider_cnpj
           FROM survey_responses s
           JOIN providers p ON s.provider_id = p.id
           ORDER BY s.created_at DESC
@@ -2238,7 +2238,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: audits } = await query('SELECT a.*, p.name as provider_name FROM audits a JOIN providers p ON a.provider_id = p.id ORDER BY scheduled_date DESC');
+        const { rows: audits } = await query('SELECT a.*, COALESCE(p.trade_name, p.name) as provider_name FROM audits a JOIN providers p ON a.provider_id = p.id ORDER BY scheduled_date DESC');
         res.json(audits);
       } else if (provider_id) {
         const { rows: audits } = await query('SELECT * FROM audits WHERE provider_id = $1 ORDER BY scheduled_date DESC', [provider_id]);
@@ -2266,7 +2266,7 @@ async function startServer() {
       }
 
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: contracts } = await query('SELECT c.*, p.name as provider_name FROM contracts c JOIN providers p ON c.provider_id = p.id ORDER BY created_at DESC');
+        const { rows: contracts } = await query('SELECT c.*, COALESCE(p.trade_name, p.name) as provider_name FROM contracts c JOIN providers p ON c.provider_id = p.id ORDER BY created_at DESC');
         res.json(contracts);
       } else if (provider_id) {
         const { rows: contracts } = await query('SELECT * FROM contracts WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
@@ -2405,7 +2405,7 @@ async function startServer() {
 
       if (role === 'admin' || role === 'auditoria') {
         const result = await query(`
-          SELECT s.*, p.name as provider_name, c.title as cycle_title
+          SELECT s.*, COALESCE(p.trade_name, p.name) as provider_name, c.title as cycle_title
           FROM qualification_submissions s
           JOIN providers p ON s.provider_id = p.id
           JOIN qualification_cycles c ON s.cycle_id = c.id
@@ -2438,7 +2438,7 @@ async function startServer() {
       const { provider_id, role } = req.user;
 
       const { rows: subRows } = await query(`
-        SELECT s.*, p.name as provider_name, c.title as cycle_title
+        SELECT s.*, COALESCE(p.trade_name, p.name) as provider_name, c.title as cycle_title
         FROM qualification_submissions s
         JOIN providers p ON s.provider_id = p.id
         JOIN qualification_cycles c ON s.cycle_id = c.id
@@ -2621,7 +2621,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: plans } = await query('SELECT a.*, p.name as provider_name FROM action_plans a JOIN providers p ON a.provider_id = p.id ORDER BY created_at DESC');
+        const { rows: plans } = await query('SELECT a.*, COALESCE(p.trade_name, p.name) as provider_name FROM action_plans a JOIN providers p ON a.provider_id = p.id ORDER BY created_at DESC');
         res.json(plans);
       } else if (provider_id) {
         const { rows: plans } = await query('SELECT * FROM action_plans WHERE provider_id = $1 ORDER BY created_at DESC', [provider_id]);
@@ -2685,7 +2685,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: tables } = await query('SELECT pt.*, p.name as provider_name FROM price_tables pt LEFT JOIN providers p ON pt.provider_id = p.id ORDER BY effective_date DESC');
+        const { rows: tables } = await query('SELECT pt.*, COALESCE(p.trade_name, p.name) as provider_name FROM price_tables pt LEFT JOIN providers p ON pt.provider_id = p.id ORDER BY effective_date DESC');
         res.json(tables);
       } else if (provider_id) {
         // Get provider specific tables and general tables
@@ -3072,7 +3072,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       const baseQuery = `
-        SELECT ei.*, s.title as script_title, p.name as provider_name,
+        SELECT ei.*, s.title as script_title, COALESCE(p.trade_name, p.name) as provider_name,
           COALESCE(pl.label, pl.cidade) AS location_label,
           pl.cidade AS location_cidade, pl.uf AS location_uf,
           (SELECT count(*)::int FROM eval_questions eq
@@ -3103,7 +3103,7 @@ async function startServer() {
   app.get('/api/eval/instances/:id', authenticate, async (req: any, res) => {
     try {
       const { rows: instanceRows } = await query(`
-        SELECT ei.*, s.title as script_title, p.name as provider_name,
+        SELECT ei.*, s.title as script_title, COALESCE(p.trade_name, p.name) as provider_name,
                COALESCE(pl.label, pl.cidade) AS location_label,
                pl.cidade AS location_cidade, pl.uf AS location_uf
         FROM eval_instances ei

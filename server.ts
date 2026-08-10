@@ -4723,6 +4723,77 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
+  // Meus certificados (spec 5.4.5 — visão do prestador). Um por instância
+  // aprovada; o seletor de ciclo é client-side (payload traz cycle_id/label).
+  app.get('/api/me/certificates', authenticate, async (req: any, res) => {
+    try {
+      const providerId = req.user.provider_id;
+      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+
+      const { rows: certs } = await query(`
+        SELECT ec.id, ec.verify_code, ec.issued_at, ec.valid_until,
+               ei.id AS instance_id, ei.seal, ei.percentual,
+               c.id AS cycle_id, c.label AS cycle_label, c.active AS cycle_active,
+               COALESCE(p.trade_name, p.name) AS provider_name,
+               pl.label AS location_label,
+               pl.logradouro, pl.numero, pl.bairro, pl.cidade, pl.uf
+          FROM eval_certificates ec
+          JOIN eval_instances ei ON ei.id = ec.instance_id
+          JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
+         WHERE ei.provider_id = $1
+         ORDER BY ec.issued_at DESC, ec.id DESC
+      `, [providerId]);
+
+      // Desempenho por dimensão (mesma consolidação DL→Segurança do painel).
+      const ids = certs.map((r: any) => Number(r.instance_id));
+      const dimByInstance = new Map<number, { dimension: string; pct: number }[]>();
+      if (ids.length) {
+        const { rows: dims } = await query(`
+          SELECT ea.instance_id,
+                 CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END AS dimension,
+                 (SUM(ea.score_obtained) / NULLIF(SUM(eq.max_score), 0)) * 100 AS pct
+            FROM eval_answers ea
+            JOIN eval_questions eq ON eq.id = ea.question_id
+           WHERE ea.instance_id = ANY($1)
+             AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+             AND eq.dimension IS NOT NULL
+           GROUP BY ea.instance_id,
+                    CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END
+           ORDER BY 2
+        `, [ids]);
+        for (const d of dims) {
+          const k = Number(d.instance_id);
+          if (!dimByInstance.has(k)) dimByInstance.set(k, []);
+          dimByInstance.get(k)!.push({ dimension: d.dimension, pct: Math.round(Number(d.pct) * 10) / 10 });
+        }
+      }
+
+      res.json(certs.map((r: any) => {
+        const endereco = [
+          [r.logradouro, r.numero].filter(Boolean).join(', '),
+          r.bairro, r.cidade,
+        ].filter(Boolean).join(', ') || null;
+        return {
+          id: Number(r.id),
+          verify_code: r.verify_code,
+          issued_at: r.issued_at,
+          valid_until: r.valid_until,
+          seal: r.seal,
+          percentual: Number(r.percentual) || 0,
+          cycle_id: r.cycle_id != null ? Number(r.cycle_id) : null,
+          cycle_label: r.cycle_label,
+          cycle_active: !!r.cycle_active,
+          provider_name: r.provider_name,
+          location_label: r.location_label,
+          location_address: endereco,
+          dimensions: dimByInstance.get(Number(r.instance_id)) ?? [],
+        };
+      }));
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   // "Iniciar ação" (mockup 5.4.4.6)
   app.post('/api/eval/action-items/:id/iniciar', authenticate, async (req: any, res) => {
     try {

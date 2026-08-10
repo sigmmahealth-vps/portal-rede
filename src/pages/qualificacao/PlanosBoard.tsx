@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { Search, Plus, MapPin, Filter } from 'lucide-react';
-import { PLAN_STATUS_LABEL, PLAN_BORDER_CLASS } from './planoStatus';
+import { PLAN_STATUS_LABEL } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
 const FINAL_STATUSES = ['concluido', 'encerrado_sem_conclusao'];
@@ -17,6 +17,12 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
 // Cards de status: mesmo esquema de cores dos status de plano (planoStatus.ts).
 const CARD_TONE: Record<string, 'blue' | 'orange' | 'amber' | 'red' | 'emerald'> = {
   aberto: 'blue', aguardando_revisao: 'orange', a_vencer: 'amber', atrasado: 'red', final: 'emerald',
+};
+
+// Fundo de cada coluna: cor do status a 80% de transparência (alpha 0.2).
+const COLUMN_BG: Record<string, string> = {
+  aberto: 'bg-blue-500/20', aguardando_revisao: 'bg-orange-500/20', a_vencer: 'bg-amber-500/20',
+  atrasado: 'bg-red-500/20', final: 'bg-emerald-500/20',
 };
 
 export default function PlanosBoard() {
@@ -200,7 +206,7 @@ export default function PlanosBoard() {
         {COLUMNS.map(col => {
           const colPlans = filtered.filter((p: any) => col.statuses.includes(p.status));
           return (
-            <div key={col.key} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+            <div key={col.key} className={`${COLUMN_BG[col.key]} rounded-xl p-3`}>
               <div className="space-y-3">
                 {colPlans.length === 0 ? (
                   <p className="text-xs text-gray-400 text-center py-4">Nenhum plano</p>
@@ -274,12 +280,11 @@ export default function PlanosBoard() {
 
 function PlanoCard({ plan, onOpen }: any) {
   const openItems = (plan.items || []).filter((it: any) => it.status !== 'concluida').length;
-  const borderColor = PLAN_BORDER_CLASS[plan.color] || 'border-l-gray-300';
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`block w-full text-left bg-white rounded-lg border border-gray-100 border-l-4 ${borderColor} shadow-sm p-3 space-y-1 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40`}
+      className="block w-full text-left bg-white rounded-lg border border-gray-100 shadow-sm p-3 space-y-1 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
     >
       <p className="font-medium text-gray-900 text-sm leading-tight">{plan.provider_name}</p>
       <p className="text-xs text-gray-500">{plan.provider_code || '—'}</p>

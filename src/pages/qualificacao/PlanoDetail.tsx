@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS, ITEM_STATUS_LABEL } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
-import { ArrowLeft, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, XCircle, RotateCcw, Paperclip, MessageSquare } from 'lucide-react';
 
 const ORIGIN_LABEL: Record<string, string> = {
   automatica: 'Automática',
@@ -16,6 +16,12 @@ const KANBAN_COLUMNS = [
   { key: 'reprovada', label: 'Reprovado', statuses: ['reprovada'] },
   { key: 'concluida', label: 'Concluído', statuses: ['concluida'] },
 ];
+
+// Fundo de cada coluna: cor do status a 90% de transparência (alpha 0.1); cards ficam brancos.
+const COLUMN_BG: Record<string, string> = {
+  aberto: 'bg-blue-500/10', solicitada_revisao: 'bg-amber-500/10',
+  reprovada: 'bg-red-500/10', concluida: 'bg-emerald-500/10',
+};
 
 const FIELD_KEYS = ['what', 'why', 'who_name', 'who_role', 'start_date', 'due_date', 'how', 'how_much'] as const;
 
@@ -42,7 +48,6 @@ export default function PlanoDetail({ planId, onClose }: { planId: number; onClo
   const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editItem, setEditItem] = useState<any>(null);
-  const [validateItem, setValidateItem] = useState<any>(null);
   const [historyItemId, setHistoryItemId] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -107,7 +112,7 @@ export default function PlanoDetail({ planId, onClose }: { planId: number; onClo
             {KANBAN_COLUMNS.map(col => {
               const colItems = items.filter((it: any) => col.statuses.includes(it.status));
               return (
-                <div key={col.key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <div key={col.key} className={`rounded-xl p-3 ${COLUMN_BG[col.key] || 'bg-gray-50'}`}>
                   <p className="mb-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-600">
                     {col.label} <span className="text-gray-400">{colItems.length}</span>
                   </p>
@@ -120,7 +125,7 @@ export default function PlanoDetail({ planId, onClose }: { planId: number; onClo
                         item={it}
                         showHistory={historyItemId === it.id}
                         onEdit={() => setEditItem(it)}
-                        onValidate={() => setValidateItem(it)}
+                        onChanged={load}
                         onToggleHistory={() => setHistoryItemId(prev => (prev === it.id ? null : it.id))}
                       />
                     ))}
@@ -134,9 +139,6 @@ export default function PlanoDetail({ planId, onClose }: { planId: number; onClo
 
       {editItem && (
         <EditItemModal item={editItem} onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); load(); }} />
-      )}
-      {validateItem && (
-        <ValidateModal item={validateItem} onClose={() => setValidateItem(null)} onDone={() => { setValidateItem(null); load(); }} />
       )}
       {showAdd && (
         <AddItemModal planId={planId} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
@@ -179,8 +181,48 @@ function WindowsTimeline({ windows }: { windows: string[] }) {
 
 // --- Card de ação -------------------------------------------------------------
 
-function ActionCard({ item, showHistory, onEdit, onValidate, onToggleHistory }: any) {
-  const locked = item.status === 'concluida';
+// Estado do item aguardando a leitura do prestador (bola no prestador, auditor não age).
+const PROVIDER_BALL_MSG: Record<string, string> = {
+  nao_iniciada: 'Aguardando o prestador iniciar a ação.',
+  em_andamento: 'Prestador executando a ação.',
+  solicitada_revisao: 'Aguardando o prestador reenviar.',
+};
+
+function ActionCard({ item, showHistory, onEdit, onChanged, onToggleHistory }: any) {
+  const [revising, setRevising] = useState(false);
+  const [prompt, setPrompt] = useState<null | 'concluir' | 'solicitar_revisao' | 'reprovar'>(null);
+  const [obs, setObs] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const terminal = item.status === 'concluida' || item.status === 'reprovada';
+  const awaitingAuditor = item.status === 'aguardando_revisao';
+  const locked = terminal && !revising;
+  const canAct = awaitingAuditor || revising;
+
+  // Resposta do prestador: anexos + último comentário, extraídos do histórico.
+  const providerEvents = (item.events || []).filter((e: any) => e.actor_role === 'prestador');
+  const attachments = providerEvents.filter((e: any) => e.document_url);
+  const lastComment = [...providerEvents].reverse().find((e: any) => e.comment)?.comment;
+
+  const validate = async (decisao: 'concluir' | 'solicitar_revisao' | 'reprovar', observacao?: string) => {
+    setSaving(true);
+    try {
+      await fetchApi(`/eval/action-items/${item.id}/validar`, {
+        method: 'POST',
+        body: JSON.stringify({ decisao, observacao: observacao?.trim() || undefined }),
+      });
+      setPrompt(null); setObs(''); setRevising(false);
+      onChanged();
+    } catch (e: any) { alert(e?.message || 'Erro ao validar ação'); }
+    finally { setSaving(false); }
+  };
+
+  const statusCls =
+    item.status === 'concluida' ? 'bg-emerald-100 text-emerald-800'
+    : item.status === 'reprovada' ? 'bg-red-100 text-red-700'
+    : item.status === 'aguardando_revisao' ? 'bg-amber-100 text-amber-800'
+    : 'bg-gray-100 text-gray-600';
+
   return (
     <div className="space-y-2 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -204,24 +246,114 @@ function ActionCard({ item, showHistory, onEdit, onValidate, onToggleHistory }: 
       )}
       <p className="text-xs text-gray-500">Prazo: {fmtDate(item.due_date)}</p>
 
-      <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600">
+      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusCls}`}>
         {ITEM_STATUS_LABEL[item.status] || item.status}
       </span>
+
+      {/* Resposta do prestador */}
+      {(attachments.length > 0 || lastComment) && (
+        <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Resposta do prestador</p>
+          {attachments.map((e: any) => (
+            <a
+              key={e.id} href={e.document_url} target="_blank" rel="noreferrer"
+              className="mb-1 inline-flex max-w-full items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              <Paperclip className="h-3 w-3 shrink-0" />
+              <span className="truncate">{e.document_title || 'anexo'}</span>
+            </a>
+          ))}
+          {lastComment && (
+            <p className="flex gap-1 text-[11px] italic text-gray-600">
+              <MessageSquare className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" /> "{lastComment}"
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Ações do auditor */}
+      {locked ? (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <span className="text-xs text-gray-500">Decisão registrada.</span>
+          <button
+            type="button" onClick={() => setRevising(true)}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <RotateCcw className="h-3 w-3" /> Rever decisão
+          </button>
+        </div>
+      ) : canAct ? (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button" disabled={saving}
+            onClick={() => revising ? setPrompt('concluir') : validate('concluir')}
+            className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-2 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-40"
+          >
+            <Check className="h-3 w-3" strokeWidth={3} /> Concluir
+          </button>
+          <button
+            type="button" disabled={saving}
+            onClick={() => { setPrompt('solicitar_revisao'); setObs(''); }}
+            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-bold text-amber-800 shadow-sm hover:bg-amber-50 disabled:opacity-40"
+          >
+            <RotateCcw className="h-3 w-3" /> Solicitar revisão
+          </button>
+          <button
+            type="button" disabled={saving}
+            onClick={() => { setPrompt('reprovar'); setObs(''); }}
+            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-bold text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-40"
+          >
+            <XCircle className="h-3 w-3" /> Reprovar
+          </button>
+          {revising && (
+            <button type="button" onClick={() => { setRevising(false); setPrompt(null); }} className="text-[11px] text-gray-500 underline">
+              Cancelar revisão
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="pt-1 text-xs italic text-gray-400">{PROVIDER_BALL_MSG[item.status] || 'Nada a analisar.'}</p>
+      )}
+
+      {/* Justificativa inline */}
+      {prompt && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+          <label className="mb-1 block text-[11px] font-semibold text-secondary-900">
+            {prompt === 'reprovar' ? 'Motivo da reprovação'
+              : prompt === 'solicitar_revisao' ? 'Orientação para revisão'
+              : 'Justificativa da revisão'} <span className="font-normal text-red-600">(obrigatório)</span>
+          </label>
+          <textarea
+            value={obs} onChange={e => setObs(e.target.value)} rows={2}
+            className="w-full rounded-lg border border-gray-300 p-2 text-sm text-secondary-900 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+          />
+          <div className="mt-1.5 flex justify-end gap-2">
+            <button
+              type="button" onClick={() => { setPrompt(null); setObs(''); }}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button" disabled={!obs.trim() || saving}
+              onClick={() => validate(prompt, obs)}
+              className="rounded-lg bg-emerald-500 px-2 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-40"
+            >
+              Confirmar
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 pt-1">
         <button
           type="button"
-          disabled={locked}
+          disabled={item.status === 'concluida'}
           onClick={onEdit}
           className="text-xs font-semibold text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline"
         >
           Editar
         </button>
-        {item.status === 'aguardando_revisao' && (
-          <button type="button" onClick={onValidate} className="text-xs font-semibold text-blue-700 hover:underline">
-            Validar
-          </button>
-        )}
         <button type="button" onClick={onToggleHistory} className="text-xs font-semibold text-gray-500 hover:underline">
           Histórico
         </button>
@@ -389,62 +521,3 @@ function AddItemModal({ planId, onClose, onSaved }: any) {
   );
 }
 
-const DECISOES = [
-  { key: 'concluir', label: 'Concluir' },
-  { key: 'solicitar_revisao', label: 'Solicitar revisão' },
-  { key: 'reprovar', label: 'Reprovar' },
-] as const;
-
-function ValidateModal({ item, onClose, onDone }: any) {
-  const [decisao, setDecisao] = useState<'concluir' | 'solicitar_revisao' | 'reprovar'>('concluir');
-  const [observacao, setObservacao] = useState('');
-  const [saving, setSaving] = useState(false);
-  const needsObservacao = decisao !== 'concluir';
-  const canSubmit = !needsObservacao || observacao.trim().length > 0;
-
-  const submit = async () => {
-    setSaving(true);
-    try {
-      await fetchApi(`/eval/action-items/${item.id}/validar`, {
-        method: 'POST',
-        body: JSON.stringify({ decisao, observacao: observacao.trim() || undefined }),
-      });
-      onDone();
-    } catch (e: any) { alert(e?.message || 'Erro ao validar ação'); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <ModalShell title="Validar ação" onClose={onClose}>
-      <p className="mb-3 text-sm text-secondary-900">{item.what}</p>
-      <div className="space-y-2">
-        {DECISOES.map(d => (
-          <label key={d.key} className="flex items-center gap-2 text-sm text-secondary-900">
-            <input type="radio" name="decisao" checked={decisao === d.key} onChange={() => setDecisao(d.key)} />
-            {d.label}
-          </label>
-        ))}
-      </div>
-      <div className="mt-3">
-        <label className="mb-1 block text-xs font-semibold text-secondary-900">
-          Observação {needsObservacao && <span className="text-red-600">*</span>}
-        </label>
-        <textarea
-          value={observacao} onChange={e => setObservacao(e.target.value)} rows={3}
-          className="w-full rounded-lg border border-gray-300 p-2 text-sm text-secondary-900"
-        />
-      </div>
-      <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          Cancelar
-        </button>
-        <button
-          onClick={submit} disabled={!canSubmit || saving}
-          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-40"
-        >
-          {saving ? 'Enviando...' : 'Confirmar'}
-        </button>
-      </div>
-    </ModalShell>
-  );
-}

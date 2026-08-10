@@ -4657,7 +4657,8 @@ async function startServer() {
 
   // Validação do auditor (Concluir | Solicitar revisão | Reprovar — spec 5.4.4.3)
   // Body: { decisao: 'concluir'|'solicitar_revisao'|'reprovar', observacao? }
-  // observacao obrigatória para solicitar_revisao e reprovar
+  // observacao obrigatória para solicitar_revisao/reprovar e para qualquer revisão
+  // de decisão terminal (Rever decisão — concluida/reprovada).
   app.post('/api/eval/action-items/:id/validar', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
@@ -4670,24 +4671,34 @@ async function startServer() {
       };
       const m = map[decisao];
       if (!m) return res.status(400).json({ error: 'decisao inválida' });
-      if (decisao !== 'concluir' && !observacao?.trim()) {
+
+      // Auditor age quando o item aguarda validação; ou revê uma decisão terminal já registrada.
+      const REVISABLE = ['aguardando_revisao', 'concluida', 'reprovada'];
+      const { rows: [cur] } = await query('SELECT status FROM eval_action_items WHERE id = $1', [id]);
+      if (!cur) return res.status(404).json({ error: 'not found' });
+      if (!REVISABLE.includes(cur.status)) {
+        return res.status(409).json({ error: 'item não está aguardando revisão' });
+      }
+      const isRevision = cur.status !== 'aguardando_revisao';
+      if ((decisao !== 'concluir' || isRevision) && !observacao?.trim()) {
         return res.status(400).json({ error: 'observação obrigatória' });
       }
+      // Guarda contra corrida: só transiciona se o status não mudou desde a leitura.
       const { rows: [item] } = await query(`
         UPDATE eval_action_items
            SET status = $1::text,
                validated_by = CASE WHEN $1::text = 'concluida' THEN $2::bigint ELSE validated_by END,
                validated_at = CASE WHEN $1::text = 'concluida' THEN now() ELSE validated_at END
-         WHERE id = $3 AND status = 'aguardando_revisao'
+         WHERE id = $3 AND status = $4
          RETURNING *
-      `, [m.status, req.user.id, id]);
+      `, [m.status, req.user.id, id, cur.status]);
       if (!item) return res.status(409).json({ error: 'item não está aguardando revisão' });
       await query(`
         INSERT INTO eval_action_events (item_id, actor_id, actor_name, actor_role, action, comment)
         VALUES ($1,$2,$3,'auditor',$4,$5)
       `, [id, req.user.id, req.user.name, m.action, observacao ?? null]);
       await auditLog({ query, userId: req.user.id, action: 'action_item_validated',
-        meta: { item_id: id, decisao }, ip: hashClientIp(req) });
+        meta: { item_id: id, decisao, revision: isRevision }, ip: hashClientIp(req) });
       res.json(item);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });

@@ -19,10 +19,10 @@ const CARD_TONE: Record<string, 'blue' | 'orange' | 'amber' | 'red' | 'emerald'>
   aberto: 'blue', aguardando_revisao: 'orange', a_vencer: 'amber', atrasado: 'red', final: 'emerald',
 };
 
-// Fundo de cada coluna: cor do status a 80% de transparência (alpha 0.2).
+// Fundo de cada coluna: cor do status a 90% de transparência (alpha 0.1).
 const COLUMN_BG: Record<string, string> = {
-  aberto: 'bg-blue-500/20', aguardando_revisao: 'bg-orange-500/20', a_vencer: 'bg-amber-500/20',
-  atrasado: 'bg-red-500/20', final: 'bg-emerald-500/20',
+  aberto: 'bg-blue-500/10', aguardando_revisao: 'bg-orange-500/10', a_vencer: 'bg-amber-500/10',
+  atrasado: 'bg-red-500/10', final: 'bg-emerald-500/10',
 };
 
 export default function PlanosBoard() {

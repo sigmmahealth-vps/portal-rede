@@ -1,7 +1,7 @@
 // src/pages/qualificacao/planoStatus.ts
 export const PLAN_STATUS_LABEL: Record<string, string> = {
   aberto: 'Em aberto', em_andamento: 'Em andamento',
-  aguardando_revisao: 'Aguardando validação', a_vencer: 'A vencer',
+  aguardando_revisao: 'A validar', a_vencer: 'A vencer',
   atrasado: 'Atrasado', concluido: 'Concluído',
   encerrado_sem_conclusao: 'Encerrado sem conclusão',
 };

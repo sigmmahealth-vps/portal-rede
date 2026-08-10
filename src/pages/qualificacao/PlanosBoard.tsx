@@ -8,7 +8,7 @@ const FINAL_STATUSES = ['concluido', 'encerrado_sem_conclusao'];
 
 const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: 'aberto', label: 'Em aberto', statuses: ['aberto', 'em_andamento'] },
-  { key: 'aguardando_revisao', label: 'Aguardando validação', statuses: ['aguardando_revisao'] },
+  { key: 'aguardando_revisao', label: 'A validar', statuses: ['aguardando_revisao'] },
   { key: 'a_vencer', label: 'A vencer', statuses: ['a_vencer'] },
   { key: 'atrasado', label: 'Atrasado', statuses: ['atrasado'] },
   { key: 'final', label: 'Finalizados', statuses: FINAL_STATUSES },

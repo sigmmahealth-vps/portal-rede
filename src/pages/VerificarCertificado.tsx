@@ -28,6 +28,8 @@ export default function VerificarCertificado() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    setError('');
+    setResult(null);
     fetchApi(`/certificados/verificar/${encodeURIComponent(String(codigo ?? ''))}`)
       .then(setResult)
       .catch((e: any) => setError(e.message || 'Erro ao verificar.'));

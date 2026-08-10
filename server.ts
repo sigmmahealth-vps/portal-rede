@@ -3046,7 +3046,7 @@ async function startServer() {
       const { provider_id } = req.user;
       if (!provider_id) return res.json(null);
       const { rows } = await query(
-        'SELECT id, name, trade_name, person_type, provider_group, eval_script_id FROM providers WHERE id = $1',
+        'SELECT id, name, person_type, provider_group, eval_script_id FROM providers WHERE id = $1',
         [provider_id],
       );
       const provider = rows[0];

@@ -75,7 +75,7 @@ export default function Credenciamento() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="p-4 text-sm font-semibold text-gray-600">Data</th>
-                <th className="p-4 text-sm font-semibold text-gray-600">Nome / Razão Social</th>
+                <th className="p-4 text-sm font-semibold text-gray-600">Nome do prestador</th>
                 <th className="p-4 text-sm font-semibold text-gray-600">Especialidade</th>
                 <th className="p-4 text-sm font-semibold text-gray-600">Status</th>
                 <th className="p-4 text-sm font-semibold text-gray-600 text-right">Ações</th>
@@ -135,7 +135,7 @@ export default function Credenciamento() {
             <div className="p-6 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Nome / Razão Social</h4>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Nome do prestador</h4>
                   <p className="text-gray-900 font-medium">{selectedRequest.name}</p>
                 </div>
                 <div>

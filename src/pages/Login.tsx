@@ -319,7 +319,7 @@ export default function Login() {
             ) : (
               <form onSubmit={handleCredenciamentoSubmit} className="p-6 space-y-4 overflow-y-auto">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo / Razão Social</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome do prestador</label>
                   <input type="text" name="name" required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00995D]" />
                 </div>
                 <div>

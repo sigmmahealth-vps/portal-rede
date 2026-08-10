@@ -264,8 +264,7 @@ export default function ProviderDetail() {
               <h2 className="text-lg font-bold text-gray-800">Dados Cadastrais</h2>
 
               <Group title="Identificação" icon={User}>
-                <Field label="Nome / razão social" value={provider.name} />
-                <Field label="Nome fantasia" value={provider.trade_name} />
+                <Field label="Nome do prestador" value={provider.name} />
                 <Field label="Tipo de pessoa" value={pessoaLabel(provider.person_type)} />
                 <Field
                   label={provider.person_type === 'PF' ? 'CPF' : 'CNPJ'}

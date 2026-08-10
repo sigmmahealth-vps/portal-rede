@@ -162,7 +162,7 @@ export default function Perfil() {
                   <div className="flex items-start">
                     <Building className="h-5 w-5 text-gray-400 mt-0.5 mr-3" />
                     <div>
-                      <p className="text-sm font-medium text-gray-500">Razão Social</p>
+                      <p className="text-sm font-medium text-gray-500">Nome do prestador</p>
                       <p className="text-base text-gray-900">{provider.name}</p>
                     </div>
                   </div>

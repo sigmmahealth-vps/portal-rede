@@ -1269,7 +1269,7 @@ export default function Admin() {
             </div>
             <form onSubmit={handleCreateProvider} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome / Razão Social</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do prestador</label>
                 <input 
                   type="text" 
                   required

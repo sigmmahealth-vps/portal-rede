@@ -14,7 +14,7 @@ import { fmtDateOnly } from './CertificadosTab';
 const DIM_DESCRIPTIONS: [string, string][] = [
   ['Segurança', 'Dimensão avaliada com base nos processos gerenciais (manuais, normas e qualificação), segurança do paciente e riscos ambientais, certificações, segurança da informação, protocolos de segurança, manutenções preventivas e higienização.'],
   ['Conforto', 'Dimensão avaliada com base na infraestrutura do local, garantindo satisfação, conforto e acessibilidade ao cliente e seus familiares.'],
-  ['Experiência', 'Dimensão avaliada com base na estruturação dos processos, proporcionando segurança e conforto para o paciente. Dentre eles: termos de consentimento, prazos de agendamento, pesquisa de satisfação e incidentes.'],
+  ['Experiência', 'Dimensão avaliada com base na estruturação dos processos, proporcionando segurança e conforto para o paciente. Dentre eles: termos de consentimento, prazos de agendamento e incidentes.'],
 ];
 const dimDescription = (dimension: string) =>
   DIM_DESCRIPTIONS.find(([prefix]) => dimension.startsWith(prefix))?.[1] ?? '';

@@ -88,19 +88,6 @@ const isoToBR = (iso: unknown): string => {
   return y && m && d ? `${d}/${m}/${y}` : String(iso ?? '');
 };
 
-// Critérios que, por definição, NÃO têm evidência e portanto não devem disparar
-// o aviso "sem evidência" no preview. Hoje só existe um: a participação na
-// pesquisa de satisfação da qualificação da rede (coletada automaticamente
-// alguns dias após a visita — não é um documento que o prestador apresenta).
-const isEvidenceExempt = (text: string): boolean =>
-  /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(text || '');
-
-// Critérios opcionais — não bloqueiam /submit nem contam como pendente. Mesmo
-// alvo do isEvidenceExempt: a pesquisa de satisfação é preenchida pela Unimed
-// após a visita, então o prestador não é obrigado a responder pra enviar.
-const isOptionalQuestion = (text: string): boolean =>
-  /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(text || '');
-
 // =============================================================================
 // Seed inicial / dados de demonstração.
 // O schema vive nas migrations (db/migrations/*.sql). Aqui apenas semeamos
@@ -2781,7 +2768,7 @@ async function startServer() {
         warnings: {
           orphans: parsed.orphans,
           noWeight: parsed.questions.filter((q) => !q.maxScore).length,
-          noEvidence: parsed.questions.filter((q) => !q.guidance && !isEvidenceExempt(q.text)).length,
+          noEvidence: parsed.questions.filter((q) => !q.guidance).length,
           noHeader,
         },
         errors,
@@ -2955,7 +2942,7 @@ async function startServer() {
           ORDER BY eq.order_index ASC
         `, [script.id]);
         const semEvidencia = (questions as any[])
-          .filter((q) => !q.evidence_required && !isEvidenceExempt(q.title))
+          .filter((q) => !q.evidence_required)
           .map((q) => ({ code: q.code, text: q.title }));
         const semPeso = (questions as any[])
           .filter((q) => !Number(q.max_score)) // numeric chega como string; "0"/null/NaN → sem peso
@@ -3254,9 +3241,7 @@ async function startServer() {
       }
 
       // Completude: toda eval_questions do script precisa ter answer com answer_value não vazio.
-      // Opcionais (isOptionalQuestion) ficam de fora — a pesquisa de satisfação é coletada
-      // pela Unimed após a visita, não bloqueia o envio.
-      const { rows: missingRaw } = await query(`
+      const { rows: missing } = await query(`
         SELECT eq.id, eq.text
           FROM eval_questions eq
           JOIN eval_sections sc ON sc.id = eq.section_id
@@ -3267,7 +3252,6 @@ async function startServer() {
                 AND ea.answer_value IS NOT NULL AND ea.answer_value <> ''
            )
       `, [instance.script_id, req.params.id]);
-      const missing = missingRaw.filter((r: any) => !isOptionalQuestion(r.text));
       if (missing.length) {
         return res.status(409).json({ error: 'critérios sem resposta', missing_question_ids: missing.map((r: any) => Number(r.id)) });
       }

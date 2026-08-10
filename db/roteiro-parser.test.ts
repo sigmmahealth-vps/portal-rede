@@ -38,6 +38,24 @@ test('parseWorkbook marca evidência obrigatória só quando há coluna de evid�
   assert.equal(semEvid!.evidenceRequired, false);
 });
 
+test('parseWorkbook exclui a pesquisa de satisfação do roteiro', () => {
+  const aoa = [
+    ['ROTEIRO PARA AVALIAÇÃO DE QUALIFICAÇÃO', 'OPS-REDS Revisão: 03'],
+    ['GRUPO DE TESTE'],
+    ['ITEM', 'EVIDÊNCIA', 'PESO MÁXIMO', 'PESO À CONSIDERAR'],
+    ['SEÇÃO 1. Estrutura'],
+    ['1.1.1 Possui alvará sanitário?', '', '10', '8'],
+    ['1.1.2 Participa da pesquisa de satisfação da qualificação da rede?', '', '5', '5'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Roteiro');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const parsed = parseWorkbook(buf, 'OPS-RED-FOR-017 - Teste.xlsx');
+  assert.equal(parsed.questions.length, 1);
+  assert.ok(!parsed.questions.some((q) => /pesquisa de satisfa/i.test(q.text)));
+});
+
 test('parseWorkbook sinaliza cabeçalho ausente e devolve 0 critérios', () => {
   const ws = XLSX.utils.aoa_to_sheet([['planilha qualquer'], ['sem cabeçalho']]);
   const wb = XLSX.utils.book_new();

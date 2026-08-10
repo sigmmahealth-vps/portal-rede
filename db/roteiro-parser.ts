@@ -32,6 +32,12 @@ const CLASS_LABELS: Record<string, string> = {
 };
 const mapClass = (c: string): string => CLASS_LABELS[c.toUpperCase()] ?? c;
 
+// A "pesquisa de satisfação da qualificação da rede" não faz mais parte do roteiro:
+// é coletada pelo módulo de Pesquisa, não como critério avaliável. Filtrada no
+// import para não voltar em reimports (migration 0026 remove as já existentes).
+export const isPesquisaSatisfacao = (text: string): boolean =>
+  /pesquisa de satisfa[çc][ãa]o da qualifica[çc][ãa]o da rede/i.test(text || '');
+
 /** Extrai referências normativas grosseiras do texto do critério. */
 function extractLegislation(text: string): string | null {
   const m = text.match(/\b(ANS|ANVISA|RDC|RN|CFM|CRM|COREN|Lei|Portaria|Minist[ée]rio)\b[^."]{0,60}/gi);
@@ -208,6 +214,7 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
   }
 
   const addQuestion = (code: string | null, text: string, row: string[], a: string): void => {
+    if (isPesquisaSatisfacao(text)) return; // fora do roteiro (coletada pelo módulo de Pesquisa)
     const sectionTmp = stack.length ? stack[stack.length - 1].tmp : null;
     const guidance = clean(row[h.colEvid]) || null;
     const maxScore = num(row[h.colMax]) ?? 0;

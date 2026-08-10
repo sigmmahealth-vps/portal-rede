@@ -84,8 +84,6 @@ export default function PlanosBoard() {
     setStatusFilter('');
     setProviderFilter(null);
     setProviderQuery('');
-    const active = cycles.find((c: any) => c.active) || cycles[0];
-    if (active) setCycleId(active.id);
   };
 
   const kpis = useMemo(() => ({
@@ -157,6 +155,8 @@ export default function PlanosBoard() {
         </div>
         <button
           onClick={() => setShowFilters(v => !v)}
+          aria-expanded={showFilters}
+          aria-controls="planos-filtros-panel"
           className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
             showFilters || activeFilterCount > 0
               ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
@@ -174,7 +174,7 @@ export default function PlanosBoard() {
       </div>
 
       {showFilters && (
-        <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div id="planos-filtros-panel" className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <label className="block text-sm">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Ciclo</span>
@@ -203,7 +203,7 @@ export default function PlanosBoard() {
               </select>
             </label>
 
-            <div className="relative text-sm">
+            <label className="relative block text-sm">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Prestador</span>
               {providerFilter ? (
                 <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
@@ -246,7 +246,7 @@ export default function PlanosBoard() {
                   )}
                 </>
               )}
-            </div>
+            </label>
           </div>
         </div>
       )}

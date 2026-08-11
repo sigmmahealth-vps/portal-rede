@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Plus, MapPin, Filter } from 'lucide-react';
+import { Search, Plus, Filter, Calendar, ArrowUpCircle } from 'lucide-react';
 import { PLAN_STATUS_LABEL } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
@@ -14,15 +14,22 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: 'final', label: 'Finalizados', statuses: FINAL_STATUSES },
 ];
 
-// Cards de status: mesmo esquema de cores dos status de plano (planoStatus.ts).
-const CARD_TONE: Record<string, 'blue' | 'orange' | 'amber' | 'red' | 'emerald'> = {
-  aberto: 'blue', aguardando_revisao: 'orange', a_vencer: 'amber', atrasado: 'red', final: 'emerald',
+// Tom por coluna: bolinha do cabeçalho, pill de ações do card e fundo da coluna
+// (cor do status a 90% de transparência, alpha 0.1). Chaveado por COLUMNS.key.
+const TONE: Record<string, { dot: string; pill: string; column: string }> = {
+  aberto:             { dot: 'bg-blue-500',    pill: 'bg-blue-50 text-blue-700',       column: 'bg-blue-500/10' },
+  aguardando_revisao: { dot: 'bg-orange-500',  pill: 'bg-amber-100 text-amber-800',    column: 'bg-orange-500/10' },
+  a_vencer:           { dot: 'bg-amber-500',   pill: 'bg-amber-50 text-amber-700',     column: 'bg-amber-500/10' },
+  atrasado:           { dot: 'bg-red-500',     pill: 'bg-red-50 text-red-700',         column: 'bg-red-500/10' },
+  final:              { dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700', column: 'bg-emerald-500/10' },
 };
 
-// Fundo de cada coluna: cor do status a 90% de transparência (alpha 0.1).
-const COLUMN_BG: Record<string, string> = {
-  aberto: 'bg-blue-500/10', aguardando_revisao: 'bg-orange-500/10', a_vencer: 'bg-amber-500/10',
-  atrasado: 'bg-red-500/10', final: 'bg-emerald-500/10',
+// Datas `date` chegam como 'YYYY-MM-DD' (db.ts); formata sem passar por Date p/ não deslocar fuso.
+const fmtDate = (v?: string | null): string => {
+  if (!v) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  try { return new Date(v).toLocaleDateString('pt-BR'); } catch { return String(v); }
 };
 
 export default function PlanosBoard() {
@@ -195,24 +202,27 @@ export default function PlanosBoard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {COLUMNS.map(col => {
-          const n = filtered.filter((p: any) => col.statuses.includes(p.status)).length;
-          return <Kpi key={col.key} label={col.label} value={n} tone={CARD_TONE[col.key]} />;
-        })}
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {COLUMNS.map(col => {
           const colPlans = filtered.filter((p: any) => col.statuses.includes(p.status));
+          const tone = TONE[col.key] ?? TONE.aberto;
           return (
-            <div key={col.key} className={`${COLUMN_BG[col.key]} rounded-xl p-3`}>
-              <div className="space-y-3">
-                {colPlans.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-4">Nenhum plano</p>
-                ) : colPlans.map((p: any) => (
-                  <PlanoCard key={p.id} plan={p} onOpen={() => setSelectedPlanId(p.id)} />
-                ))}
+            <div key={col.key} className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
+                  <p className="truncate text-sm font-bold text-gray-900">{col.label}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 tabular-nums">{colPlans.length}</span>
+              </div>
+              <div className={`flex-1 rounded-xl p-2.5 ${tone.column}`}>
+                <div className="space-y-3">
+                  {colPlans.length === 0 ? (
+                    <p className="py-6 text-center text-xs text-gray-400">Nenhum plano</p>
+                  ) : colPlans.map((p: any) => (
+                    <PlanoCard key={p.id} plan={p} colKey={col.key} onOpen={() => setSelectedPlanId(p.id)} />
+                  ))}
+                </div>
               </div>
             </div>
           );
@@ -278,36 +288,62 @@ export default function PlanosBoard() {
   );
 }
 
-function PlanoCard({ plan, onOpen }: any) {
-  const openItems = (plan.items || []).filter((it: any) => it.status !== 'concluida').length;
+function PlanoCard({ plan, colKey, onOpen }: any) {
+  const items = plan.items || [];
+  const open = items.filter((i: any) => i.status !== 'concluida');
+  const toValidate = items.filter((i: any) => i.status === 'aguardando_revisao');
+  const tone = TONE[colKey] ?? TONE.aberto;
+  const nearestDue = open.map((i: any) => i.due_date).filter(Boolean).sort()[0] as string | undefined;
+
+  const plural = (n: number, sing: string, plur: string) => `${n} ${n === 1 ? sing : plur}`;
+  const pillText =
+    colKey === 'aberto'             ? plural(open.length, 'ação aberta', 'ações abertas') :
+    colKey === 'aguardando_revisao' ? plural(toValidate.length || open.length, 'ação para validar', 'ações para validar') :
+    colKey === 'a_vencer'           ? `${open.length} a vencer` :
+    colKey === 'atrasado'           ? plural(open.length, 'ação atrasada', 'ações atrasadas') :
+    plan.status === 'concluido'     ? 'Concluído' : 'Encerrado sem conclusão';
+
+  // Linha de contexto (ícone + data/estado), com cor por urgência.
+  let MetaIcon: any = Calendar;
+  let metaText = '';
+  let metaCls = 'text-gray-500';
+  if (colKey === 'aguardando_revisao') { MetaIcon = ArrowUpCircle; metaText = 'Evidências aguardando validação'; metaCls = 'text-orange-600'; }
+  else if (colKey === 'atrasado' && nearestDue) { metaText = `Venceu em ${fmtDate(nearestDue)}`; metaCls = 'text-red-600'; }
+  else if (colKey === 'a_vencer' && nearestDue) { metaText = `Vence em ${fmtDate(nearestDue)}`; metaCls = 'text-amber-600'; }
+  else if (colKey === 'aberto' && nearestDue) { metaText = `Próximo prazo: ${fmtDate(nearestDue)}`; }
+
+  const isValidate = colKey === 'aguardando_revisao';
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="block w-full text-left bg-white rounded-lg border border-gray-100 shadow-sm p-3 space-y-1 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+      className="block w-full rounded-xl border border-gray-200 bg-white p-3.5 text-left shadow-sm transition hover:border-gray-300 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
     >
-      <p className="font-medium text-gray-900 text-sm leading-tight">{plan.provider_name}</p>
-      <p className="text-xs text-gray-500">{plan.provider_code || '—'}</p>
-      {plan.city && (
-        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" /> {plan.city}</p>
-      )}
-      <p className="text-xs text-gray-500 pt-1">{openItems} item{openItems === 1 ? '' : 's'} em aberto</p>
-    </button>
-  );
-}
+      <p className="text-sm font-bold leading-tight text-gray-900">{plan.provider_name}</p>
+      <p className="mt-0.5 text-xs text-gray-500">
+        Cod: {plan.provider_code || '—'}{plan.city ? ` · ${plan.city}` : ''}
+      </p>
 
-function Kpi({ label, value, tone }: { key?: React.Key; label: string; value: React.ReactNode; tone: 'blue'|'orange'|'amber'|'red'|'emerald'|'gray' }) {
-  const dot = {
-    blue: 'bg-blue-500', orange: 'bg-orange-500', amber: 'bg-amber-500',
-    red: 'bg-red-500', emerald: 'bg-emerald-500', gray: 'bg-gray-400',
-  }[tone];
-  return (
-    <div className="flex items-center justify-between gap-3 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} aria-hidden="true" />
-        <p className="text-sm font-bold text-gray-900 truncate">{label}</p>
+      <span className={`mt-2.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${tone.pill}`}>
+        {pillText}
+      </span>
+
+      {metaText && (
+        <p className={`mt-2 flex items-center gap-1.5 text-xs font-medium ${metaCls}`}>
+          <MetaIcon className="h-3.5 w-3.5 shrink-0" /> {metaText}
+        </p>
+      )}
+
+      <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2.5">
+        <span className="text-xs font-medium text-gray-400">{PLAN_STATUS_LABEL[plan.status] || plan.status}</span>
+        <span className={isValidate
+          ? 'inline-flex items-center rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white'
+          : 'text-xs font-semibold text-emerald-700'}
+        >
+          {isValidate ? 'Validar agora' : 'Ver plano'}
+        </span>
       </div>
-      <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 tabular-nums">{value}</span>
-    </div>
+    </button>
   );
 }

@@ -4516,6 +4516,26 @@ async function startServer() {
   // Plano de Ação 5W2H — board, detalhe, CRUD e validação (spec 5.4.4)
   // -----------------------------------------------------------------------
 
+  // Pesquisa de Satisfação — listagem para o Dashboard de Indicadores (spec 5.4.6).
+  app.get('/api/eval/surveys', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = req.query.cycle_id ? Number(req.query.cycle_id) : null;
+      const { rows } = await query(`
+        SELECT sr.*, ei.provider_id, ei.cycle_id,
+               p.name AS provider_name,
+               c.label AS cycle_label
+          FROM eval_survey_responses sr
+          JOIN eval_instances ei ON ei.id = sr.instance_id
+          JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
+         WHERE ($1::bigint IS NULL OR ei.cycle_id = $1)
+         ORDER BY sr.submitted_at DESC
+      `, [cycleId]);
+      res.json(rows);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   // Lista planos do ciclo com agregados p/ o Kanban (spec 5.4.4.5)
   app.get('/api/eval/action-plans', authenticate, async (req: any, res) => {
     try {

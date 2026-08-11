@@ -2,13 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { providerCanEditCriterion } from './providerEdit.js';
 
-test('D-04: em reanálise, prestador só edita critério devolvido ou em reedição', () => {
+test('D-04: em reanálise, só o critério em reavaliação é editável', () => {
   const st = 'aguardando_evidencia';
+  // Critério devolvido pelo auditor agora.
   assert.equal(providerCanEditCriterion(st, 'aguardando_reanalise'), true);
-  assert.equal(providerCanEditCriterion(st, 'pendente'), true);
-  // O bug do ticket: aprovado/reprovado NÃO podem ser reeditados na reanálise.
-  assert.equal(providerCanEditCriterion(st, 'aprovado'), false);
-  assert.equal(providerCanEditCriterion(st, 'reprovado'), false);
+  // Mesmo critério já reeditado nesta rodada (pendente, mas com histórico de reanálise).
+  assert.equal(providerCanEditCriterion(st, 'pendente', true), true);
+  // Critério de 1ª rodada nunca analisado (pendente SEM reanálise) fica travado.
+  assert.equal(providerCanEditCriterion(st, 'pendente', false), false);
+  // Já analisados pelo auditor não podem ser reeditados na reanálise.
+  assert.equal(providerCanEditCriterion(st, 'aprovado', true), false);
+  assert.equal(providerCanEditCriterion(st, 'reprovado', true), false);
   assert.equal(providerCanEditCriterion(st, null), false);
 });
 

@@ -7,17 +7,25 @@ export const PROVIDER_EDIT_STATUSES = new Set([
   'pendente', 'em_andamento', 'aguardando_evidencia',
 ]);
 
-// D-04: quando a instância volta pra reanálise (aguardando_evidencia), o prestador
-// só pode mexer nos critérios que o auditor devolveu (evidence_status
-// 'aguardando_reanalise') ou que ele já começou a reeditar ('pendente'). Critérios
-// 'aprovado'/'reprovado' ficam travados. Nos demais estados de edição, tudo liberado.
+// D-04: quando a instância volta pra reanálise (aguardando_evidencia), APENAS o
+// critério em reavaliação pode ser alterado. Isso é:
+//   - o critério devolvido agora pelo auditor ('aguardando_reanalise'); ou
+//   - o mesmo critério já reeditado nesta rodada — vira 'pendente' ao salvar, mas
+//     tem histórico de reanálise (everReanalise), então segue editável.
+// Ficam TRAVADOS: os já decididos ('aprovado'/'reprovado') e os de 1ª rodada nunca
+// analisados ('pendente' sem histórico de reanálise). everReanalise = existe uma
+// iteração 'solicitou_reanalise' para o critério. Nos demais estados de edição
+// (pendente/em_andamento, preenchimento inicial), tudo liberado.
 export function providerCanEditCriterion(
   instanceStatus: string,
   evidenceStatus: string | null,
+  everReanalise = false,
 ): boolean {
   if (!PROVIDER_EDIT_STATUSES.has(instanceStatus)) return false;
   if (instanceStatus === 'aguardando_evidencia') {
-    return evidenceStatus === 'aguardando_reanalise' || evidenceStatus === 'pendente';
+    if (evidenceStatus === 'aguardando_reanalise') return true;
+    if (evidenceStatus === 'pendente') return everReanalise;
+    return false;
   }
   return true;
 }

@@ -3104,14 +3104,17 @@ async function startServer() {
         for (const ans of answers as any[]) {
           // Lê o valor anterior pra decidir se grava iteration (só quando de fato mudou).
           const { rows: prevRows } = await client.query(
-            `SELECT id, answer_value, score_obtained, provider_observation, evidence_status
+            `SELECT id, answer_value, score_obtained, provider_observation, evidence_status,
+                    EXISTS(SELECT 1 FROM eval_answer_iterations it
+                            WHERE it.answer_id = eval_answers.id AND it.action = 'solicitou_reanalise') AS ever_reanalise
                FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
             [instanceId, ans.question_id]
           );
           const prev = prevRows[0];
-          // D-04: em reanálise, ignora silenciosamente critérios travados
-          // (aprovado/reprovado) — o payload pode trazer todos, só os liberados valem.
-          if (isProvider && !providerCanEditCriterion(instance.status, prev?.evidence_status ?? null)) {
+          // D-04: em reanálise só o critério em reavaliação é editável; os já
+          // analisados e os de 1ª rodada nunca analisados ficam travados. O payload
+          // pode trazer todos — os travados são ignorados silenciosamente.
+          if (isProvider && !providerCanEditCriterion(instance.status, prev?.evidence_status ?? null, prev?.ever_reanalise ?? false)) {
             continue;
           }
           const nextVal = ans.answer_value || null;
@@ -3328,10 +3331,13 @@ async function startServer() {
         }
         if (questionId) {
           const { rows: cur } = await query(
-            `SELECT evidence_status FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
+            `SELECT evidence_status,
+                    EXISTS(SELECT 1 FROM eval_answer_iterations it
+                            WHERE it.answer_id = eval_answers.id AND it.action = 'solicitou_reanalise') AS ever_reanalise
+               FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
             [instanceId, questionId]
           );
-          if (!providerCanEditCriterion(instance.status, cur[0]?.evidence_status ?? null)) {
+          if (!providerCanEditCriterion(instance.status, cur[0]?.evidence_status ?? null, cur[0]?.ever_reanalise ?? false)) {
             return rejectUpload(403, 'critério não está liberado para reanálise');
           }
         }

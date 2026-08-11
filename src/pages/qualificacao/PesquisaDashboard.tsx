@@ -60,24 +60,24 @@ const Q3_SHORT = ['Sim tot.', 'Sim parc.', 'Indif.', 'Não/ajuda', 'Insuf.'];
 const RATING_LABELS = ['1', '2', '3', '4', '5'];
 const NPS_LABELS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
-// Anel de progresso (taxa de resposta).
+// Anel de progresso (taxa de resposta). O rótulo fica abaixo pra não cortar.
 function Ring({ pct, label }: { pct: number; label: string }) {
   const size = 128, stroke = 12, r = (size - stroke) / 2, circ = 2 * Math.PI * r;
   const v = Math.min(100, Math.max(0, pct));
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#00995d" strokeWidth={stroke}
-          strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - v / 100)}
-          className="transition-[stroke-dashoffset] duration-500 ease-out" />
-      </svg>
-      <div className="absolute inset-0 grid place-items-center text-center">
-        <div>
-          <p className="text-2xl font-bold text-secondary-900">{Math.round(v)}%</p>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+    <div className="flex shrink-0 flex-col items-center gap-2">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#00995d" strokeWidth={stroke}
+            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - v / 100)}
+            className="transition-[stroke-dashoffset] duration-500 ease-out" />
+        </svg>
+        <div className="absolute inset-0 grid place-items-center">
+          <p className="text-3xl font-bold text-secondary-900">{Math.round(v)}%</p>
         </div>
       </div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
     </div>
   );
 }

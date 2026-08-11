@@ -4706,6 +4706,82 @@ async function startServer() {
     return row;
   };
 
+  // Pesquisa de Satisfação — visão do prestador (spec 5.4.6). Escopo anti-IDOR
+  // sempre por req.user.provider_id. A pesquisa é da instância enviada mais
+  // recente do prestador (submitted_at IS NOT NULL).
+  app.get('/api/me/survey', authenticate, async (req: any, res) => {
+    try {
+      const providerId = req.user.provider_id;
+      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+      const { rows: [inst] } = await query(`
+        SELECT id, submitted_at
+          FROM eval_instances
+         WHERE provider_id = $1 AND submitted_at IS NOT NULL
+         ORDER BY submitted_at DESC
+         LIMIT 1
+      `, [providerId]);
+      if (!inst) return res.json({ state: 'sem_roteiro' });
+
+      const { rows: [resp] } = await query(
+        'SELECT * FROM eval_survey_responses WHERE instance_id = $1', [inst.id]);
+      if (resp) return res.json({ state: 'respondida', response: resp });
+
+      const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
+      const deadline = surveyDeadline(new Date(inst.submitted_at));
+      res.json({
+        state: 'disponivel',
+        instance_id: Number(inst.id),
+        deadline: deadline.toISOString(),
+        expired: Date.now() > deadline.getTime(),
+      });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/me/survey', authenticate, async (req: any, res) => {
+    try {
+      const providerId = req.user.provider_id;
+      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+      const { rows: [inst] } = await query(`
+        SELECT id, submitted_at
+          FROM eval_instances
+         WHERE provider_id = $1 AND submitted_at IS NOT NULL
+         ORDER BY submitted_at DESC
+         LIMIT 1
+      `, [providerId]);
+      if (!inst) return res.status(409).json({ error: 'nenhum roteiro enviado' });
+
+      const b = req.body || {};
+      const num = (v: any): number | null => (v == null || v === '' ? null : Number(v));
+      const Q3 = ['sim_totalmente', 'sim_parcialmente', 'neutro', 'nao_precisei_ajuda', 'nao_insuficientes'];
+      if (b.q3_documentos && !Q3.includes(b.q3_documentos)) {
+        return res.status(400).json({ error: 'q3_documentos inválido' });
+      }
+
+      const { isWithinDeadline, bonusPoints } = await import('./src/lib/surveyBonus.js');
+      const within = isWithinDeadline(new Date(inst.submitted_at), new Date());
+      const bonus = bonusPoints(within);
+
+      try {
+        const { rows: [resp] } = await query(`
+          INSERT INTO eval_survey_responses
+            (instance_id, q1_clareza, q2_portal, q3_documentos, q4_dificuldade, q4_texto,
+             q5_geral, q6_nps, comentarios, within_deadline, bonus_points)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          RETURNING within_deadline, bonus_points
+        `, [inst.id, num(b.q1_clareza), num(b.q2_portal), b.q3_documentos ?? null,
+            typeof b.q4_dificuldade === 'boolean' ? b.q4_dificuldade : null,
+            b.q4_texto?.trim() || null, num(b.q5_geral), num(b.q6_nps),
+            b.comentarios?.trim() || null, within, bonus]);
+        await auditLog({ query, userId: req.user.id, action: 'satisfaction_survey_submitted',
+          meta: { instance_id: Number(inst.id), within_deadline: within }, ip: hashClientIp(req) });
+        res.status(201).json({ ok: true, within_deadline: resp.within_deadline, bonus_points: resp.bonus_points });
+      } catch (err: any) {
+        if (err?.code === '23505') return res.status(409).json({ error: 'pesquisa já respondida' });
+        throw err;
+      }
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   // Meus planos (spec 5.4.4.5 — visão do prestador)
   app.get('/api/me/action-plans', authenticate, async (req: any, res) => {
     try {

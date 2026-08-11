@@ -3,6 +3,7 @@ import { fetchApi } from '../../lib/api';
 import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
 import { ITEM_STATUS_LABEL } from './planoStatus';
+import MemoriaCalculoModal from './MemoriaCalculoModal';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, XCircle, RotateCcw,
   Loader2, Paperclip, ShieldCheck, FileText, MessageSquare,
@@ -192,6 +193,7 @@ export default function AuditorPlayer({
   const [planCandidates, setPlanCandidates] = useState<{ seguranca_pct: number; items: any[] } | null>(null);
   const [planChecked, setPlanChecked] = useState<Set<number>>(new Set());
   const [planSaving, setPlanSaving] = useState(false);
+  const [showMemoria, setShowMemoria] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -444,6 +446,15 @@ export default function AuditorPlayer({
               )}
             </div>
 
+            <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowMemoria(true)}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50"
+            >
+              <FileText className="h-4 w-4" /> Memória de cálculo
+            </button>
             {readOnly ? (
               <span className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-bold text-gray-500">
                 <ShieldCheck className="h-4 w-4" /> Avaliação encerrada — somente leitura
@@ -459,6 +470,7 @@ export default function AuditorPlayer({
                 Emitir Parecer Final
               </button>
             )}
+            </div>
           </div>
         </div>
       </header>
@@ -931,6 +943,10 @@ export default function AuditorPlayer({
           onCancel={() => setPlanCandidates(null)}
           onConfirm={confirmParecerComPlano}
         />
+      )}
+
+      {showMemoria && (
+        <MemoriaCalculoModal instanceId={instanceId} onClose={() => setShowMemoria(false)} />
       )}
     </div>
   );

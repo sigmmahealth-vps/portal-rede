@@ -7,6 +7,7 @@ import {
 import RoteiroPlayer from './RoteiroPlayer';
 import MeuPlanoAcao from './MeuPlanoAcao';
 import CertificadosTab from './CertificadosTab';
+import PesquisaSatisfacao from './PesquisaSatisfacao';
 import { statusLabel } from '../../lib/statusLabels';
 
 const TABS = [
@@ -14,7 +15,7 @@ const TABS = [
   { key: 'roteiros', label: 'Meus Roteiros', icon: ClipboardList, soon: false },
   { key: 'planos', label: 'Planos de Ação', icon: Target, soon: false },
   { key: 'certificados', label: 'Certificados', icon: Award, soon: false },
-  { key: 'pesquisa', label: 'Pesquisa de Satisfação', icon: Smile, soon: true },
+  { key: 'pesquisa', label: 'Pesquisa de Satisfação', icon: Smile, soon: false },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -343,7 +344,7 @@ export default function PrestadorView({ user }: { user: any }) {
       ) : activeTab === 'certificados' ? (
         <CertificadosTab />
       ) : (
-        <EmBreve icon={Smile} title="Pesquisa de Satisfação" desc="Em breve você poderá responder e acompanhar as pesquisas de satisfação da rede credenciada." />
+        <PesquisaSatisfacao />
       )}
     </div>
   );

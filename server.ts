@@ -4722,7 +4722,13 @@ async function startServer() {
       if (!inst) return res.status(409).json({ error: 'nenhuma pesquisa pendente' });
 
       const b = req.body || {};
-      const num = (v: any): number | null => (v == null || v === '' ? null : Number(v));
+      // Faixa validada no servidor: fora do intervalo vira null (não polui NPS/CSAT
+      // nem estoura smallint num POST forjado — o client já restringe as opções).
+      const num = (v: any, min: number, max: number): number | null => {
+        if (v == null || v === '') return null;
+        const n = Number(v);
+        return Number.isInteger(n) && n >= min && n <= max ? n : null;
+      };
       const Q3 = ['sim_totalmente', 'sim_parcialmente', 'neutro', 'nao_precisei_ajuda', 'nao_insuficientes'];
       const q3 = b.q3_documentos || null;
       if (q3 && !Q3.includes(q3)) {
@@ -4740,9 +4746,9 @@ async function startServer() {
              q5_geral, q6_nps, comentarios, within_deadline, bonus_points)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
           RETURNING within_deadline, bonus_points
-        `, [inst.id, num(b.q1_clareza), num(b.q2_portal), q3,
+        `, [inst.id, num(b.q1_clareza, 1, 5), num(b.q2_portal, 1, 5), q3,
             typeof b.q4_dificuldade === 'boolean' ? b.q4_dificuldade : null,
-            b.q4_texto?.trim() || null, num(b.q5_geral), num(b.q6_nps),
+            b.q4_texto?.trim() || null, num(b.q5_geral, 1, 5), num(b.q6_nps, 0, 10),
             b.comentarios?.trim() || null, within, bonus]);
         await auditLog({ query, userId: req.user.id, action: 'satisfaction_survey_submitted',
           meta: { instance_id: Number(inst.id), within_deadline: within }, ip: hashClientIp(req) });

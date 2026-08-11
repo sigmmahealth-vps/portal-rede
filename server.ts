@@ -18,6 +18,15 @@ import { auditLog } from './auth/auditLog.js';
 import { hashIp } from './auth/ipHash.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 
+// Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
+// quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
+// score_obtained — inclusive N/A reprovado, que conta como não conformidade (0).
+// Sim/aprovado = pontua; Não/aprovado = 0; N/A/aprovado = fora; N/A/reprovado = 0.
+// Predicado sobre a resposta aliasada como `ea`. Usado em parecer, segurança%,
+// dims (painel/export), parcial ao vivo e candidatos de plano — sempre igual.
+const COUNTS_IN_SCORE_SQL =
+  "NOT (LOWER(COALESCE(ea.answer_value,'')) = 'na' AND ea.evidence_status = 'aprovado')";
+
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.error('FATAL: variável de ambiente JWT_SECRET não definida. Abortando boot.');
@@ -4217,14 +4226,14 @@ async function startServer() {
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
          WHERE ea.instance_id = $1
-           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+           AND ${COUNTS_IN_SCORE_SQL}
            AND COALESCE(ea.score_obtained, 0) < eq.max_score
          ORDER BY eq.dimension, eq.code
       `, [id]);
 
       const { rows: [seg] } = await query(`
-        SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
-               COALESCE(SUM(eq.max_score)      FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS max
+        SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS score,
+               COALESCE(SUM(eq.max_score)      FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS max
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
          WHERE ea.instance_id = $1 AND eq.dimension IN ('Segurança','Documento Legal')
@@ -4299,8 +4308,8 @@ async function startServer() {
 
       const { rows: [totals] } = await query(`
         SELECT
-          COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
-          COALESCE(SUM(eq.max_score)      FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS max_possible,
+          COALESCE(SUM(ea.score_obtained) FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS score,
+          COALESCE(SUM(eq.max_score)      FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS max_possible,
           COALESCE(BOOL_OR(ea.evidence_status = 'reprovado' AND eq.is_eliminatory), false) AS elim_fail
         FROM eval_answers ea
         JOIN eval_questions eq ON eq.id = ea.question_id
@@ -4330,7 +4339,7 @@ async function startServer() {
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
          WHERE ea.instance_id = $1
-           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+           AND ${COUNTS_IN_SCORE_SQL}
            AND COALESCE(ea.score_obtained, 0) < eq.max_score
       `, [id]);
 
@@ -4340,8 +4349,8 @@ async function startServer() {
       let segurancaPct = 100;
       if (candRows.length) {
         const { rows: [segT] } = await query(`
-          SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS score,
-                 COALESCE(SUM(eq.max_score)      FILTER (WHERE LOWER(COALESCE(ea.answer_value,'')) <> 'na'), 0)::numeric AS max
+          SELECT COALESCE(SUM(ea.score_obtained) FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS score,
+                 COALESCE(SUM(eq.max_score)      FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS max
             FROM eval_answers ea
             JOIN eval_questions eq ON eq.id = ea.question_id
            WHERE ea.instance_id = $1 AND eq.dimension IN ('Segurança','Documento Legal')
@@ -4868,7 +4877,7 @@ async function startServer() {
             FROM eval_answers ea
             JOIN eval_questions eq ON eq.id = ea.question_id
            WHERE ea.instance_id = ANY($1)
-             AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+             AND ${COUNTS_IN_SCORE_SQL}
              AND eq.dimension IS NOT NULL
            GROUP BY ea.instance_id,
                     CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END
@@ -5087,15 +5096,19 @@ async function startServer() {
                pl.cidade AS city,
                p.provider_group,
                ei.status, ei.seal,
-               COALESCE(partial.pct, 0) AS percentual,
+               -- Finalizadas: nota oficial gravada no parecer (base + bônus).
+               -- Antes do parecer: parcial ao vivo pra mostrar progresso (spec 5.4.2.5).
+               CASE WHEN ei.status IN ('aprovado','reprovado','finalizado')
+                    THEN ei.percentual
+                    ELSE COALESCE(partial.pct, 0) END AS percentual,
                false AS has_certificate
           FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN (
             SELECT ea.instance_id,
-                   (SUM(CASE WHEN LOWER(COALESCE(ea.answer_value,'')) <> 'na' THEN COALESCE(ea.score_obtained, 0) ELSE 0 END)
-                    / NULLIF(SUM(CASE WHEN LOWER(COALESCE(ea.answer_value,'')) <> 'na' THEN eq.max_score ELSE 0 END), 0)) * 100 AS pct
+                   (SUM(CASE WHEN ${COUNTS_IN_SCORE_SQL} THEN COALESCE(ea.score_obtained, 0) ELSE 0 END)
+                    / NULLIF(SUM(CASE WHEN ${COUNTS_IN_SCORE_SQL} THEN eq.max_score ELSE 0 END), 0)) * 100 AS pct
               FROM eval_answers ea
               JOIN eval_questions eq ON eq.id = ea.question_id
               JOIN eval_instances ei2 ON ei2.id = ea.instance_id AND ei2.cycle_id = $1
@@ -5115,7 +5128,7 @@ async function startServer() {
           JOIN eval_questions eq ON eq.id = ea.question_id
           JOIN eval_instances ei ON ei.id = ea.instance_id
          WHERE ei.cycle_id = $1
-           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+           AND ${COUNTS_IN_SCORE_SQL}
            AND eq.dimension IS NOT NULL
          GROUP BY ea.instance_id,
                   CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END
@@ -5187,7 +5200,7 @@ async function startServer() {
           JOIN eval_questions eq ON eq.id = ea.question_id
           JOIN eval_instances ei ON ei.id = ea.instance_id
          WHERE ei.cycle_id = $1
-           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+           AND ${COUNTS_IN_SCORE_SQL}
            AND eq.dimension IS NOT NULL
          GROUP BY ea.instance_id,
                   CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END

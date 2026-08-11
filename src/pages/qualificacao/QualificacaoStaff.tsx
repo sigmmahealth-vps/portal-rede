@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, LayoutGrid, CalendarRange, Target } from 'lucide-react';
+import { TrendingUp, LayoutGrid, CalendarRange, Target, Smile } from 'lucide-react';
 import GestorDashboard from './GestorDashboard';
 import PainelDoCiclo from './PainelDoCiclo';
 import CiclosAdmin from './CiclosAdmin';
 import PlanosBoard from './PlanosBoard';
+import PesquisaDashboard from './PesquisaDashboard';
 
-type TabSlug = 'estrategico' | 'painel-ciclo' | 'ciclos' | 'planos';
+type TabSlug = 'estrategico' | 'painel-ciclo' | 'ciclos' | 'planos' | 'pesquisa';
 
 const TABS: { slug: TabSlug; label: string; icon: React.ComponentType<{ className?: string }>; Comp: React.ComponentType<{ user: any }> }[] = [
   { slug: 'estrategico',  label: 'Estratégico',     icon: TrendingUp,    Comp: GestorDashboard },
   { slug: 'painel-ciclo', label: 'Painel do Ciclo', icon: LayoutGrid,    Comp: PainelDoCiclo },
   { slug: 'ciclos',       label: 'Ciclos',          icon: CalendarRange, Comp: CiclosAdmin },
   { slug: 'planos',       label: 'Plano de Ação',   icon: Target,        Comp: PlanosBoard },
+  { slug: 'pesquisa',     label: 'Pesquisa de Satisfação', icon: Smile,  Comp: PesquisaDashboard },
 ];
 
 function defaultTabFor(role: string): TabSlug {

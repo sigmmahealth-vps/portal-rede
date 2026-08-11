@@ -3348,28 +3348,33 @@ async function startServer() {
         return res.status(403).json({ error: 'Unauthorized' });
       }
 
-      const { rows: totalRows } = await query('SELECT COUNT(*) as count FROM eval_instances');
+      // Filtro opcional por ciclo (null = todos os ciclos). $1 em todas as queries.
+      const cycleId = Number.isFinite(Number(req.query.cycle_id)) ? Number(req.query.cycle_id) : null;
+
+      const { rows: totalRows } = await query(
+        'SELECT COUNT(*) as count FROM eval_instances WHERE ($1::bigint IS NULL OR cycle_id = $1)', [cycleId]);
       // Qualificados = prestadores únicos com pelo menos 1 unidade finalizada com selo
       // (uma unidade não conta 3× se o prestador tem 3 unidades avaliadas).
       const { rows: approvedRows } = await query(
-        "SELECT COUNT(DISTINCT provider_id) as count FROM eval_instances WHERE status IN ('finalizado','aprovado') AND seal IS NOT NULL"
-      );
+        "SELECT COUNT(DISTINCT provider_id) as count FROM eval_instances WHERE status IN ('finalizado','aprovado') AND seal IS NOT NULL AND ($1::bigint IS NULL OR cycle_id = $1)", [cycleId]);
       const { rows: evaluatedProvidersRows } = await query(
-        'SELECT COUNT(DISTINCT provider_id)::int AS count FROM eval_instances'
-      );
-      const { rows: avgRows } = await query("SELECT AVG(percentual) as avg FROM eval_instances WHERE status IN ('finalizado','aprovado')");
+        'SELECT COUNT(DISTINCT provider_id)::int AS count FROM eval_instances WHERE ($1::bigint IS NULL OR cycle_id = $1)', [cycleId]);
+      const { rows: avgRows } = await query(
+        "SELECT AVG(percentual) as avg FROM eval_instances WHERE status IN ('finalizado','aprovado') AND ($1::bigint IS NULL OR cycle_id = $1)", [cycleId]);
 
-      const { rows: instancesByStatus } = await query("SELECT status, COUNT(*) as count FROM eval_instances GROUP BY status");
+      const { rows: instancesByStatus } = await query(
+        "SELECT status, COUNT(*) as count FROM eval_instances WHERE ($1::bigint IS NULL OR cycle_id = $1) GROUP BY status", [cycleId]);
 
       const { rows: ncRows } = await query(
-        'SELECT COUNT(*)::int AS count FROM eval_answers WHERE is_non_compliant = true'
-      );
+        `SELECT COUNT(*)::int AS count FROM eval_answers ea
+           JOIN eval_instances ei ON ei.id = ea.instance_id
+          WHERE ea.is_non_compliant = true AND ($1::bigint IS NULL OR ei.cycle_id = $1)`, [cycleId]);
 
       const { rows: sealRows } = await query(`
         SELECT COALESCE(seal, 'Não Qualificado') AS name, COUNT(*)::int AS value
-        FROM eval_instances WHERE status IN ('finalizado','aprovado')
+        FROM eval_instances WHERE status IN ('finalizado','aprovado') AND ($1::bigint IS NULL OR cycle_id = $1)
         GROUP BY COALESCE(seal, 'Não Qualificado')
-      `);
+      `, [cycleId]);
 
       const { rows: rankingRows } = await query(`
         SELECT p.name AS provider,
@@ -3378,18 +3383,18 @@ async function startServer() {
         FROM eval_instances ei
         JOIN providers p ON p.id = ei.provider_id
         LEFT JOIN provider_locations pl ON pl.id = ei.location_id
-        WHERE ei.status IN ('finalizado','aprovado')
+        WHERE ei.status IN ('finalizado','aprovado') AND ($1::bigint IS NULL OR ei.cycle_id = $1)
         ORDER BY ei.percentual DESC
         LIMIT 10
-      `);
+      `, [cycleId]);
 
       const { rows: evoRows } = await query(`
         SELECT to_char(date_trunc('month', completed_at), 'YYYY-MM') AS name,
                ROUND(AVG(percentual))::int AS media
         FROM eval_instances
-        WHERE status IN ('finalizado','aprovado') AND completed_at IS NOT NULL
+        WHERE status IN ('finalizado','aprovado') AND completed_at IS NOT NULL AND ($1::bigint IS NULL OR cycle_id = $1)
         GROUP BY 1 ORDER BY 1
-      `);
+      `, [cycleId]);
 
       res.json({
         total: (totalRows[0] as any).count,

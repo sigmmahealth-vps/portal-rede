@@ -40,15 +40,22 @@ const fmtMonth = (v: any): string => {
 export default function GestorDashboard({ user }: { user: any }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [cycles, setCycles] = useState<any[]>([]);
+  const [cycleId, setCycleId] = useState<number | null>(null); // null = todos os ciclos
+
+  useEffect(() => {
+    (async () => { try { setCycles(await fetchApi('/eval/cycles')); } catch { /* mantém "todos" */ } })();
+  }, []);
 
   useEffect(() => {
     loadDashboard();
-  }, []);
+  }, [cycleId]);
 
   const loadDashboard = async () => {
+    setLoading(true);
     try {
-      const dbData = await fetchApi('/eval/dashboard');
-      setData(dbData);
+      const qs = cycleId != null ? `?cycle_id=${cycleId}` : '';
+      setData(await fetchApi(`/eval/dashboard${qs}`));
     } catch (err) {
       console.error('Erro ao carregar dashboard', err);
     } finally {
@@ -89,7 +96,20 @@ export default function GestorDashboard({ user }: { user: any }) {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard de Qualificação</h1>
           <p className="text-sm text-gray-500">Visão Estratégica da Rede Prestadora - RN 630</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-medium">Ciclo:</span>
+            <select
+              value={cycleId ?? ''}
+              onChange={e => setCycleId(e.target.value ? Number(e.target.value) : null)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            >
+              <option value="">Todos os ciclos</option>
+              {cycles.map((c: any) => (
+                <option key={c.id} value={c.id}>{c.label}{c.active ? ' (ativo)' : ''}</option>
+              ))}
+            </select>
+          </label>
           <button
             className="btn btn-outline"
             onClick={exportRankingCsv}

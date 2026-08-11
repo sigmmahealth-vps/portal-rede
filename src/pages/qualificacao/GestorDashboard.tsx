@@ -95,69 +95,26 @@ export default function GestorDashboard({ user }: { user: any }) {
         <>
           {/* Main indicators */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-               <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
-                   <Building2 className="w-6 h-6 text-blue-600" />
-                 </div>
-                 <div className="min-w-0">
-                   <p className="text-sm text-gray-500 font-medium">Total de Avaliações</p>
-                   <p className="text-2xl font-bold text-gray-900">{data.total}</p>
-                   {(() => {
-                     const byStatus: any[] = data.by_status || [];
-                     const countOf = (s: string) => Number(byStatus.find((r) => r.status === s)?.count || 0);
-                     const finalizadas = countOf('finalizado') + countOf('aprovado');
-                     const pendentes = countOf('pendente');
-                     const provs = Number(data.providers_evaluated || 0);
-                     const total = Number(data.total || 0);
-                     const parts: string[] = [];
-                     if (finalizadas > 0) parts.push(`${finalizadas} ${finalizadas === 1 ? 'finalizada' : 'finalizadas'}`);
-                     if (pendentes > 0) parts.push(`${pendentes} ${pendentes === 1 ? 'pendente' : 'pendentes'}`);
-                     // Só sinaliza multi-unidade quando prestadores < instâncias.
-                     if (provs > 0 && provs < total) parts.push(`em ${provs} ${provs === 1 ? 'prestador' : 'prestadores'}`);
-                     return parts.length ? (
-                       <p className="mt-0.5 text-xs text-gray-500">{parts.join(' · ')}</p>
-                     ) : null;
-                   })()}
-                 </div>
-               </div>
-             </div>
+            <StatCard icon={Building2} iconBg="bg-blue-50" iconColor="text-blue-600" label="Total de Avaliações" value={data.total}>
+              {(() => {
+                const byStatus: any[] = data.by_status || [];
+                const countOf = (s: string) => Number(byStatus.find((r) => r.status === s)?.count || 0);
+                const finalizadas = countOf('finalizado') + countOf('aprovado');
+                const pendentes = countOf('pendente');
+                const provs = Number(data.providers_evaluated || 0);
+                const total = Number(data.total || 0);
+                const parts: string[] = [];
+                if (finalizadas > 0) parts.push(`${finalizadas} ${finalizadas === 1 ? 'finalizada' : 'finalizadas'}`);
+                if (pendentes > 0) parts.push(`${pendentes} ${pendentes === 1 ? 'pendente' : 'pendentes'}`);
+                // Só sinaliza multi-unidade quando prestadores < instâncias.
+                if (provs > 0 && provs < total) parts.push(`em ${provs} ${provs === 1 ? 'prestador' : 'prestadores'}`);
+                return parts.length ? <p className="mt-1 text-xs text-gray-500">{parts.join(' · ')}</p> : null;
+              })()}
+            </StatCard>
 
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-               <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center">
-                   <CheckCircle className="w-6 h-6 text-emerald-600" />
-                 </div>
-                 <div>
-                   <p className="text-sm text-gray-500 font-medium">Prestadores Qualificados</p>
-                   <p className="text-2xl font-bold text-gray-900">{data.approved}</p>
-                 </div>
-               </div>
-             </div>
-
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-               <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center">
-                   <TrendingUp className="w-6 h-6 text-purple-600" />
-                 </div>
-                 <div>
-                   <p className="text-sm text-gray-500 font-medium">Score Médio</p>
-                   <p className="text-2xl font-bold text-gray-900">{Number(data.avg_score).toFixed(1)}%</p>
-                 </div>
-               </div>
-             </div>
-
-             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-               <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center">
-                   <AlertTriangle className="w-6 h-6 text-amber-600" />
-                 </div>
-                 <div>
-                   <p className="text-sm text-gray-500 font-medium">Não Conformidades</p>
-                   <p className="text-2xl font-bold text-gray-900">{data.non_conformities}</p>
-                 </div>
-               </div>
-             </div>
+            <StatCard icon={CheckCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" label="Prestadores Qualificados" value={data.approved} />
+            <StatCard icon={TrendingUp} iconBg="bg-purple-50" iconColor="text-purple-600" label="Score Médio" value={`${Number(data.avg_score).toFixed(1)}%`} />
+            <StatCard icon={AlertTriangle} iconBg="bg-amber-50" iconColor="text-amber-600" label="Não Conformidades" value={data.non_conformities} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -249,6 +206,26 @@ export default function GestorDashboard({ user }: { user: any }) {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, iconBg, iconColor, label, value, children }: {
+  icon: React.ComponentType<{ className?: string }>;
+  iconBg: string; iconColor: string;
+  label: string; value: React.ReactNode; children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-4 rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${iconBg}`}>
+        <Icon className={`h-6 w-6 ${iconColor}`} />
+      </div>
+      <div className="min-w-0">
+        {/* min-h reserva 2 linhas p/ o valor alinhar entre cards com rótulo de 1 ou 2 linhas */}
+        <p className="min-h-[2.5rem] text-sm font-medium leading-5 text-gray-500">{label}</p>
+        <p className="text-2xl font-bold text-gray-900">{value}</p>
+        {children}
+      </div>
     </div>
   );
 }

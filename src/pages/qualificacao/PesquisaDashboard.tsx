@@ -9,6 +9,12 @@ const Q3_LABEL: Record<string, string> = {
   nao_insuficientes: 'Não, foram insuficientes',
 };
 
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  respondida: { label: 'Respondida', cls: 'bg-emerald-100 text-emerald-700' },
+  pendente:   { label: 'Pendente',   cls: 'bg-blue-100 text-blue-700' },
+  expirada:   { label: 'Expirada',   cls: 'bg-red-100 text-red-700' },
+};
+
 function fmtDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
 }
@@ -110,6 +116,7 @@ export default function PesquisaDashboard({ user }: { user: any }) {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState(''); // '', 'respondida', 'pendente', 'expirada'
 
   useEffect(() => { (async () => {
     const cs = await fetchApi('/eval/cycles');
@@ -127,16 +134,20 @@ export default function PesquisaDashboard({ user }: { user: any }) {
     ]).then(([rs, sm]) => { setRows(rs); setSummary(sm); }).finally(() => setLoading(false));
   }, [cycleId]);
 
-  const stats = useMemo(() => computeSurveyStats(rows as SurveyRow[]), [rows]);
+  // Só as respondidas alimentam NPS/CSAT/histogramas (pendentes/expiradas não têm respostas).
+  const responded = useMemo(() => rows.filter((r: any) => r.status === 'respondida'), [rows]);
+  const stats = useMemo(() => computeSurveyStats(responded as SurveyRow[]), [responded]);
 
-  // Busca só filtra a listagem detalhada; os indicadores agregados seguem do ciclo inteiro.
+  // Busca + status filtram só a listagem; os indicadores agregados seguem do ciclo inteiro.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r: any) =>
-      (r.provider_name || '').toLowerCase().includes(q) ||
-      (r.provider_code || '').toLowerCase().includes(q));
-  }, [rows, search]);
+    return rows.filter((r: any) => {
+      if (statusFilter && r.status !== statusFilter) return false;
+      if (q && !((r.provider_name || '').toLowerCase().includes(q) ||
+                 (r.provider_code || '').toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [rows, search, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -193,7 +204,7 @@ export default function PesquisaDashboard({ user }: { user: any }) {
             );
           })()}
 
-          {rows.length === 0 ? (
+          {responded.length === 0 ? (
             <p className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-500">Roteiros enviados, mas ainda sem pesquisas respondidas.</p>
           ) : (
           <>
@@ -215,23 +226,38 @@ export default function PesquisaDashboard({ user }: { user: any }) {
               <Histogram title="Q4 — Dificuldade técnica" labels={['Sim', 'Não']} counts={[stats.q4Counts.sim, stats.q4Counts.nao]} barClass={i => (i === 0 ? 'bg-red-400' : 'bg-emerald-400')} />
             </div>
           </div>
+          </>
+          )}
 
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar por prestador ou código..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full rounded-lg border-none bg-gray-50 py-2 pl-9 pr-4 text-sm focus:ring-2 focus:ring-emerald-500"
-            />
+          {/* Listagem completa: respondidas, pendentes e expiradas */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative sm:max-w-md sm:flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por prestador ou código..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full rounded-lg border-none bg-gray-50 py-2 pl-9 pr-4 text-sm focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            >
+              <option value="">Todos os status</option>
+              <option value="respondida">Respondidas</option>
+              <option value="pendente">Pendentes</option>
+              <option value="expirada">Expiradas</option>
+            </select>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-100 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="p-3">Prestador</th><th className="p-3">Enviada</th>
+                  <th className="p-3">Prestador</th><th className="p-3">Enviada</th><th className="p-3">Status</th>
                   <th className="p-3">NPS</th><th className="p-3">Q1</th><th className="p-3">Q2</th>
                   <th className="p-3">Q3</th><th className="p-3">Q5</th><th className="p-3">Dificuldade</th>
                   <th className="p-3">Comentários</th>
@@ -239,32 +265,36 @@ export default function PesquisaDashboard({ user }: { user: any }) {
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="p-8 text-center text-gray-400">Nenhum prestador encontrado.</td></tr>
-                ) : filtered.map((r: any) => (
-                  <tr key={r.id} className="border-t border-gray-50 align-top">
+                  <tr><td colSpan={10} className="p-8 text-center text-gray-400">Nenhum prestador encontrado.</td></tr>
+                ) : filtered.map((r: any) => {
+                  const meta = STATUS_META[r.status] || STATUS_META.pendente;
+                  const suffix = r.status === 'respondida' && r.within_deadline === false ? ' · fora do prazo' : '';
+                  return (
+                  <tr key={r.instance_id} className="border-t border-gray-50 align-top">
                     <td className="p-3">
                       <span className="font-medium text-gray-900">{r.provider_name}</span>
                       {r.provider_code && <span className="ml-2 text-xs text-gray-400">{r.provider_code}</span>}
                     </td>
                     <td className="p-3 text-gray-600">{fmtDate(r.submitted_at)}</td>
+                    <td className="p-3">
+                      <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${meta.cls}`}>{meta.label}{suffix}</span>
+                    </td>
                     <td className="p-3 font-bold text-gray-700">{r.q6_nps ?? '—'}</td>
                     <td className="p-3 text-gray-600">{r.q1_clareza ?? '—'}</td>
                     <td className="p-3 text-gray-600">{r.q2_portal ?? '—'}</td>
                     <td className="p-3 text-gray-600">{Q3_LABEL[r.q3_documentos] || '—'}</td>
                     <td className="p-3 text-gray-600">{r.q5_geral ?? '—'}</td>
                     <td className="p-3 text-gray-600">
-                      {r.q4_dificuldade ? 'Sim' : 'Não'}{r.q4_texto ? ` — ${r.q4_texto}` : ''}
+                      {r.q4_dificuldade == null ? '—' : (r.q4_dificuldade ? 'Sim' : 'Não')}{r.q4_texto ? ` — ${r.q4_texto}` : ''}
                     </td>
                     <td className="p-3 text-gray-600">
                       {r.comentarios ? <span className="flex gap-1"><MessageSquare className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />{r.comentarios}</span> : '—'}
                     </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>
-          </>
-          )}
         </>
       )}
     </div>

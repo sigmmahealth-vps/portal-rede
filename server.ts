@@ -4454,16 +4454,27 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const cycleId = Number.isFinite(Number(req.query.cycle_id)) ? Number(req.query.cycle_id) : null;
+      // Todos os roteiros enviados (submitted_at) LEFT JOIN respostas, com status
+      // calculado: respondida | pendente (no prazo de 7d) | expirada (prazo vencido).
       const { rows } = await query(`
-        SELECT sr.*, ei.provider_id, ei.cycle_id,
+        SELECT ei.id AS instance_id, ei.provider_id, ei.cycle_id,
+               ei.submitted_at,
                p.name AS provider_name, p.sgu_code AS provider_code,
-               c.label AS cycle_label
-          FROM eval_survey_responses sr
-          JOIN eval_instances ei ON ei.id = sr.instance_id
+               c.label AS cycle_label,
+               sr.q1_clareza, sr.q2_portal, sr.q3_documentos, sr.q4_dificuldade, sr.q4_texto,
+               sr.q5_geral, sr.q6_nps, sr.comentarios, sr.within_deadline, sr.bonus_points,
+               sr.submitted_at AS response_submitted_at,
+               CASE
+                 WHEN sr.id IS NOT NULL THEN 'respondida'
+                 WHEN now() <= ei.submitted_at + interval '7 days' THEN 'pendente'
+                 ELSE 'expirada'
+               END AS status
+          FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
-         WHERE ($1::bigint IS NULL OR ei.cycle_id = $1)
-         ORDER BY sr.submitted_at DESC
+         WHERE ei.submitted_at IS NOT NULL AND ($1::bigint IS NULL OR ei.cycle_id = $1)
+         ORDER BY (sr.id IS NOT NULL) DESC, ei.submitted_at DESC
       `, [cycleId]);
       res.json(rows);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }

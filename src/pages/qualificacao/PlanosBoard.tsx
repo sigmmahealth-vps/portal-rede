@@ -335,7 +335,7 @@ function PlanoCard({ plan, colKey, onOpen }: any) {
         </p>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2.5">
+      <div className="mt-3 flex flex-col items-start gap-2 border-t border-gray-100 pt-2.5">
         <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${PLAN_COLOR_CLASS[plan.color] || 'bg-gray-100 text-gray-600'}`}>
           {PLAN_STATUS_LABEL[plan.status] || plan.status}
         </span>

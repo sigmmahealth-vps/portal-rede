@@ -4345,6 +4345,18 @@ async function startServer() {
         return res.status(409).json({ error: `status ${inst.status} não permite parecer` });
       }
 
+      // Bloqueio da pesquisa (spec 5.4.6): só emite parecer quando a pesquisa foi
+      // respondida OU o prazo de 7 dias venceu.
+      const { rows: [survey] } = await query(
+        'SELECT within_deadline, bonus_points FROM eval_survey_responses WHERE instance_id = $1', [id]);
+      if (!survey) {
+        const { rows: [sub] } = await query('SELECT submitted_at FROM eval_instances WHERE id = $1', [id]);
+        const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
+        if (sub?.submitted_at && Date.now() <= surveyDeadline(new Date(sub.submitted_at)).getTime()) {
+          return res.status(409).json({ error: 'aguardando pesquisa de satisfação ou fim do prazo' });
+        }
+      }
+
       const { rows: pending } = await query(`
         SELECT id FROM eval_answers
          WHERE instance_id = $1 AND evidence_status NOT IN ('aprovado','reprovado')
@@ -4365,8 +4377,12 @@ async function startServer() {
 
       const score = Number(totals.score);
       const maxPossible = Number(totals.max_possible);
-      const percentual = maxPossible > 0 ? Math.round((score / maxPossible) * 10000) / 100 : 0;
+      const percentualBase = maxPossible > 0 ? Math.round((score / maxPossible) * 10000) / 100 : 0;
       const hasEliminatoryFailed = !!totals.elim_fail;
+
+      // Bônus da pesquisa: +10 (teto 100) se respondida no prazo (spec 5.4.6).
+      const bonus = survey?.within_deadline ? 10 : 0;
+      const percentual = Math.min(100, percentualBase + bonus);
 
       const { computeSeal } = await import('./src/lib/computeSeal.js');
       const seal = computeSeal(percentual, hasEliminatoryFailed);

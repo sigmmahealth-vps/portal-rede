@@ -29,6 +29,14 @@ const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
 };
 
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+// 'YYYY-MM' → 'mmm/aa' (ex.: '2026-07' → 'jul/26'). Fallback: valor cru.
+const fmtMonth = (v: any): string => {
+  const [y, m] = String(v).split('-');
+  const i = Number(m) - 1;
+  return MESES[i] ? `${MESES[i]}/${y.slice(2)}` : String(v);
+};
+
 export default function GestorDashboard({ user }: { user: any }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -122,12 +130,16 @@ export default function GestorDashboard({ user }: { user: any }) {
               <h3 className="text-lg font-bold text-gray-900 mb-4">Evolução do Nível de Conformidade</h3>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.evolution || []}>
+                  <LineChart data={data.evolution || []} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} domain={[0, 100]} />
-                    <Tooltip cursor={{stroke: '#F3F4F6', strokeWidth: 2}} />
-                    <Line type="monotone" dataKey="media" stroke="#00995D" strokeWidth={3} dot={{r: 4, fill: '#00995D', strokeWidth: 0}} />
+                    <XAxis
+                      dataKey="name" axisLine={false} tickLine={false}
+                      tick={{ fill: '#6B7280', fontSize: 12 }}
+                      tickFormatter={fmtMonth} padding={{ left: 24, right: 24 }} minTickGap={24}
+                    />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} domain={[0, 100]} width={32} />
+                    <Tooltip cursor={{ stroke: '#F3F4F6', strokeWidth: 2 }} labelFormatter={fmtMonth} formatter={(v: any) => [`${v}%`, 'Média']} />
+                    <Line type="monotone" dataKey="media" stroke="#00995D" strokeWidth={3} dot={{ r: 4, fill: '#00995D', strokeWidth: 0 }} activeDot={{ r: 6 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

@@ -4520,7 +4520,7 @@ async function startServer() {
   app.get('/api/eval/surveys', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
-      const cycleId = req.query.cycle_id ? Number(req.query.cycle_id) : null;
+      const cycleId = Number.isFinite(Number(req.query.cycle_id)) ? Number(req.query.cycle_id) : null;
       const { rows } = await query(`
         SELECT sr.*, ei.provider_id, ei.cycle_id,
                p.name AS provider_name,
@@ -4749,27 +4749,35 @@ async function startServer() {
     try {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
-      const { rows: [inst] } = await query(`
-        SELECT id, submitted_at
-          FROM eval_instances
-         WHERE provider_id = $1 AND submitted_at IS NOT NULL
-         ORDER BY submitted_at DESC
+      // Instância enviada mais recente AINDA sem resposta → disponível.
+      const { rows: [pendingInst] } = await query(`
+        SELECT ei.id, ei.submitted_at
+          FROM eval_instances ei
+         WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
+         ORDER BY ei.submitted_at DESC
          LIMIT 1
       `, [providerId]);
-      if (!inst) return res.json({ state: 'sem_roteiro' });
-
-      const { rows: [resp] } = await query(
-        'SELECT * FROM eval_survey_responses WHERE instance_id = $1', [inst.id]);
+      if (pendingInst) {
+        const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
+        const deadline = surveyDeadline(new Date(pendingInst.submitted_at));
+        return res.json({
+          state: 'disponivel',
+          instance_id: Number(pendingInst.id),
+          deadline: deadline.toISOString(),
+          expired: Date.now() > deadline.getTime(),
+        });
+      }
+      // Sem pendente: mostra a resposta mais recente do prestador, se houver.
+      const { rows: [resp] } = await query(`
+        SELECT sr.* FROM eval_survey_responses sr
+          JOIN eval_instances ei ON ei.id = sr.instance_id
+         WHERE ei.provider_id = $1
+         ORDER BY sr.submitted_at DESC
+         LIMIT 1
+      `, [providerId]);
       if (resp) return res.json({ state: 'respondida', response: resp });
-
-      const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
-      const deadline = surveyDeadline(new Date(inst.submitted_at));
-      res.json({
-        state: 'disponivel',
-        instance_id: Number(inst.id),
-        deadline: deadline.toISOString(),
-        expired: Date.now() > deadline.getTime(),
-      });
+      res.json({ state: 'sem_roteiro' });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
@@ -4778,18 +4786,20 @@ async function startServer() {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
       const { rows: [inst] } = await query(`
-        SELECT id, submitted_at
-          FROM eval_instances
-         WHERE provider_id = $1 AND submitted_at IS NOT NULL
-         ORDER BY submitted_at DESC
+        SELECT ei.id, ei.submitted_at
+          FROM eval_instances ei
+         WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
+         ORDER BY ei.submitted_at DESC
          LIMIT 1
       `, [providerId]);
-      if (!inst) return res.status(409).json({ error: 'nenhum roteiro enviado' });
+      if (!inst) return res.status(409).json({ error: 'nenhuma pesquisa pendente' });
 
       const b = req.body || {};
       const num = (v: any): number | null => (v == null || v === '' ? null : Number(v));
       const Q3 = ['sim_totalmente', 'sim_parcialmente', 'neutro', 'nao_precisei_ajuda', 'nao_insuficientes'];
-      if (b.q3_documentos && !Q3.includes(b.q3_documentos)) {
+      const q3 = b.q3_documentos || null;
+      if (q3 && !Q3.includes(q3)) {
         return res.status(400).json({ error: 'q3_documentos inválido' });
       }
 
@@ -4804,7 +4814,7 @@ async function startServer() {
              q5_geral, q6_nps, comentarios, within_deadline, bonus_points)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
           RETURNING within_deadline, bonus_points
-        `, [inst.id, num(b.q1_clareza), num(b.q2_portal), b.q3_documentos ?? null,
+        `, [inst.id, num(b.q1_clareza), num(b.q2_portal), q3,
             typeof b.q4_dificuldade === 'boolean' ? b.q4_dificuldade : null,
             b.q4_texto?.trim() || null, num(b.q5_geral), num(b.q6_nps),
             b.comentarios?.trim() || null, within, bonus]);

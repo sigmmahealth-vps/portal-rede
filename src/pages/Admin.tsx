@@ -41,7 +41,6 @@ const TABS = [
   { id: 'comunicados', label: 'Comunicados', icon: Megaphone },
   { id: 'emails', label: 'Disparo de E-mails', icon: Mail },
   { id: 'banners', label: 'Banners', icon: ImageIcon },
-  { id: 'pesquisas', label: 'Pesquisas', icon: ClipboardList },
   { id: 'acessos', label: 'Trilha de Acesso', icon: ShieldCheck },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
@@ -103,7 +102,6 @@ export default function Admin() {
   const [providers, setProviders] = useState<any[]>([]);
   const [scripts, setScripts] = useState<any[]>([]);
   const [trainings, setTrainings] = useState<any[]>([]);
-  const [surveys, setSurveys] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({ current_competence: '', payment_date: '' });
   const [accessLogs, setAccessLogs] = useState<any[]>([]);
   const [accessTotal, setAccessTotal] = useState(0);
@@ -159,9 +157,6 @@ export default function Admin() {
       } else if (activeTab === 'treinamentos') {
         const data = await fetchApi('/trainings');
         setTrainings(data);
-      } else if (activeTab === 'pesquisas') {
-        const data = await fetchApi('/surveys');
-        setSurveys(data);
       } else if (activeTab === 'configuracoes') {
         const data = await fetchApi('/settings');
         setSettings(data);
@@ -441,7 +436,7 @@ export default function Admin() {
             <span>Novo Material</span>
           </button>
         )}
-        {activeTab !== 'prestadores' && activeTab !== 'roteiros' && activeTab !== 'treinamentos' && activeTab !== 'configuracoes' && activeTab !== 'pesquisas' && activeTab !== 'usuarios' && (
+        {activeTab !== 'prestadores' && activeTab !== 'roteiros' && activeTab !== 'treinamentos' && activeTab !== 'configuracoes' && activeTab !== 'usuarios' && (
           <button className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg hover:bg-[#007A4A] transition-colors">
             <Plus className="w-5 h-5" />
             <span>Adicionar Novo</span>
@@ -1069,59 +1064,6 @@ export default function Admin() {
             <button className="bg-[#00995D] text-white px-6 py-2.5 rounded-lg hover:bg-[#007A4A] transition-colors font-medium">
               Adicionar Banner
             </button>
-          </div>
-        )}
-
-        {activeTab === 'pesquisas' && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-              <h2 className="text-lg font-bold text-gray-800">Gestão de Respostas - Pesquisa de Qualificação</h2>
-            </div>
-            
-            {surveys.length === 0 ? (
-              <div className="bg-gray-50 p-8 rounded-xl border border-gray-100 text-center">
-                <ClipboardList className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-gray-800 mb-2">Nenhuma resposta recente</h3>
-                <p className="text-gray-500 max-w-md mx-auto">
-                  As respostas dos prestadores aparecerão aqui assim que a pesquisa for respondida.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-6">
-                {surveys.map((survey) => (
-                  <div key={survey.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <div className="flex justify-between items-start mb-4 border-b pb-4">
-                      <div>
-                        <h3 className="font-bold text-gray-900">{survey.provider_name}</h3>
-                        <p className="text-sm text-gray-500">CNPJ: {survey.provider_cnpj}</p>
-                      </div>
-                      <span className="text-sm text-gray-500">
-                        {new Date(survey.created_at).toLocaleDateString('pt-BR', {
-                          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">1. Como você avalia o atendimento da Unimed Criciúma?</p>
-                        <p className="text-sm text-gray-900 mt-1">{survey.atendimento}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">2. Qual a sua satisfação com os canais de comunicação?</p>
-                        <p className="text-sm text-gray-900 mt-1">{survey.comunicacao}</p>
-                      </div>
-                      {survey.sugestoes && (
-                        <div>
-                          <p className="text-sm font-medium text-gray-700">3. Sugestões ou comentários</p>
-                          <p className="text-sm text-gray-900 mt-1 bg-gray-50 p-3 rounded-lg border border-gray-100">{survey.sugestoes}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 

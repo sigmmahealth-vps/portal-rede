@@ -21,7 +21,6 @@ import Tabelas from './pages/Tabelas';
 import Perfil from './pages/Perfil';
 import Ferramentas from './pages/Ferramentas';
 import EmConstrucao from './pages/EmConstrucao';
-import Pesquisa from './pages/Pesquisa';
 import Admin from './pages/Admin';
 import Credenciamento from './pages/Credenciamento';
 import Equipe from './pages/Equipe';
@@ -57,7 +56,6 @@ export default function App() {
           <Route path="biblioteca" element={<Biblioteca />} />
           <Route path="contratos" element={<Contratos />} />
           <Route path="qualificacao" element={<Qualificacao />} />
-          <Route path="pesquisa" element={<Pesquisa />} />
           <Route path="admin" element={<Admin />} />
           <Route path="admin/prestadores/:id" element={<ProviderDetail />} />
           <Route path="credenciamento" element={<Credenciamento />} />

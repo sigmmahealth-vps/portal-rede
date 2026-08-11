@@ -17,7 +17,6 @@ import {
   LineChart,
   Calendar,
   Grid,
-  CheckCircle,
   AlertCircle,
   Clock,
   BookOpen,
@@ -33,7 +32,6 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [adminData, setAdminData] = useState<any>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [hasAnsweredSurvey, setHasAnsweredSurvey] = useState(false);
   const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
   
@@ -52,15 +50,11 @@ export default function Dashboard() {
       Promise.all([
         fetchApi('/dashboard').catch(() => null),
         fetchApi('/announcements').catch(() => []),
-        fetchApi('/surveys').catch(() => []),
         fetchApi('/settings').catch(() => ({}))
       ])
-        .then(([dashboardData, announcementsData, surveysData, settingsData]) => {
+        .then(([dashboardData, announcementsData, settingsData]) => {
           if (dashboardData) setAdminData(dashboardData);
           setAnnouncements(announcementsData || []);
-          if (surveysData && surveysData.length > 0) {
-            setHasAnsweredSurvey(true);
-          }
           setSettings(settingsData || {});
         })
         .catch(err => console.error(err))
@@ -322,26 +316,6 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* Banner Pesquisa */}
-        {!hasAnsweredSurvey && (
-          <Link to="/pesquisa" className="relative rounded-xl overflow-hidden h-44 shadow-sm block hover:shadow-md transition-shadow group mb-6">
-            <img
-              src="https://images.pexels.com/photos/5215024/pexels-photo-5215024.jpeg?auto=compress&cs=tinysrgb&w=1200"
-              alt="Médica no consultório"
-              className="absolute inset-0 w-full h-full object-cover object-[center_40%] group-hover:scale-105 transition-transform duration-500"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"></div>
-            <div className="absolute inset-0 p-6 flex flex-col justify-center w-2/3">
-              <h2 className="text-xl font-bold text-white mb-2">Participe da Pesquisa de Qualificação</h2>
-              <p className="text-white/80 text-sm mb-4">Sua opinião ajuda a aprimorar o relacionamento com a cooperativa.</p>
-              <div>
-                <span className="inline-block bg-[#00995D] group-hover:bg-[#007A4A] text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors">Responder Pesquisa</span>
-              </div>
-            </div>
-          </Link>
-        )}
-
         {/* Acesso Rápido (cooperado) */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
           <h3 className="text-lg font-bold text-gray-800 mb-1">Acesso Rápido</h3>
@@ -452,38 +426,6 @@ export default function Dashboard() {
               </div>
             </Link>
           </div>
-
-          {/* Banner */}
-          {!hasAnsweredSurvey ? (
-            <Link to="/pesquisa" className="relative rounded-xl overflow-hidden h-48 shadow-sm block hover:shadow-md transition-shadow group">
-              <img 
-                src="https://images.pexels.com/photos/5215024/pexels-photo-5215024.jpeg?auto=compress&cs=tinysrgb&w=1200" 
-                alt="Médica no consultório" 
-                className="absolute inset-0 w-full h-full object-cover object-[center_40%] group-hover:scale-105 transition-transform duration-500"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent"></div>
-              <div className="absolute inset-0 p-6 flex flex-col justify-center w-2/3">
-                <h2 className="text-2xl font-bold text-white mb-2">Participe da Pesquisa de Qualificação da Rede</h2>
-                <p className="text-white/80 text-sm mb-4">Sua opinião é fundamental para aprimorarmos nossos serviços e o relacionamento com nossa rede de prestadores.</p>
-                <div>
-                  <span className="inline-block bg-[#00995D] group-hover:bg-[#007A4A] text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors">
-                    Responder Pesquisa
-                  </span>
-                </div>
-              </div>
-            </Link>
-          ) : (
-            <div className="relative rounded-xl overflow-hidden h-48 shadow-sm block bg-gradient-to-r from-[#00995D] to-[#007A4A]">
-              <div className="absolute inset-0 p-6 flex flex-col justify-center items-center text-center">
-                <CheckCircle className="h-12 w-12 text-white mb-4" />
-                <h2 className="text-2xl font-bold text-white mb-2">Pesquisa Respondida!</h2>
-                <p className="text-white/90 text-sm max-w-md">
-                  Agradecemos muito pela sua participação. Suas respostas nos ajudam a construir uma rede ainda mais forte e qualificada.
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Acesso Rápido */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">

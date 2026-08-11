@@ -4496,6 +4496,52 @@ async function startServer() {
     }
   });
 
+  // Memória de cálculo detalhada (auditor) — mesma regra do parecer, sem gravar nada.
+  app.get('/api/eval/instances/:id/memoria-calculo', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows: [inst] } = await query(
+        'SELECT id, status, script_id, percentual, seal FROM eval_instances WHERE id = $1', [id]);
+      if (!inst) return res.status(404).json({ error: 'instance not found' });
+
+      const { rows: [survey] } = await query(
+        'SELECT within_deadline FROM eval_survey_responses WHERE instance_id = $1', [id]);
+
+      // LEFT JOIN a partir das questões do roteiro: questões nunca respondidas
+      // aparecem como 'sem_resposta'. buildScoreMemory é agnóstico a linha faltante.
+      const { rows: memRows } = await query(`
+        SELECT eq.id AS question_id, eq.code, eq.dimension, eq.is_eliminatory, eq.max_score,
+               ea.answer_value, ea.score_obtained, ea.evidence_status
+          FROM eval_questions eq
+          JOIN eval_sections sc ON sc.id = eq.section_id
+          LEFT JOIN eval_answers ea ON ea.instance_id = $1 AND ea.question_id = eq.id
+         WHERE sc.script_id = $2
+         ORDER BY eq.dimension NULLS LAST, eq.code
+      `, [id, inst.script_id]);
+
+      const mem = buildScoreMemory(
+        memRows.map((r: any) => ({
+          question_id: Number(r.question_id), code: r.code, dimension: r.dimension,
+          is_eliminatory: !!r.is_eliminatory, max_score: Number(r.max_score),
+          answer_value: r.answer_value, score_obtained: r.score_obtained,
+          evidence_status: r.evidence_status,
+        })),
+        survey ? { within_deadline: !!survey.within_deadline } : null,
+      );
+
+      const CLOSED = ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'];
+      const payload: any = { ...mem };
+      if (CLOSED.includes(inst.status)) {
+        payload.stored = { percentual: Number(inst.percentual) || 0, seal: inst.seal };
+      }
+      res.json(payload);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // -----------------------------------------------------------------------
   // Plano de Ação 5W2H — board, detalhe, CRUD e validação (spec 5.4.4)
   // -----------------------------------------------------------------------

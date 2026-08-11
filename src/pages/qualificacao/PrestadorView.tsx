@@ -341,12 +341,12 @@ export default function PrestadorView({ user }: { user: any }) {
 
       {/* Lembrete de Pesquisa de Satisfação pendente (no prazo) */}
       {survey?.state === 'disponivel' && !survey.expired && activeTab !== 'pesquisa' && (
-        <div className="flex flex-col gap-3 rounded-xl bg-emerald-500 p-4 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl bg-amber-400 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <Smile className="mt-0.5 h-6 w-6 shrink-0" />
             <div>
               <p className="font-bold">Responda à Pesquisa de Satisfação e ganhe +10 pontos</p>
-              <p className="text-sm text-emerald-50">
+              <p className="text-sm text-amber-900">
                 Leva ~2 minutos. Disponível até{' '}
                 {(() => { try { return new Date(survey.deadline).toLocaleDateString('pt-BR'); } catch { return survey.deadline; } })()}
                 {' '}(7 dias após o envio do roteiro).
@@ -355,7 +355,7 @@ export default function PrestadorView({ user }: { user: any }) {
           </div>
           <button
             onClick={() => setActiveTab('pesquisa')}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2 text-sm font-bold text-emerald-700 shadow-sm hover:bg-emerald-50"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-900 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-amber-800"
           >
             Responder agora <ArrowRight className="h-4 w-4" />
           </button>

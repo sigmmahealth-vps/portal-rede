@@ -4462,6 +4462,33 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
+  // Pesquisa de Satisfação — resumo/funil por ciclo (spec 5.4.6). Base: roteiros
+  // enviados (eval_instances.submitted_at). 4 baldes que somam os enviados.
+  app.get('/api/eval/surveys/summary', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number.isFinite(Number(req.query.cycle_id)) ? Number(req.query.cycle_id) : null;
+      const { rows: [s] } = await query(`
+        SELECT
+          count(*)::int AS enviados,
+          count(sr.id)::int AS preenchidas,
+          count(sr.id) FILTER (WHERE sr.within_deadline)::int AS respondidas_no_prazo,
+          count(sr.id) FILTER (WHERE NOT sr.within_deadline)::int AS respondidas_fora,
+          count(*) FILTER (WHERE sr.id IS NULL AND now() <= ei.submitted_at + interval '7 days')::int AS pendentes_no_prazo,
+          count(*) FILTER (WHERE sr.id IS NULL AND now() >  ei.submitted_at + interval '7 days')::int AS pendentes_expiradas,
+          count(sr.id) FILTER (WHERE COALESCE(sr.comentarios,'') <> '' OR COALESCE(sr.q4_texto,'') <> '')::int AS com_comentario,
+          AVG(EXTRACT(EPOCH FROM (sr.submitted_at - ei.submitted_at)) / 86400.0) AS tempo_medio_dias
+        FROM eval_instances ei
+        LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
+        WHERE ei.submitted_at IS NOT NULL AND ($1::bigint IS NULL OR ei.cycle_id = $1)
+      `, [cycleId]);
+      res.json({
+        ...s,
+        tempo_medio_dias: s.tempo_medio_dias != null ? Math.round(Number(s.tempo_medio_dias) * 10) / 10 : null,
+      });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   // Lista planos do ciclo com agregados p/ o Kanban (spec 5.4.4.5)
   app.get('/api/eval/action-plans', authenticate, async (req: any, res) => {
     try {

@@ -59,7 +59,8 @@ export function planColor(status: PlanStatus): 'verde' | 'azul' | 'laranja' | 'v
 export type AnswerForPlan = {
   id: number; question_code: string | null; question_text: string;
   legislation: string | null; dimension: string | null;
-  is_non_compliant: boolean; evidence_status: string | null; guidance: string | null;
+  answer_value: string | null; score_obtained: number | string; max_score: number | string;
+  guidance: string | null;
 };
 
 export type AutoItem = {
@@ -68,14 +69,22 @@ export type AutoItem = {
   what: string; why: string; how: string | null;
 };
 
+/**
+ * Critério "não pontuou": não atingiu a nota máxima, excluindo NA. É objetivo —
+ * não depende do flag aprovar/reprovar do auditor. Assim uma DL não enviada que o
+ * auditor "aprovou" (reconhecendo a não conformidade, score 0) ainda gera plano.
+ */
+export function naoPontuou(a: Pick<AnswerForPlan, 'answer_value' | 'score_obtained' | 'max_score'>): boolean {
+  if ((a.answer_value ?? '').toLowerCase() === 'na') return false;
+  return Number(a.score_obtained) < Number(a.max_score);
+}
+
 /** Gera os itens candidatos do plano a partir das respostas do parecer (5.4.4.1). */
 export function buildAutoItems(
   answers: AnswerForPlan[],
   ctx: { segurancaPct: number },
 ): AutoItem[] {
-  const nonCompliant = answers.filter(
-    a => a.is_non_compliant || a.evidence_status === 'reprovado',
-  );
+  const nonCompliant = answers.filter(naoPontuou);
   const segMandatory = ctx.segurancaPct < 60;
   return nonCompliant.map(a => {
     const isDL = a.dimension === 'Documento Legal';

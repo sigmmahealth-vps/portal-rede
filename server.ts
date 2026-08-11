@@ -4208,11 +4208,12 @@ async function startServer() {
       const { rows } = await query(`
         SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
                eq.legislation, eq.dimension, eq.guidance,
-               ea.is_non_compliant, ea.evidence_status
+               ea.answer_value, ea.score_obtained, eq.max_score
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
          WHERE ea.instance_id = $1
-           AND (ea.is_non_compliant OR ea.evidence_status = 'reprovado')
+           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+           AND COALESCE(ea.score_obtained, 0) < eq.max_score
          ORDER BY eq.dimension, eq.code
       `, [id]);
 
@@ -4320,11 +4321,12 @@ async function startServer() {
       const { rows: candRows } = await query(`
         SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
                eq.legislation, eq.dimension, eq.guidance,
-               ea.is_non_compliant, ea.evidence_status
+               ea.answer_value, ea.score_obtained, eq.max_score
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
          WHERE ea.instance_id = $1
-           AND (ea.is_non_compliant OR ea.evidence_status = 'reprovado')
+           AND LOWER(COALESCE(ea.answer_value,'')) <> 'na'
+           AND COALESCE(ea.score_obtained, 0) < eq.max_score
       `, [id]);
 
       const { buildAutoItems, ITEM_DEFAULT_TERM_DAYS } = await import('./src/lib/actionPlan.js');

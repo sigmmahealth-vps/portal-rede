@@ -55,14 +55,19 @@ test('avg_score ignora em_andamento', () => {
   assert.equal(r.kpis.avg_score, 70);
 });
 
-test('low_security_count conta instâncias com % Segurança < 60', () => {
-  const r = buildAuditorDashboard(cycle, [inst({ id: 1 }), inst({ id: 2 }), inst({ id: 3 })], [
+test('low_security_count conta instâncias com % Segurança < 60 e anexa seguranca_pct', () => {
+  const r = buildAuditorDashboard(cycle, [inst({ id: 1 }), inst({ id: 2 }), inst({ id: 3 }), inst({ id: 4 })], [
     { instance_id: 1, dimension: 'Segurança', pct: 50 },  // conta
     { instance_id: 2, dimension: 'Segurança', pct: 60 },  // NÃO conta (limite estrito)
     { instance_id: 3, dimension: 'Segurança', pct: 59.9 },// conta
     { instance_id: 1, dimension: 'Conforto',  pct: 20 },  // outra dimensão, ignorada
   ]);
   assert.equal(r.kpis.low_security_count, 2);
+  // seguranca_pct por instância alimenta o filtro do painel; sem dado = null.
+  const byId = Object.fromEntries(r.instances.map(i => [i.id, i.seguranca_pct]));
+  assert.equal(byId[1], 50);
+  assert.equal(byId[2], 60);
+  assert.equal(byId[4], null);
 });
 
 test('seal_distribution agrupa Ouro/Prata/Bronze; reprovados sem selo viram Não Qualificado', () => {

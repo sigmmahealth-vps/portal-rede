@@ -30,6 +30,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [lowSecOnly, setLowSecOnly] = useState(false);
   const [evaluating, setEvaluating] = useState<any>(null);
 
   useEffect(() => { (async () => {
@@ -53,11 +54,12 @@ export default function PainelDoCiclo({ user }: { user: any }) {
     const q = search.trim().toLowerCase();
     return data.instances.filter((i: any) => {
       if (statusFilter && i.status !== statusFilter) return false;
+      if (lowSecOnly && !(i.seguranca_pct != null && i.seguranca_pct < 60)) return false;
       if (!q) return true;
       return (i.provider_name || '').toLowerCase().includes(q)
         || (i.provider_code || '').toLowerCase().includes(q);
     });
-  }, [data, search, statusFilter]);
+  }, [data, search, statusFilter, lowSecOnly]);
 
   // Status presentes no ciclo (pra montar as opções do dropdown).
   const statusesPresent = useMemo(() => {
@@ -166,6 +168,19 @@ export default function PainelDoCiclo({ user }: { user: any }) {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setLowSecOnly(v => !v)}
+            aria-pressed={lowSecOnly}
+            title="Mostrar apenas prestadores com Segurança abaixo de 60%"
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold border transition-colors ${
+              lowSecOnly
+                ? 'bg-red-600 text-white border-red-600'
+                : 'bg-white text-red-700 border-red-200 hover:bg-red-50'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" /> Segurança &lt; 60% ({k.low_security_count})
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -176,12 +191,13 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                 <th className="p-3 font-semibold text-gray-600 text-sm">Município</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Status</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Pontuação</th>
+                <th className="p-3 font-semibold text-gray-600 text-sm">Segurança</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-gray-500">Nenhum resultado.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Nenhum resultado.</td></tr>
               ) : filtered.map((i: any) => (
                 <tr key={i.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="p-3 font-medium text-gray-900">{i.provider_name}</td>
@@ -193,6 +209,15 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     </span>
                   </td>
                   <td className="p-3 font-bold text-gray-700">{Number(i.percentual).toFixed(0)}%</td>
+                  <td className="p-3">
+                    {i.seguranca_pct == null ? (
+                      <span className="text-sm text-gray-400">—</span>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded text-sm font-bold ${i.seguranca_pct < 60 ? 'bg-red-100 text-red-700' : 'text-gray-700'}`}>
+                        {Number(i.seguranca_pct).toFixed(0)}%
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3">
                     <div className="flex gap-2">
                       <button onClick={() => setEvaluating(i)} className="px-2 py-1 text-xs rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-1"><Eye className="w-3 h-3" /> {['aprovado','reprovado','finalizado','ciclo_encerrado'].includes(i.status) ? 'Visualizar' : 'Analisar'}</button>

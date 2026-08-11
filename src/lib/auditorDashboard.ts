@@ -10,6 +10,7 @@ export interface DashboardInstance {
   percentual: number;
   seal: string | null;
   has_certificate: boolean;
+  seguranca_pct?: number | null;
 }
 
 export interface DimPct { instance_id: number; dimension: string; pct: number; }
@@ -70,9 +71,16 @@ export function buildAuditorDashboard(
   let low_security_count = 0;
   for (const pct of secByInstance.values()) if (pct < 60) low_security_count++;
 
+  // Anexa o % de Segurança em cada prestador (null = sem resposta ainda), pra
+  // permitir o filtro "Segurança < 60%" no painel.
+  const enriched = instances.map(i => ({
+    ...i,
+    seguranca_pct: secByInstance.has(i.id) ? secByInstance.get(i.id)! : null,
+  }));
+
   const group_distribution = Array.from(groupPairs.entries())
     .map(([group, pairs]) => ({ group, count: pairs.size }))
     .sort((a, b) => b.count - a.count);
 
-  return { cycle, kpis: { total_locations, sent, pending, in_review, awaiting_provider, avg_score, low_security_count, seal_distribution, group_distribution }, instances };
+  return { cycle, kpis: { total_locations, sent, pending, in_review, awaiting_provider, avg_score, low_security_count, seal_distribution, group_distribution }, instances: enriched };
 }

@@ -18,6 +18,7 @@ import { auditLog } from './auth/auditLog.js';
 import { hashIp } from './auth/ipHash.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
+import { buildScoreMemory } from './src/lib/scoreMemory.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -4346,27 +4347,28 @@ async function startServer() {
         return res.status(409).json({ error: 'critérios sem decisão terminal', pending_answer_ids: pending.map((r: any) => Number(r.id)) });
       }
 
-      const { rows: [totals] } = await query(`
-        SELECT
-          COALESCE(SUM(ea.score_obtained) FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS score,
-          COALESCE(SUM(eq.max_score)      FILTER (WHERE ${COUNTS_IN_SCORE_SQL}), 0)::numeric AS max_possible,
-          COALESCE(BOOL_OR(ea.evidence_status = 'reprovado' AND eq.is_eliminatory), false) AS elim_fail
-        FROM eval_answers ea
-        JOIN eval_questions eq ON eq.id = ea.question_id
-        WHERE ea.instance_id = $1
+      // Mesma regra da memória de cálculo (fonte única em scoreMemory.ts).
+      const { rows: memRows } = await query(`
+        SELECT ea.question_id, eq.code, eq.dimension, eq.is_eliminatory, eq.max_score,
+               ea.answer_value, ea.score_obtained, ea.evidence_status
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+         WHERE ea.instance_id = $1
       `, [id]);
-
-      const score = Number(totals.score);
-      const maxPossible = Number(totals.max_possible);
-      const percentualBase = maxPossible > 0 ? Math.round((score / maxPossible) * 10000) / 100 : 0;
-      const hasEliminatoryFailed = !!totals.elim_fail;
-
-      // Bônus da pesquisa: +10 (teto 100) se respondida no prazo (spec 5.4.6).
-      const bonus = survey?.within_deadline ? 10 : 0;
-      const percentual = Math.min(100, percentualBase + bonus);
-
-      const { computeSeal } = await import('./src/lib/computeSeal.js');
-      const seal = computeSeal(percentual, hasEliminatoryFailed);
+      const mem = buildScoreMemory(
+        memRows.map((r: any) => ({
+          question_id: Number(r.question_id), code: r.code, dimension: r.dimension,
+          is_eliminatory: !!r.is_eliminatory, max_score: Number(r.max_score),
+          answer_value: r.answer_value, score_obtained: r.score_obtained,
+          evidence_status: r.evidence_status,
+        })),
+        survey?.within_deadline != null ? { within_deadline: !!survey.within_deadline } : null,
+      );
+      const score = mem.totals.obtained;
+      const maxPossible = mem.totals.max;
+      const hasEliminatoryFailed = mem.eliminatory_failed;
+      const percentual = mem.final_pct;
+      const seal = mem.seal;
 
       // ---- Plano de Ação 5W2H (spec 5.4.4.1): leituras puras ANTES do UPDATE —
       // status ainda é 'em_analise' aqui, seguro ler. O resultado (chosen/origin)

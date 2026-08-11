@@ -3264,7 +3264,10 @@ async function startServer() {
         return res.status(409).json({ error: 'critérios aguardando reanálise', pending_answer_ids: pending.map((r: any) => Number(r.id)) });
       }
 
-      await query(`UPDATE eval_instances SET status = 'em_analise' WHERE id = $1`, [req.params.id]);
+      await query(
+        `UPDATE eval_instances SET status = 'em_analise', submitted_at = COALESCE(submitted_at, now()) WHERE id = $1`,
+        [req.params.id],
+      );
 
       await auditLog({
         query, userId: req.user.id, action: 'evaluation_submitted',

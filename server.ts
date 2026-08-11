@@ -3352,12 +3352,12 @@ async function startServer() {
       // Qualificados = prestadores únicos com pelo menos 1 unidade finalizada com selo
       // (uma unidade não conta 3× se o prestador tem 3 unidades avaliadas).
       const { rows: approvedRows } = await query(
-        "SELECT COUNT(DISTINCT provider_id) as count FROM eval_instances WHERE status = 'finalizado' AND seal IS NOT NULL"
+        "SELECT COUNT(DISTINCT provider_id) as count FROM eval_instances WHERE status IN ('finalizado','aprovado') AND seal IS NOT NULL"
       );
       const { rows: evaluatedProvidersRows } = await query(
         'SELECT COUNT(DISTINCT provider_id)::int AS count FROM eval_instances'
       );
-      const { rows: avgRows } = await query("SELECT AVG(percentual) as avg FROM eval_instances WHERE status = 'finalizado'");
+      const { rows: avgRows } = await query("SELECT AVG(percentual) as avg FROM eval_instances WHERE status IN ('finalizado','aprovado')");
 
       const { rows: instancesByStatus } = await query("SELECT status, COUNT(*) as count FROM eval_instances GROUP BY status");
 
@@ -3367,7 +3367,7 @@ async function startServer() {
 
       const { rows: sealRows } = await query(`
         SELECT COALESCE(seal, 'Não Qualificado') AS name, COUNT(*)::int AS value
-        FROM eval_instances WHERE status = 'finalizado'
+        FROM eval_instances WHERE status IN ('finalizado','aprovado')
         GROUP BY COALESCE(seal, 'Não Qualificado')
       `);
 
@@ -3378,7 +3378,7 @@ async function startServer() {
         FROM eval_instances ei
         JOIN providers p ON p.id = ei.provider_id
         LEFT JOIN provider_locations pl ON pl.id = ei.location_id
-        WHERE ei.status = 'finalizado'
+        WHERE ei.status IN ('finalizado','aprovado')
         ORDER BY ei.percentual DESC
         LIMIT 10
       `);
@@ -3387,7 +3387,7 @@ async function startServer() {
         SELECT to_char(date_trunc('month', completed_at), 'YYYY-MM') AS name,
                ROUND(AVG(percentual))::int AS media
         FROM eval_instances
-        WHERE status = 'finalizado' AND completed_at IS NOT NULL
+        WHERE status IN ('finalizado','aprovado') AND completed_at IS NOT NULL
         GROUP BY 1 ORDER BY 1
       `);
 

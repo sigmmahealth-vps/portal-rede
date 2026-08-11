@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { Search, Plus, Filter, Calendar, ArrowUpCircle } from 'lucide-react';
-import { PLAN_STATUS_LABEL } from './planoStatus';
+import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
 const FINAL_STATUSES = ['concluido', 'encerrado_sem_conclusao'];
@@ -14,14 +14,14 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: 'final', label: 'Finalizados', statuses: FINAL_STATUSES },
 ];
 
-// Tom por coluna: bolinha do cabeçalho, pill de ações do card e fundo da coluna
-// (cor do status a 90% de transparência, alpha 0.1). Chaveado por COLUMNS.key.
-const TONE: Record<string, { dot: string; pill: string; column: string }> = {
-  aberto:             { dot: 'bg-blue-500',    pill: 'bg-blue-50 text-blue-700',       column: 'bg-blue-500/10' },
-  aguardando_revisao: { dot: 'bg-orange-500',  pill: 'bg-amber-100 text-amber-800',    column: 'bg-orange-500/10' },
-  a_vencer:           { dot: 'bg-amber-500',   pill: 'bg-amber-50 text-amber-700',     column: 'bg-amber-500/10' },
-  atrasado:           { dot: 'bg-red-500',     pill: 'bg-red-50 text-red-700',         column: 'bg-red-500/10' },
-  final:              { dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700', column: 'bg-emerald-500/10' },
+// Tom por coluna: bolinha do cabeçalho, pill de ações do card, borda da coluna e
+// fundo claro do corpo (tint a ~5% via alpha /50 do shade -50). Chaveado por COLUMNS.key.
+const TONE: Record<string, { dot: string; pill: string; border: string; body: string }> = {
+  aberto:             { dot: 'bg-blue-500',    pill: 'bg-blue-50 text-blue-700',       border: 'border-blue-100',    body: 'bg-blue-50/50' },
+  aguardando_revisao: { dot: 'bg-orange-500',  pill: 'bg-amber-100 text-amber-800',    border: 'border-amber-100',   body: 'bg-amber-50/50' },
+  a_vencer:           { dot: 'bg-amber-500',   pill: 'bg-amber-50 text-amber-700',     border: 'border-amber-100',   body: 'bg-amber-50/40' },
+  atrasado:           { dot: 'bg-red-500',     pill: 'bg-red-50 text-red-700',         border: 'border-red-100',     body: 'bg-red-50/50' },
+  final:              { dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700', border: 'border-emerald-100', body: 'bg-emerald-50/50' },
 };
 
 // Datas `date` chegam como 'YYYY-MM-DD' (db.ts); formata sem passar por Date p/ não deslocar fuso.
@@ -207,15 +207,15 @@ export default function PlanosBoard() {
           const colPlans = filtered.filter((p: any) => col.statuses.includes(p.status));
           const tone = TONE[col.key] ?? TONE.aberto;
           return (
-            <div key={col.key} className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <div key={col.key} className={`flex flex-col overflow-hidden rounded-2xl border ${tone.border} bg-white shadow-sm`}>
+              <div className="flex items-center justify-between gap-2 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
                   <p className="truncate text-sm font-bold text-gray-900">{col.label}</p>
                 </div>
                 <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 tabular-nums">{colPlans.length}</span>
               </div>
-              <div className={`flex-1 rounded-xl p-2.5 ${tone.column}`}>
+              <div className={`flex-1 border-t ${tone.border} ${tone.body} p-2.5`}>
                 <div className="space-y-3">
                   {colPlans.length === 0 ? (
                     <p className="py-6 text-center text-xs text-gray-400">Nenhum plano</p>
@@ -336,7 +336,9 @@ function PlanoCard({ plan, colKey, onOpen }: any) {
       )}
 
       <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2.5">
-        <span className="text-xs font-medium text-gray-400">{PLAN_STATUS_LABEL[plan.status] || plan.status}</span>
+        <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${PLAN_COLOR_CLASS[plan.color] || 'bg-gray-100 text-gray-600'}`}>
+          {PLAN_STATUS_LABEL[plan.status] || plan.status}
+        </span>
         <span className={isValidate
           ? 'inline-flex items-center rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white'
           : 'text-xs font-semibold text-emerald-700'}

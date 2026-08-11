@@ -17,6 +17,7 @@ import { validatePassword } from './auth/passwordPolicy.js';
 import { auditLog } from './auth/auditLog.js';
 import { hashIp } from './auth/ipHash.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
+import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -3089,6 +3090,12 @@ async function startServer() {
       const { answers } = req.body;
 
       const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' ? 'prestador' : 'auditor';
+      const isProvider = actorRole === 'prestador';
+      // D-04: prestador só escreve nos estados de edição. Fora disso (em_analise,
+      // finalizado, etc.) rejeita — staff segue sem restrição.
+      if (isProvider && !PROVIDER_EDIT_STATUSES.has(instance.status)) {
+        return res.status(409).json({ error: `status ${instance.status} não permite edição pelo prestador` });
+      }
       await withTransaction(async (client) => {
         // Ao primeiro save, sai de 'pendente' pra 'em_andamento' (5.4.2.2).
         if (instance.status === 'pendente') {
@@ -3097,11 +3104,16 @@ async function startServer() {
         for (const ans of answers as any[]) {
           // Lê o valor anterior pra decidir se grava iteration (só quando de fato mudou).
           const { rows: prevRows } = await client.query(
-            `SELECT id, answer_value, score_obtained, provider_observation
+            `SELECT id, answer_value, score_obtained, provider_observation, evidence_status
                FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
             [instanceId, ans.question_id]
           );
           const prev = prevRows[0];
+          // D-04: em reanálise, ignora silenciosamente critérios travados
+          // (aprovado/reprovado) — o payload pode trazer todos, só os liberados valem.
+          if (isProvider && !providerCanEditCriterion(instance.status, prev?.evidence_status ?? null)) {
+            continue;
+          }
           const nextVal = ans.answer_value || null;
           const nextScore = Number(ans.score_obtained || 0);
           const nextObs = ans.provider_observation || null;
@@ -3302,6 +3314,28 @@ async function startServer() {
       const providerId = instance.provider_id;
       const fileUrl = '/uploads/' + req.file.filename;
       const questionId = req.body.question_id ? Number(req.body.question_id) : null;
+
+      // D-04: prestador só anexa evidência em estado de edição e, na reanálise, só
+      // no critério devolvido. Remove o upload órfão ao rejeitar. Staff sem restrição.
+      const isProvider = req.user.role === 'prestador' || req.user.role === 'cooperado';
+      if (isProvider) {
+        const rejectUpload = (code: number, msg: string) => {
+          try { fs.unlinkSync(req.file.path); } catch { /* arquivo já sumiu */ }
+          return res.status(code).json({ error: msg });
+        };
+        if (!PROVIDER_EDIT_STATUSES.has(instance.status)) {
+          return rejectUpload(409, `status ${instance.status} não permite anexar evidência`);
+        }
+        if (questionId) {
+          const { rows: cur } = await query(
+            `SELECT evidence_status FROM eval_answers WHERE instance_id = $1 AND question_id = $2`,
+            [instanceId, questionId]
+          );
+          if (!providerCanEditCriterion(instance.status, cur[0]?.evidence_status ?? null)) {
+            return rejectUpload(403, 'critério não está liberado para reanálise');
+          }
+        }
+      }
 
       // Cada evidência é um row novo (permite múltiplos anexos por questão).
       const { rows: docRows } = await query(`

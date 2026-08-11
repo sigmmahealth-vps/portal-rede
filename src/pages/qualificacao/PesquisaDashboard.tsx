@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { computeSurveyStats, SurveyRow } from '../../lib/surveyStats';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { Loader2, MessageSquare, Search } from 'lucide-react';
 
 const Q3_LABEL: Record<string, string> = {
   sim_totalmente: 'Sim, totalmente', sim_parcialmente: 'Sim, parcialmente',
@@ -109,6 +109,7 @@ export default function PesquisaDashboard({ user }: { user: any }) {
   const [rows, setRows] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => { (async () => {
     const cs = await fetchApi('/eval/cycles');
@@ -127,6 +128,15 @@ export default function PesquisaDashboard({ user }: { user: any }) {
   }, [cycleId]);
 
   const stats = useMemo(() => computeSurveyStats(rows as SurveyRow[]), [rows]);
+
+  // Busca só filtra a listagem detalhada; os indicadores agregados seguem do ciclo inteiro.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r: any) =>
+      (r.provider_name || '').toLowerCase().includes(q) ||
+      (r.provider_code || '').toLowerCase().includes(q));
+  }, [rows, search]);
 
   return (
     <div className="space-y-6">
@@ -206,6 +216,17 @@ export default function PesquisaDashboard({ user }: { user: any }) {
             </div>
           </div>
 
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar por prestador ou código..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full rounded-lg border-none bg-gray-50 py-2 pl-9 pr-4 text-sm focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
           <div className="overflow-x-auto rounded-xl border border-gray-100 bg-white shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
@@ -217,9 +238,14 @@ export default function PesquisaDashboard({ user }: { user: any }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r: any) => (
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={9} className="p-8 text-center text-gray-400">Nenhum prestador encontrado.</td></tr>
+                ) : filtered.map((r: any) => (
                   <tr key={r.id} className="border-t border-gray-50 align-top">
-                    <td className="p-3 font-medium text-gray-900">{r.provider_name}</td>
+                    <td className="p-3">
+                      <span className="font-medium text-gray-900">{r.provider_name}</span>
+                      {r.provider_code && <span className="ml-2 text-xs text-gray-400">{r.provider_code}</span>}
+                    </td>
                     <td className="p-3 text-gray-600">{fmtDate(r.submitted_at)}</td>
                     <td className="p-3 font-bold text-gray-700">{r.q6_nps ?? '—'}</td>
                     <td className="p-3 text-gray-600">{r.q1_clareza ?? '—'}</td>

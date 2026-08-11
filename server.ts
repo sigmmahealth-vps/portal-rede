@@ -4449,7 +4449,7 @@ async function startServer() {
       const cycleId = Number.isFinite(Number(req.query.cycle_id)) ? Number(req.query.cycle_id) : null;
       const { rows } = await query(`
         SELECT sr.*, ei.provider_id, ei.cycle_id,
-               p.name AS provider_name,
+               p.name AS provider_name, p.sgu_code AS provider_code,
                c.label AS cycle_label
           FROM eval_survey_responses sr
           JOIN eval_instances ei ON ei.id = sr.instance_id

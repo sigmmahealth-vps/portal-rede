@@ -162,6 +162,10 @@ const answerPill = (v: string | null | undefined) => {
   return { label: '—', cls: 'bg-gray-100 text-gray-500' };
 };
 
+// Instância fechada (parecer emitido, certificado gerado): auditor só visualiza —
+// reabrir/reavaliar mudaria o certificado. Espelha o read-only do prestador.
+const CLOSED_STATUSES = ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'];
+
 // --- Componente principal ----------------------------------------------------
 
 export default function AuditorPlayer({
@@ -339,6 +343,8 @@ export default function AuditorPlayer({
   }, [questions, answersByQ]);
 
   const canFinish = globalStats.pendentes === 0 && globalStats.total > 0;
+  // Instância fechada: read-only pro auditor (reabrir mudaria o certificado emitido).
+  const readOnly = !!instance && CLOSED_STATUSES.includes(instance.status);
 
   // Ações do auditor ----------------------------------------------------------
   const act = async (answerId: number, action: 'aprovou' | 'reprovou' | 'solicitou_reanalise', observation?: string) => {
@@ -438,15 +444,21 @@ export default function AuditorPlayer({
               )}
             </div>
 
-            <button
-              onClick={emitirParecer}
-              disabled={busy || loading || !canFinish}
-              title={!canFinish ? 'Analise todos os critérios respondidos antes de emitir o parecer.' : 'Emitir parecer final'}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-              Emitir Parecer Final
-            </button>
+            {readOnly ? (
+              <span className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-bold text-gray-500">
+                <ShieldCheck className="h-4 w-4" /> Avaliação encerrada — somente leitura
+              </span>
+            ) : (
+              <button
+                onClick={emitirParecer}
+                disabled={busy || loading || !canFinish}
+                title={!canFinish ? 'Analise todos os critérios respondidos antes de emitir o parecer.' : 'Emitir parecer final'}
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                Emitir Parecer Final
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -699,6 +711,8 @@ export default function AuditorPlayer({
                                 {/* Ações do auditor */}
                                 {!a ? (
                                   <p className="mt-4 text-xs italic text-gray-400">Prestador ainda não respondeu — nada a analisar.</p>
+                                ) : readOnly ? (
+                                  <p className="mt-4 text-xs italic text-gray-400">Avaliação encerrada — somente leitura.</p>
                                 ) : (() => {
                                   const isRevising = revising.has(a.id);
                                   const locked = terminal && !isRevising;
@@ -825,20 +839,23 @@ export default function AuditorPlayer({
                   >
                     <ChevronLeft className="h-4 w-4" /> Seção anterior
                   </button>
-                  <button
-                    onClick={() => {
-                      if (isLastRoot) { emitirParecer(); }
-                      else { setActiveSectionId(rootSections[activeRootIndex + 1].id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }
-                    }}
-                    disabled={busy || (isLastRoot && !canFinish)}
-                    title={isLastRoot && !canFinish ? 'Analise todos os critérios antes de emitir o parecer.' : undefined}
-                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
-                  >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {isLastRoot
-                      ? (<>Emitir parecer final <ShieldCheck className="h-4 w-4" /></>)
-                      : (<>Próxima seção <ChevronRight className="h-4 w-4" /></>)}
-                  </button>
+                  {/* Na última seção de uma avaliação encerrada não há parecer a emitir. */}
+                  {!(isLastRoot && readOnly) && (
+                    <button
+                      onClick={() => {
+                        if (isLastRoot) { emitirParecer(); }
+                        else { setActiveSectionId(rootSections[activeRootIndex + 1].id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }
+                      }}
+                      disabled={busy || (isLastRoot && !canFinish)}
+                      title={isLastRoot && !canFinish ? 'Analise todos os critérios antes de emitir o parecer.' : undefined}
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
+                    >
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {isLastRoot
+                        ? (<>Emitir parecer final <ShieldCheck className="h-4 w-4" /></>)
+                        : (<>Próxima seção <ChevronRight className="h-4 w-4" /></>)}
+                    </button>
+                  )}
                 </div>
               )}
             </main>

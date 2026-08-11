@@ -195,7 +195,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                   <td className="p-3 font-bold text-gray-700">{Number(i.percentual).toFixed(0)}%</td>
                   <td className="p-3">
                     <div className="flex gap-2">
-                      <button onClick={() => setEvaluating(i)} className="px-2 py-1 text-xs rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-1"><Eye className="w-3 h-3" /> Analisar</button>
+                      <button onClick={() => setEvaluating(i)} className="px-2 py-1 text-xs rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-1"><Eye className="w-3 h-3" /> {['aprovado','reprovado','finalizado','ciclo_encerrado'].includes(i.status) ? 'Visualizar' : 'Analisar'}</button>
                       {i.status === 'em_analise' && (
                         <button onClick={() => reopen(i)} title="Devolver a avaliação para o prestador reeditar" className="px-2 py-1 text-xs rounded bg-orange-50 text-orange-700 hover:bg-orange-100 flex items-center gap-1"><Undo2 className="w-3 h-3" /> Devolver</button>
                       )}

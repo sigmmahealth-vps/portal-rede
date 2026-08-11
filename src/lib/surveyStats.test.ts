@@ -22,6 +22,11 @@ test('computeSurveyStats calcula NPS, CSAT e distribuições', () => {
   assert.equal(s.q3['sim_totalmente'], 2);
   assert.equal(s.q3['sim_parcialmente'], 1);
   assert.equal(s.q4DifficultyPct, 33.3);
+  assert.deepEqual(s.q4Counts, { sim: 1, nao: 2 });
+  // Histogramas: q1 [5,3,4] → nota3=1, nota4=1, nota5=1
+  assert.deepEqual(s.dist.q1, [0, 0, 1, 1, 1]);
+  // q6 [10,8,5] → score5=1, score8=1, score10=1 (índices 0..10)
+  assert.deepEqual(s.dist.q6, [0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1]);
 });
 
 test('computeSurveyStats sem respostas válidas → nps.score null', () => {

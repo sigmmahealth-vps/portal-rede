@@ -23,6 +23,43 @@ function Card({ label, value, sub }: { label: string; value: React.ReactNode; su
   );
 }
 
+// Histograma simples em barras CSS (sem dependência de chart).
+function Histogram({ title, labels, counts, barClass }: {
+  title: string; labels: string[]; counts: number[]; barClass?: (i: number) => string;
+}) {
+  const max = Math.max(1, ...counts);
+  const total = counts.reduce((a, b) => a + b, 0);
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="mb-3 text-sm font-semibold text-secondary-900">{title}</p>
+      <div className="flex items-end gap-1.5" style={{ height: 120 }}>
+        {counts.map((c, i) => (
+          <div key={i} className="flex h-full flex-1 flex-col items-center justify-end">
+            {c > 0 && <span className="mb-0.5 text-[10px] font-semibold text-gray-500">{c}</span>}
+            <div
+              className={`w-full rounded-t ${barClass?.(i) ?? 'bg-emerald-400'}`}
+              style={{ height: `${Math.round((c / max) * 100)}%`, minHeight: c > 0 ? 2 : 0 }}
+              title={`${c}`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-1.5">
+        {labels.map((l, i) => <span key={i} className="flex-1 text-center text-[10px] text-gray-500">{l}</span>)}
+      </div>
+      {total === 0 && <p className="mt-1 text-center text-[11px] text-gray-400">Sem dados</p>}
+    </div>
+  );
+}
+
+// Cor da barra do NPS por faixa: detratores (0–6) vermelho, passivos (7–8) âmbar, promotores (9–10) verde.
+const npsBar = (i: number) => (i <= 6 ? 'bg-red-400' : i <= 8 ? 'bg-amber-300' : 'bg-emerald-400');
+
+const Q3_ORDER = ['sim_totalmente', 'sim_parcialmente', 'neutro', 'nao_precisei_ajuda', 'nao_insuficientes'];
+const Q3_SHORT = ['Sim tot.', 'Sim parc.', 'Indif.', 'Não/ajuda', 'Insuf.'];
+const RATING_LABELS = ['1', '2', '3', '4', '5'];
+const NPS_LABELS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+
 export default function PesquisaDashboard({ user }: { user: any }) {
   const [cycles, setCycles] = useState<any[]>([]);
   const [cycleId, setCycleId] = useState<number | null>(null);
@@ -71,6 +108,18 @@ export default function PesquisaDashboard({ user }: { user: any }) {
             <Card label="CSAT — Processo (Q5)" value={stats.csat.q5 ?? '—'} sub="média 1–5" />
             <Card label="Dificuldade técnica (Q4)" value={stats.q4DifficultyPct != null ? `${stats.q4DifficultyPct}%` : '—'} sub="responderam Sim" />
             <Card label="Documentos claros (Q3)" value={stats.q3['sim_totalmente'] ?? 0} sub="Sim, totalmente" />
+          </div>
+
+          <div>
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">Distribuição por questão</h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Histogram title="Q6 — Recomendação (NPS 0–10)" labels={NPS_LABELS} counts={stats.dist.q6} barClass={npsBar} />
+              <Histogram title="Q1 — Clareza das instruções" labels={RATING_LABELS} counts={stats.dist.q1} />
+              <Histogram title="Q2 — Facilidade do portal" labels={RATING_LABELS} counts={stats.dist.q2} />
+              <Histogram title="Q5 — Processo (geral)" labels={RATING_LABELS} counts={stats.dist.q5} />
+              <Histogram title="Q3 — Orientação de documentos" labels={Q3_SHORT} counts={Q3_ORDER.map(k => stats.q3[k] ?? 0)} />
+              <Histogram title="Q4 — Dificuldade técnica" labels={['Sim', 'Não']} counts={[stats.q4Counts.sim, stats.q4Counts.nao]} barClass={i => (i === 0 ? 'bg-red-400' : 'bg-emerald-400')} />
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-100 bg-white shadow-sm">

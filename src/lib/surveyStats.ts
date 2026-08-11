@@ -14,6 +14,9 @@ export interface SurveyStats {
   csat: { q1: number | null; q2: number | null; q5: number | null };
   q3: Record<string, number>;
   q4DifficultyPct: number | null;
+  q4Counts: { sim: number; nao: number };
+  // Histogramas: contagem por nota. q1/q2/q5 → índice 0=nota1..4=nota5; q6 → 0..10.
+  dist: { q1: number[]; q2: number[]; q5: number[]; q6: number[] };
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -22,6 +25,16 @@ function mean(values: (number | null)[]): number | null {
   const nums = values.filter((v): v is number => v != null);
   if (!nums.length) return null;
   return round1(nums.reduce((a, b) => a + b, 0) / nums.length);
+}
+
+/** Contagem por bucket inteiro [min..max]; ignora null/fora da faixa. */
+function histogram(values: (number | null)[], min: number, max: number): number[] {
+  const out = new Array(max - min + 1).fill(0);
+  for (const v of values) {
+    if (v == null || !Number.isInteger(v) || v < min || v > max) continue;
+    out[v - min]++;
+  }
+  return out;
 }
 
 export function computeSurveyStats(rows: SurveyRow[]): SurveyStats {
@@ -37,9 +50,8 @@ export function computeSurveyStats(rows: SurveyRow[]): SurveyStats {
   for (const r of rows) if (r.q3_documentos) q3[r.q3_documentos] = (q3[r.q3_documentos] ?? 0) + 1;
 
   const q4 = rows.map(r => r.q4_dificuldade).filter((v): v is boolean => v != null);
-  const q4DifficultyPct = q4.length
-    ? round1((q4.filter(Boolean).length / q4.length) * 100)
-    : null;
+  const q4Counts = { sim: q4.filter(Boolean).length, nao: q4.filter(v => !v).length };
+  const q4DifficultyPct = q4.length ? round1((q4Counts.sim / q4.length) * 100) : null;
 
   return {
     count: rows.length,
@@ -51,5 +63,12 @@ export function computeSurveyStats(rows: SurveyRow[]): SurveyStats {
     },
     q3,
     q4DifficultyPct,
+    q4Counts,
+    dist: {
+      q1: histogram(rows.map(r => r.q1_clareza), 1, 5),
+      q2: histogram(rows.map(r => r.q2_portal), 1, 5),
+      q5: histogram(rows.map(r => r.q5_geral), 1, 5),
+      q6: histogram(rows.map(r => r.q6_nps), 0, 10),
+    },
   };
 }

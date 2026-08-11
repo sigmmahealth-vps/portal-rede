@@ -207,7 +207,7 @@ function ItemCard({ item, locked, showHistory, onToggleHistory, form, setForm, s
       )}
 
       {item.status !== 'aguardando_revisao' && (
-        <button type="button" onClick={onToggleHistory} className="text-xs font-semibold text-gray-500 hover:underline">
+        <button type="button" onClick={onToggleHistory} className="block w-fit text-xs font-semibold text-gray-500 hover:underline">
           Ver histórico
         </button>
       )}

@@ -53,8 +53,14 @@ export default function PrestadorView({ user }: { user: any }) {
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [survey, setSurvey] = useState<any>(null);
+  const loadSurvey = async () => {
+    try { setSurvey(await fetchApi('/me/survey')); } catch { setSurvey(null); }
+  };
+
   useEffect(() => {
     loadData();
+    loadSurvey();
   }, []);
 
   const loadData = async () => {
@@ -85,6 +91,7 @@ export default function PrestadorView({ user }: { user: any }) {
       await fetchApi(`/eval/instances/${instanceId}/submit`, { method: 'POST' });
       alert('Enviado com sucesso!');
       await loadData();
+      loadSurvey();
     } catch (e: any) {
       if (e.message.includes('critérios sem resposta')) alert('Preencha todos os critérios antes de enviar.');
       else if (e.message.includes('aguardando reanálise')) alert('Ainda há critérios aguardando reanálise.');
@@ -102,9 +109,11 @@ export default function PrestadorView({ user }: { user: any }) {
         locationId={activePlayer.locationId}
         readOnly={activePlayer.readOnly}
         providerId={user.provider_id}
-        onClose={() => {
+        onClose={(opts) => {
           setActivePlayer(null);
           loadData();
+          loadSurvey();
+          if (opts?.submitted) setActiveTab('pesquisa');
         }}
       />
     );
@@ -329,6 +338,29 @@ export default function PrestadorView({ user }: { user: any }) {
           );
         })}
       </nav>
+
+      {/* Lembrete de Pesquisa de Satisfação pendente (no prazo) */}
+      {survey?.state === 'disponivel' && !survey.expired && activeTab !== 'pesquisa' && (
+        <div className="flex flex-col gap-3 rounded-xl bg-emerald-500 p-4 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Smile className="mt-0.5 h-6 w-6 shrink-0" />
+            <div>
+              <p className="font-bold">Responda à Pesquisa de Satisfação e ganhe +10 pontos</p>
+              <p className="text-sm text-emerald-50">
+                Leva ~2 minutos. Disponível até{' '}
+                {(() => { try { return new Date(survey.deadline).toLocaleDateString('pt-BR'); } catch { return survey.deadline; } })()}
+                {' '}(7 dias após o envio do roteiro).
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('pesquisa')}
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white px-4 py-2 text-sm font-bold text-emerald-700 shadow-sm hover:bg-emerald-50"
+          >
+            Responder agora <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Conteúdo da aba */}
       {loading ? (

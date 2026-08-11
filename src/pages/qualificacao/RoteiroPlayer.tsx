@@ -192,7 +192,7 @@ export default function RoteiroPlayer({
   scriptId: number;
   instanceId?: number;
   locationId?: number;
-  onClose: () => void;
+  onClose: (opts?: { submitted?: boolean }) => void;
   providerId: number;
   readOnly?: boolean;
 }) {
@@ -441,8 +441,8 @@ export default function RoteiroPlayer({
   const finishEvaluation = async (instId: number) => {
     try {
       await fetchApi(`/eval/instances/${instId}/submit`, { method: 'POST' });
-      alert('Avaliação enviada para análise!');
-      onClose();
+      alert('Avaliação enviada para análise!\n\nAgora responda à Pesquisa de Satisfação (leva ~2 min) e ganhe +10 pontos na sua qualificação — prazo de 7 dias.');
+      onClose({ submitted: true });
     } catch (err: any) {
       alert(err?.message || 'Erro ao enviar avaliação');
     }

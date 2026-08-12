@@ -125,6 +125,7 @@ export default function PrestadorView({ user }: { user: any }) {
       ? { label: 'Iniciar avaliação', Icon: Play }
       : { label: 'Continuar avaliação', Icon: Clock };
   };
+  const fmtDate = (d: any) => (d ? new Date(d).toLocaleDateString('pt-BR') : null);
   // "Unidade — Cidade/UF" a partir do que a instância já traz.
   const instLocation = (i: any) =>
     i.location_label
@@ -284,11 +285,18 @@ export default function PrestadorView({ user }: { user: any }) {
                     {inst.location_label}{inst.location_uf ? '/' + String(inst.location_uf).toUpperCase() : ''}
                   </p>
                 )}
-                <p className="mt-1 text-xs text-gray-500">
-                  {inst.status === 'em_andamento'
-                    ? `Iniciado em: ${new Date(inst.started_at).toLocaleDateString('pt-BR')}`
-                    : `Enviado em: ${new Date(inst.completed_at || inst.started_at).toLocaleDateString('pt-BR')}`}
-                </p>
+                <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+                  {inst.status === 'em_andamento' ? (
+                    <p>Iniciado em: {fmtDate(inst.started_at)}</p>
+                  ) : (
+                    <>
+                      {inst.submitted_at && <p>Enviado em: {fmtDate(inst.submitted_at)}</p>}
+                      {OPEN_STATES.includes(inst.status) && inst.completed_at && (
+                        <p>Concluído em: {fmtDate(inst.completed_at)}</p>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
               {inst.status === 'finalizado' && inst.seal ? (
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-800">

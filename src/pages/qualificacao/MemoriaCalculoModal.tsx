@@ -5,10 +5,10 @@ import { X, Loader2, AlertTriangle } from 'lucide-react';
 const answerLabel = (v: string | null) =>
   v === 'sim' ? 'Sim' : v === 'nao' ? 'Não' : v === 'na' ? 'N/A' : '—';
 
+// Só critérios que contam são renderizados na tabela; os fora do cálculo aparecem
+// separados na seção "Fora do cálculo".
 const classPill: Record<string, { label: string; cls: string }> = {
-  conta:       { label: 'Conta',  cls: 'bg-emerald-50 text-emerald-700' },
-  na_aprovado: { label: 'Fora — N/A aprovado', cls: 'bg-gray-100 text-gray-600' },
-  sem_resposta:{ label: 'Fora — sem resposta', cls: 'bg-gray-100 text-gray-600' },
+  conta: { label: 'Conta', cls: 'bg-emerald-50 text-emerald-700' },
 };
 
 export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceId: number; onClose: () => void }) {

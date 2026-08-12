@@ -1,4 +1,4 @@
-import { computeSeal } from './computeSeal.js';
+import { computeSeal, type Seal } from './computeSeal.js';
 
 export interface ScoreMemoryRow {
   question_id: number;
@@ -36,7 +36,7 @@ export interface ScoreMemory {
   bonus_pending: boolean;
   final_pct: number;
   eliminatory_failed: boolean;
-  seal: string;
+  seal: Seal;
 }
 
 // Documento Legal soma dentro de Segurança; sem dimensão vira 'Outros'.

@@ -198,8 +198,9 @@ export default function AuditorPlayer({
   const [showMemoria, setShowMemoria] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const load = async () => {
-    setLoading(true);
+  // silent: refresh após uma ação — não pisca o spinner (evita remontar e jogar o scroll pro topo).
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const inst = await fetchApi(`/eval/instances/${instanceId}`);
       const sc = await fetchApi(`/eval/scripts/${inst.script_id}`);
@@ -260,7 +261,7 @@ export default function AuditorPlayer({
       console.error(err);
       alert('Erro ao carregar avaliação');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
 
     // Alerta de recorrência — não bloqueia o player se falhar.
@@ -360,7 +361,7 @@ export default function AuditorPlayer({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ observation: observation || '' }),
       });
-      await load();
+      await load(true);
       setRevising(prev => { const n = new Set(prev); n.delete(answerId); return n; });
     } catch (e: any) {
       alert(e?.message || 'Erro na ação');

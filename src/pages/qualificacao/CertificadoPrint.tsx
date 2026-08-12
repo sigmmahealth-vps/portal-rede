@@ -40,9 +40,8 @@ export default function CertificadoPrint() {
     setError('');
     setCert(null);
     setQr('');
-    fetchApi('/me/certificates')
-      .then((data: Certificate[]) => {
-        const found = data.find(c => c.id === Number(id));
+    fetchApi(`/eval/certificates/${id}`)
+      .then((found: Certificate) => {
         if (!found) { setError('Certificado não encontrado.'); return; }
         setCert(found);
         return QRCode.toDataURL(`${window.location.origin}/verificar/${found.verify_code}`, { margin: 1, width: 120 })

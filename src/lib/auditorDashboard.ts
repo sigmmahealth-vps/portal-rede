@@ -10,7 +10,7 @@ export interface DashboardInstance {
   percentual: number;
   seal: string | null;
   has_certificate: boolean;
-  verify_code?: string | null;
+  certificate_id?: number | null;
   seguranca_pct?: number | null;
 }
 

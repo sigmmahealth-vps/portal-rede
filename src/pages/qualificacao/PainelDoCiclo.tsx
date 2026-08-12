@@ -241,7 +241,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                         ><Undo2 className="w-4 h-4" /></button>
                       )}
                       <button
-                        onClick={() => i.verify_code && window.open(`/verificar/${i.verify_code}`, '_blank', 'noopener')}
+                        onClick={() => i.certificate_id && window.open(`/qualificacao/certificado/${i.certificate_id}/imprimir`, '_blank', 'noopener')}
                         disabled={!i.has_certificate}
                         title={i.has_certificate ? `Ver certificado${i.seal ? ` — ${i.seal}` : ''}` : 'Certificado disponível após parecer final'}
                         aria-label={i.has_certificate ? 'Ver certificado' : 'Certificado indisponível'}

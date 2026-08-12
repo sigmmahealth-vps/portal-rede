@@ -4917,16 +4917,12 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
-  // Meus certificados (spec 5.4.5 — visão do prestador). Um por instância
-  // aprovada; o seletor de ciclo é client-side (payload traz cycle_id/label).
-  app.get('/api/me/certificates', authenticate, async (req: any, res) => {
-    try {
-      const providerId = req.user.provider_id;
-      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
-
+  // Carrega certificados no shape do diploma/CertificadosTab por um filtro.
+  // whereSql é literal fixo (nunca input do usuário); $1 é o único parâmetro.
+  const loadCertificates = async (whereSql: string, params: any[]) => {
       const { rows: certs } = await query(`
         SELECT ec.id, ec.verify_code, ec.issued_at, ec.valid_until,
-               ei.id AS instance_id, ei.seal, ei.percentual,
+               ei.id AS instance_id, ei.provider_id, ei.seal, ei.percentual,
                c.id AS cycle_id, c.label AS cycle_label, c.active AS cycle_active,
                p.name AS provider_name,
                COALESCE(pl.label, fpl.label) AS location_label,
@@ -4950,9 +4946,9 @@ async function startServer() {
              LIMIT 1
           ) fpl ON ei.location_id IS NULL
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
-         WHERE ei.provider_id = $1
+         WHERE ${whereSql}
          ORDER BY ec.issued_at DESC, ec.id DESC
-      `, [providerId]);
+      `, params);
 
       // Desempenho por dimensão (mesma consolidação DL→Segurança do painel).
       const ids = certs.map((r: any) => Number(r.instance_id));
@@ -4978,13 +4974,14 @@ async function startServer() {
         }
       }
 
-      res.json(certs.map((r: any) => {
+      return certs.map((r: any) => {
         const endereco = [
           [r.logradouro, r.numero].filter(Boolean).join(', '),
           r.bairro, r.cidade,
         ].filter(Boolean).join(', ') || null;
         return {
           id: Number(r.id),
+          provider_id: Number(r.provider_id),
           verify_code: r.verify_code,
           issued_at: r.issued_at,
           valid_until: r.valid_until,
@@ -4998,7 +4995,28 @@ async function startServer() {
           location_address: endereco,
           dimensions: dimByInstance.get(Number(r.instance_id)) ?? [],
         };
-      }));
+      });
+  };
+
+  // Meus certificados (spec 5.4.5 — visão do prestador).
+  app.get('/api/me/certificates', authenticate, async (req: any, res) => {
+    try {
+      const providerId = req.user.provider_id;
+      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+      res.json(await loadCertificates('ei.provider_id = $1', [providerId]));
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Certificado por id — staff (auditoria/admin) ou o próprio prestador dono.
+  // Alvo do diploma imprimível (CertificadoPrint) e do botão do painel do auditor.
+  app.get('/api/eval/certificates/:id', authenticate, async (req: any, res) => {
+    try {
+      const [cert] = await loadCertificates('ec.id = $1', [Number(req.params.id)]);
+      if (!cert) return res.status(404).json({ error: 'certificado não encontrado' });
+      if (!isStaff(req.user.role) && String(cert.provider_id) !== String(req.user.provider_id)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      res.json(cert);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
@@ -5190,7 +5208,7 @@ async function startServer() {
                     THEN ei.percentual
                     ELSE COALESCE(partial.pct, 0) END AS percentual,
                (ec.id IS NOT NULL) AS has_certificate,
-               ec.verify_code AS verify_code
+               ec.id AS certificate_id
           FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
@@ -5238,7 +5256,8 @@ async function startServer() {
           provider_name: r.provider_name, provider_code: r.provider_code,
           city: r.city, provider_group: r.provider_group,
           status: r.status, percentual: Number(r.percentual) || 0, seal: r.seal,
-          has_certificate: !!r.has_certificate, verify_code: r.verify_code ?? null,
+          has_certificate: !!r.has_certificate,
+          certificate_id: r.certificate_id != null ? Number(r.certificate_id) : null,
         })),
         dimPct.map((r: any) => ({
           instance_id: Number(r.instance_id), dimension: r.dimension, pct: Number(r.pct) || 0,

@@ -5189,10 +5189,12 @@ async function startServer() {
                CASE WHEN ei.status IN ('aprovado','reprovado','finalizado')
                     THEN ei.percentual
                     ELSE COALESCE(partial.pct, 0) END AS percentual,
-               false AS has_certificate
+               (ec.id IS NOT NULL) AS has_certificate,
+               ec.verify_code AS verify_code
           FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          LEFT JOIN eval_certificates ec ON ec.instance_id = ei.id
           LEFT JOIN (
             SELECT ea.instance_id,
                    (SUM(CASE WHEN ${COUNTS_IN_SCORE_SQL} THEN COALESCE(ea.score_obtained, 0) ELSE 0 END)
@@ -5236,7 +5238,7 @@ async function startServer() {
           provider_name: r.provider_name, provider_code: r.provider_code,
           city: r.city, provider_group: r.provider_group,
           status: r.status, percentual: Number(r.percentual) || 0, seal: r.seal,
-          has_certificate: false,
+          has_certificate: !!r.has_certificate, verify_code: r.verify_code ?? null,
         })),
         dimPct.map((r: any) => ({
           instance_id: Number(r.instance_id), dimension: r.dimension, pct: Number(r.pct) || 0,

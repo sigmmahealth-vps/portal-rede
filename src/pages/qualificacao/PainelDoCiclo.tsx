@@ -8,6 +8,8 @@ import { statusLabel } from '../../lib/statusLabels';
 const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
 };
+// Sem selo/certificado: neutro que NÃO pode ser cinza (colidiria com o Prata).
+const NO_SEAL_COLOR = '#A5B4FC';
 
 // Instância fechada (terminal) → só visualização; a aberta é análise ativa.
 const isClosedInstance = (status: string) =>
@@ -239,11 +241,12 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                         ><Undo2 className="w-4 h-4" /></button>
                       )}
                       <button
+                        onClick={() => i.verify_code && window.open(`/verificar/${i.verify_code}`, '_blank', 'noopener')}
                         disabled={!i.has_certificate}
-                        title={i.has_certificate ? 'Ver certificado' : 'Certificado disponível após parecer final'}
+                        title={i.has_certificate ? `Ver certificado${i.seal ? ` — ${i.seal}` : ''}` : 'Certificado disponível após parecer final'}
                         aria-label={i.has_certificate ? 'Ver certificado' : 'Certificado indisponível'}
-                        className="p-1.5 rounded bg-gray-50 text-gray-500 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                      ><Award className="w-4 h-4" /></button>
+                        className="p-1.5 rounded bg-gray-50 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      ><Award className="w-4 h-4" style={{ color: i.has_certificate ? (SEAL_COLORS[i.seal] || NO_SEAL_COLOR) : NO_SEAL_COLOR }} /></button>
                     </div>
                   </td>
                 </tr>

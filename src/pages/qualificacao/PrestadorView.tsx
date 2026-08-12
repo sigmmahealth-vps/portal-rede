@@ -126,7 +126,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const scriptsVigentes = evalScriptId != null
     ? scriptsVigentesRaw.filter((s: any) => s.id === evalScriptId)
     : scriptsVigentesRaw;
-  const inProgress = instances.find(i => !OPEN_STATES.includes(i.status));
+  const openInstances = instances.filter(i => !OPEN_STATES.includes(i.status));
   const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);
   const greeting = welcomeLine(user?.last_login_at);
 
@@ -137,6 +137,20 @@ export default function PrestadorView({ user }: { user: any }) {
     return total > 0 ? Math.round((answered / total) * 100) : 0;
   };
 
+  // Rótulo/ícone do botão por estado + progresso: enviado → Visualizar; editável sem
+  // nada respondido → Iniciar; editável com progresso → Continuar.
+  const actionFor = (i: any) => {
+    if (!EDITABLE_STATES.includes(i.status)) return { label: 'Visualizar avaliação', Icon: Eye };
+    return fillPct(i) === 0
+      ? { label: 'Iniciar avaliação', Icon: Play }
+      : { label: 'Continuar avaliação', Icon: Clock };
+  };
+  // "Unidade — Cidade/UF" a partir do que a instância já traz.
+  const instLocation = (i: any) =>
+    i.location_label
+      ? `${i.location_label}${i.location_uf ? '/' + String(i.location_uf).toUpperCase() : ''}`
+      : null;
+
   // --- Conteúdo por aba -------------------------------------------------------
 
   const inicioTab = (
@@ -144,48 +158,59 @@ export default function PrestadorView({ user }: { user: any }) {
       <div className="rounded-2xl border border-gray-200 bg-white p-6">
         <h2 className="text-lg font-bold text-secondary-900">{greeting}</h2>
 
-        {inProgress ? (
+        {openInstances.length > 0 ? (
           <>
             <p className="mt-1 text-sm text-gray-500">
-              {inProgress.status === 'pendente'
-                ? 'Você tem uma nova qualificação disponível para preenchimento.'
-                : EDITABLE_STATES.includes(inProgress.status)
-                  ? 'Você tem uma qualificação em andamento.'
-                  : 'Sua qualificação foi enviada e está aguardando auditoria.'}
+              {openInstances.length > 1
+                ? `Você tem ${openInstances.length} locais de atendimento com qualificação disponível.`
+                : openInstances[0].status === 'pendente'
+                  ? 'Você tem uma nova qualificação disponível para preenchimento.'
+                  : EDITABLE_STATES.includes(openInstances[0].status)
+                    ? 'Você tem uma qualificação em andamento.'
+                    : 'Sua qualificação foi enviada e está aguardando auditoria.'}
             </p>
-            <div className="mt-4 rounded-xl bg-emerald-50/60 p-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-secondary-900">{inProgress.script_title}</p>
-                  <p className="text-sm font-medium text-emerald-700">
-                    {fillPct(inProgress)}% respondido · {Number(inProgress.answered_count) || 0} de {Number(inProgress.total_questions) || 0} critérios
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    onClick={() => setActivePlayer({ scriptId: inProgress.script_id, instanceId: inProgress.id, readOnly: !EDITABLE_STATES.includes(inProgress.status) })}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
-                  >
-                    {inProgress.status === 'pendente'
-                      ? (<><Play className="h-4 w-4" /> Iniciar avaliação</>)
-                      : EDITABLE_STATES.includes(inProgress.status)
-                        ? (<><Clock className="h-4 w-4" /> Continuar avaliação</>)
-                        : (<><Eye className="h-4 w-4" /> Visualizar avaliação</>)}
-                  </button>
-                  {EDITABLE_STATES.includes(inProgress.status) && (
-                    <button
-                      onClick={() => submitForAnalysis(inProgress.id)}
-                      disabled={submitting}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 disabled:opacity-60"
-                    >
-                      {submitting ? 'Enviando...' : 'Enviar para Análise'}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
-                <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out" style={{ width: `${fillPct(inProgress)}%` }} />
-              </div>
+            <div className="mt-4 space-y-3">
+              {openInstances.map(inst => {
+                const act = actionFor(inst);
+                const loc = instLocation(inst);
+                return (
+                  <div key={inst.id} className="rounded-xl bg-emerald-50/60 p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-secondary-900">{inst.script_title}</p>
+                        {loc && (
+                          <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-700">
+                            <MapPin className="h-3.5 w-3.5" /> {loc}
+                          </p>
+                        )}
+                        <p className="text-sm font-medium text-emerald-700">
+                          {fillPct(inst)}% respondido · {Number(inst.answered_count) || 0} de {Number(inst.total_questions) || 0} critérios
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          onClick={() => setActivePlayer({ scriptId: inst.script_id, instanceId: inst.id, locationId: inst.location_id ?? undefined, readOnly: !EDITABLE_STATES.includes(inst.status) })}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
+                        >
+                          <act.Icon className="h-4 w-4" /> {act.label}
+                        </button>
+                        {EDITABLE_STATES.includes(inst.status) && (
+                          <button
+                            onClick={() => submitForAnalysis(inst.id)}
+                            disabled={submitting}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 disabled:opacity-60"
+                          >
+                            {submitting ? 'Enviando...' : 'Enviar para Análise'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
+                      <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out" style={{ width: `${fillPct(inst)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </>
         ) : lastSealed ? (
@@ -256,14 +281,17 @@ export default function PrestadorView({ user }: { user: any }) {
                   </p>
                 )}
                 {!loc && <p className="mt-1 text-sm text-gray-500">{s.description}</p>}
-                <button
-                  onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing.id, locationId: loc?.id, readOnly: sent })}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
-                >
-                  {sent
-                    ? (<><Eye className="h-4 w-4" /> Visualizar Avaliação</>)
-                    : (<><Clock className="h-4 w-4" /> Continuar Avaliação</>)}
-                </button>
+                {(() => {
+                  const act = actionFor(existing);
+                  return (
+                    <button
+                      onClick={() => setActivePlayer({ scriptId: s.id, instanceId: existing.id, locationId: loc?.id, readOnly: sent })}
+                      className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
+                    >
+                      <act.Icon className="h-4 w-4" /> {act.label}
+                    </button>
+                  );
+                })()}
               </div>
             );
           }).filter(Boolean);

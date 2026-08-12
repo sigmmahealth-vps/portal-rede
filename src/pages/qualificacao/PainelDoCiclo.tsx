@@ -9,6 +9,10 @@ const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
 };
 
+// Instância fechada (terminal) → só visualização; a aberta é análise ativa.
+const isClosedInstance = (status: string) =>
+  ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'].includes(status);
+
 function statusPill(status: string) {
   const map: Record<string, string> = {
     em_andamento: 'bg-blue-100 text-blue-700',
@@ -222,9 +226,9 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => setEvaluating(i)}
-                        title={['aprovado','reprovado','finalizado','ciclo_encerrado'].includes(i.status) ? 'Visualizar avaliação' : 'Analisar avaliação'}
-                        aria-label={['aprovado','reprovado','finalizado','ciclo_encerrado'].includes(i.status) ? 'Visualizar avaliação' : 'Analisar avaliação'}
-                        className="p-1.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        title={isClosedInstance(i.status) ? 'Visualizar avaliação' : 'Analisar avaliação'}
+                        aria-label={isClosedInstance(i.status) ? 'Visualizar avaliação' : 'Analisar avaliação'}
+                        className={`p-1.5 rounded ${isClosedInstance(i.status) ? 'bg-gray-50 text-gray-500 hover:bg-gray-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
                       ><Eye className="w-4 h-4" /></button>
                       {i.status === 'em_analise' && (
                         <button

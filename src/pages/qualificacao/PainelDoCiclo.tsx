@@ -19,8 +19,18 @@ const isClosedInstance = (status: string) =>
 // Prestador ainda não enviou o roteiro — nada para analisar, só acompanhar o progresso.
 const isNotSubmitted = (status: string) =>
   ['em_andamento', 'pendente'].includes(status);
-const actionVerb = (status: string) =>
-  isNotSubmitted(status) ? 'Acompanhar' : isClosedInstance(status) ? 'Visualizar' : 'Analisar';
+// Rótulo do botão-olho por estado. Reanálise (aguardando_evidencia) tem texto e cor próprios.
+const actionLabel = (status: string) =>
+  isNotSubmitted(status) ? 'Acompanhar avaliação'
+  : isClosedInstance(status) ? 'Visualizar avaliação'
+  : status === 'aguardando_evidencia' ? 'Aguardando reanálise'
+  : 'Analisar avaliação';
+// Cor do botão-olho: verde só quando há o que analisar (em_analise); laranja em reanálise
+// (mesma cor do status); cinza nos demais (acompanhar/visualizar).
+const actionTone = (status: string) =>
+  status === 'aguardando_evidencia' ? 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+  : (!isNotSubmitted(status) && !isClosedInstance(status)) ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+  : 'bg-gray-50 text-gray-500 hover:bg-gray-100';
 
 function statusPill(status: string) {
   const map: Record<string, string> = {
@@ -245,10 +255,15 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => setEvaluating(i)}
-                        title={`${actionVerb(i.status)} avaliação`}
-                        aria-label={`${actionVerb(i.status)} avaliação`}
-                        className={`p-1.5 rounded ${actionVerb(i.status) === 'Analisar' ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
-                      ><Eye className="w-4 h-4" /></button>
+                        title={actionLabel(i.status)}
+                        aria-label={actionLabel(i.status)}
+                        className={`inline-flex items-center gap-1 p-1.5 rounded ${actionTone(i.status)}`}
+                      >
+                        <Eye className="w-4 h-4" />
+                        {i.status === 'aguardando_evidencia' && (
+                          <span className="whitespace-nowrap text-xs font-medium">Aguardando reanálise</span>
+                        )}
+                      </button>
                       {i.status === 'em_analise' && (
                         <button
                           onClick={() => reopen(i)}

@@ -4811,41 +4811,50 @@ async function startServer() {
   };
 
   // Pesquisa de Satisfação — visão do prestador (spec 5.4.6). Escopo anti-IDOR
-  // sempre por req.user.provider_id. A pesquisa é da instância enviada mais
-  // recente do prestador (submitted_at IS NOT NULL).
+  // sempre por req.user.provider_id. Uma pesquisa POR endereço enviado
+  // (eval_instances com submitted_at), identificada pela unidade.
   app.get('/api/me/survey', authenticate, async (req: any, res) => {
     try {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
-      // Instância enviada mais recente AINDA sem resposta → disponível.
-      const { rows: [pendingInst] } = await query(`
-        SELECT ei.id, ei.submitted_at
+      const { rows } = await query(`
+        SELECT ei.id AS instance_id, ei.submitted_at,
+               s.title AS script_title,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
+               pl.cidade AS location_cidade, pl.uf AS location_uf,
+               sr.id AS response_id, sr.q1_clareza, sr.q2_portal, sr.q3_documentos,
+               sr.q4_dificuldade, sr.q4_texto, sr.q5_geral, sr.q6_nps, sr.comentarios,
+               sr.within_deadline, sr.bonus_points, sr.submitted_at AS response_submitted_at
           FROM eval_instances ei
+          JOIN eval_scripts s ON s.id = ei.script_id
+          LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+          LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
          WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
          ORDER BY ei.submitted_at DESC
-         LIMIT 1
       `, [providerId]);
-      if (pendingInst) {
-        const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
-        const deadline = surveyDeadline(new Date(pendingInst.submitted_at));
-        return res.json({
-          state: 'disponivel',
-          instance_id: Number(pendingInst.id),
-          deadline: deadline.toISOString(),
-          expired: Date.now() > deadline.getTime(),
-        });
-      }
-      // Sem pendente: mostra a resposta mais recente do prestador, se houver.
-      const { rows: [resp] } = await query(`
-        SELECT sr.* FROM eval_survey_responses sr
-          JOIN eval_instances ei ON ei.id = sr.instance_id
-         WHERE ei.provider_id = $1
-         ORDER BY sr.submitted_at DESC
-         LIMIT 1
-      `, [providerId]);
-      if (resp) return res.json({ state: 'respondida', response: resp });
-      res.json({ state: 'sem_roteiro' });
+      const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
+      const surveys = rows.map((r: any) => {
+        const base = {
+          instance_id: Number(r.instance_id),
+          script_title: r.script_title,
+          location_label: r.location_label,
+          location_cidade: r.location_cidade,
+          location_uf: r.location_uf,
+          submitted_at: r.submitted_at,
+        };
+        if (r.response_id) {
+          return { ...base, state: 'respondida', response: {
+            q1_clareza: r.q1_clareza, q2_portal: r.q2_portal, q3_documentos: r.q3_documentos,
+            q4_dificuldade: r.q4_dificuldade, q4_texto: r.q4_texto, q5_geral: r.q5_geral,
+            q6_nps: r.q6_nps, comentarios: r.comentarios, within_deadline: r.within_deadline,
+            bonus_points: r.bonus_points, submitted_at: r.response_submitted_at,
+          } };
+        }
+        const deadline = surveyDeadline(new Date(r.submitted_at));
+        return { ...base, state: 'disponivel', deadline: deadline.toISOString(),
+                 expired: Date.now() > deadline.getTime() };
+      });
+      res.json({ surveys });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
@@ -4853,15 +4862,16 @@ async function startServer() {
     try {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+      const instanceId = Number(req.body?.instance_id);
+      if (!Number.isInteger(instanceId)) return res.status(400).json({ error: 'instance_id obrigatório' });
+      // Valida posse + que a pesquisa daquele endereço ainda está pendente.
       const { rows: [inst] } = await query(`
         SELECT ei.id, ei.submitted_at
           FROM eval_instances ei
-         WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
+         WHERE ei.id = $1 AND ei.provider_id = $2 AND ei.submitted_at IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
-         ORDER BY ei.submitted_at DESC
-         LIMIT 1
-      `, [providerId]);
-      if (!inst) return res.status(409).json({ error: 'nenhuma pesquisa pendente' });
+      `, [instanceId, providerId]);
+      if (!inst) return res.status(409).json({ error: 'nenhuma pesquisa pendente para este endereço' });
 
       const b = req.body || {};
       // Faixa validada no servidor: fora do intervalo vira null (não polui NPS/CSAT

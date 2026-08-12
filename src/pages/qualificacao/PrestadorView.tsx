@@ -109,6 +109,9 @@ export default function PrestadorView({ user }: { user: any }) {
   const openInstances = instances.filter(i => !OPEN_STATES.includes(i.status));
   const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);
   const greeting = welcomeLine(user?.last_login_at);
+  // Pesquisas pendentes no prazo (uma por endereço) — alimenta o lembrete.
+  const pendingSurveys = (survey?.surveys ?? []).filter((s: any) => s.state === 'disponivel' && !s.expired);
+  const nextSurveyDeadline = pendingSurveys.map((s: any) => s.deadline).sort()[0];
 
   // Progresso de preenchimento (respondidos / total), não o score — que só existe pós-auditoria.
   const fillPct = (i: any) => {
@@ -347,15 +350,19 @@ export default function PrestadorView({ user }: { user: any }) {
       </nav>
 
       {/* Lembrete de Pesquisa de Satisfação pendente (no prazo) */}
-      {survey?.state === 'disponivel' && !survey.expired && activeTab !== 'pesquisa' && (
+      {pendingSurveys.length > 0 && activeTab !== 'pesquisa' && (
         <div className="flex flex-col gap-3 rounded-xl bg-amber-400 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <Smile className="mt-0.5 h-6 w-6 shrink-0" />
             <div>
-              <p className="font-bold">Responda à Pesquisa de Satisfação e ganhe +10 pontos</p>
+              <p className="font-bold">
+                {pendingSurveys.length > 1
+                  ? `${pendingSurveys.length} Pesquisas de Satisfação pendentes — ganhe +10 pontos em cada`
+                  : 'Responda à Pesquisa de Satisfação e ganhe +10 pontos'}
+              </p>
               <p className="text-sm text-amber-900">
-                Leva ~2 minutos. Disponível até{' '}
-                {(() => { try { return new Date(survey.deadline).toLocaleDateString('pt-BR'); } catch { return survey.deadline; } })()}
+                Leva ~2 minutos por endereço. Disponível até{' '}
+                {(() => { try { return new Date(nextSurveyDeadline).toLocaleDateString('pt-BR'); } catch { return nextSurveyDeadline; } })()}
                 {' '}(7 dias após o envio do roteiro).
               </p>
             </div>

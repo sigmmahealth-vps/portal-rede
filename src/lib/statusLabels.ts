@@ -6,10 +6,10 @@ export const STATUS_LABEL: Record<string, string> = {
   pendente:              'Pendente',
   em_andamento:          'Em Preenchimento',
   em_analise:            'Em Análise',
-  aguardando_evidencia:  'Aguardando Reanálise',
-  aprovado:              'Concluído — Aprovado',
-  reprovado:             'Concluído — Aprovado',
-  finalizado:            'Concluído — Aprovado',
+  aguardando_evidencia:  'Reanálise',
+  aprovado:              'Concluído',
+  reprovado:             'Concluído',
+  finalizado:            'Concluído',
   ciclo_encerrado:       'Ciclo Encerrado',
 };
 

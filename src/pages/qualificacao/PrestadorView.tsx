@@ -51,7 +51,6 @@ export default function PrestadorView({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('inicio');
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   const [survey, setSurvey] = useState<any>(null);
   const loadSurvey = async () => {
@@ -79,25 +78,6 @@ export default function PrestadorView({ user }: { user: any }) {
       console.error(err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Envia a instância para análise (POST /submit) — usado tanto no envio inicial
-  // quanto no reenvio após reanálise (status 'aguardando_evidencia').
-  const submitForAnalysis = async (instanceId: number) => {
-    if (!confirm('Enviar para análise? Você não poderá editar até o auditor liberar.')) return;
-    setSubmitting(true);
-    try {
-      await fetchApi(`/eval/instances/${instanceId}/submit`, { method: 'POST' });
-      alert('Enviado com sucesso!');
-      await loadData();
-      loadSurvey();
-    } catch (e: any) {
-      if (e.message.includes('critérios sem resposta')) alert('Preencha todos os critérios antes de enviar.');
-      else if (e.message.includes('aguardando reanálise')) alert('Ainda há critérios aguardando reanálise.');
-      else alert(e.message);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -194,15 +174,6 @@ export default function PrestadorView({ user }: { user: any }) {
                         >
                           <act.Icon className="h-4 w-4" /> {act.label}
                         </button>
-                        {EDITABLE_STATES.includes(inst.status) && (
-                          <button
-                            onClick={() => submitForAnalysis(inst.id)}
-                            disabled={submitting}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 disabled:opacity-60"
-                          >
-                            {submitting ? 'Enviando...' : 'Enviar para Análise'}
-                          </button>
-                        )}
                       </div>
                     </div>
                     <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">

@@ -166,6 +166,8 @@ const answerPill = (v: string | null | undefined) => {
 // Instância fechada (parecer emitido, certificado gerado): auditor só visualiza —
 // reabrir/reavaliar mudaria o certificado. Espelha o read-only do prestador.
 const CLOSED_STATUSES = ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'];
+// Enquanto o prestador não enviou (pendente/em_andamento) não há o que analisar — abre só leitura.
+const READONLY_STATUSES = [...CLOSED_STATUSES, 'em_andamento', 'pendente'];
 
 // --- Componente principal ----------------------------------------------------
 
@@ -346,7 +348,7 @@ export default function AuditorPlayer({
 
   const canFinish = globalStats.pendentes === 0 && globalStats.total > 0;
   // Instância fechada: read-only pro auditor (reabrir mudaria o certificado emitido).
-  const readOnly = !!instance && CLOSED_STATUSES.includes(instance.status);
+  const readOnly = !!instance && READONLY_STATUSES.includes(instance.status);
 
   // Ações do auditor ----------------------------------------------------------
   const act = async (answerId: number, action: 'aprovou' | 'reprovou' | 'solicitou_reanalise', observation?: string) => {

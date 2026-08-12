@@ -14,6 +14,11 @@ const NO_SEAL_COLOR = '#A5B4FC';
 // Instância fechada (terminal) → só visualização; a aberta é análise ativa.
 const isClosedInstance = (status: string) =>
   ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'].includes(status);
+// Prestador ainda não enviou o roteiro — nada para analisar, só acompanhar o progresso.
+const isNotSubmitted = (status: string) =>
+  ['em_andamento', 'pendente'].includes(status);
+const actionVerb = (status: string) =>
+  isNotSubmitted(status) ? 'Acompanhar' : isClosedInstance(status) ? 'Visualizar' : 'Analisar';
 
 function statusPill(status: string) {
   const map: Record<string, string> = {
@@ -228,9 +233,9 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => setEvaluating(i)}
-                        title={isClosedInstance(i.status) ? 'Visualizar avaliação' : 'Analisar avaliação'}
-                        aria-label={isClosedInstance(i.status) ? 'Visualizar avaliação' : 'Analisar avaliação'}
-                        className={`p-1.5 rounded ${isClosedInstance(i.status) ? 'bg-gray-50 text-gray-500 hover:bg-gray-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                        title={`${actionVerb(i.status)} avaliação`}
+                        aria-label={`${actionVerb(i.status)} avaliação`}
+                        className={`p-1.5 rounded ${actionVerb(i.status) === 'Analisar' ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}
                       ><Eye className="w-4 h-4" /></button>
                       {i.status === 'em_analise' && (
                         <button

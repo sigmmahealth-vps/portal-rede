@@ -1550,7 +1550,7 @@ async function startServer() {
       const { rows: events } = await query(
         `SELECT al.id, al.action, al.success, al.ip_hash, al.created_at, al.meta,
                 u.name AS actor_name, u.email AS actor_email,
-                COALESCE(pl.label, pl.cidade) AS location_label
+                COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label
            FROM access_logs al
            LEFT JOIN users u ON u.id = al.user_id
            LEFT JOIN provider_locations pl
@@ -2997,7 +2997,7 @@ async function startServer() {
       const { provider_id, role } = req.user;
       const baseQuery = `
         SELECT ei.*, s.title as script_title, p.name as provider_name,
-          COALESCE(pl.label, pl.cidade) AS location_label,
+          COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
           pl.cidade AS location_cidade, pl.uf AS location_uf,
           (SELECT count(*)::int FROM eval_questions eq
              JOIN eval_sections es ON eq.section_id = es.id
@@ -3028,7 +3028,7 @@ async function startServer() {
     try {
       const { rows: instanceRows } = await query(`
         SELECT ei.*, s.title as script_title, p.name as provider_name,
-               COALESCE(pl.label, pl.cidade) AS location_label,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
                pl.cidade AS location_cidade, pl.uf AS location_uf
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
@@ -3429,7 +3429,7 @@ async function startServer() {
       const { rows: rankingRows } = await query(`
         SELECT p.name AS provider,
                ROUND(ei.percentual)::int AS score, ei.seal,
-               COALESCE(pl.label, pl.cidade) AS location_label
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label
         FROM eval_instances ei
         JOIN providers p ON p.id = ei.provider_id
         LEFT JOIN provider_locations pl ON pl.id = ei.location_id
@@ -3877,7 +3877,7 @@ async function startServer() {
                p.sgu_code AS provider_code,
                p.provider_group,
                pl.id AS location_id,
-               COALESCE(pl.label, pl.cidade) AS location_label,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
                pl.cidade AS city,
                g.script_id AS default_script_id,
                s_default.title AS default_script_title,
@@ -4925,7 +4925,7 @@ async function startServer() {
                ei.id AS instance_id, ei.provider_id, ei.seal, ei.percentual,
                c.id AS cycle_id, c.label AS cycle_label, c.active AS cycle_active,
                p.name AS provider_name,
-               COALESCE(pl.label, fpl.label) AS location_label,
+               COALESCE(NULLIF(pl.logradouro, ''), NULLIF(fpl.logradouro, ''), pl.label, fpl.label) AS location_label,
                COALESCE(pl.logradouro, fpl.logradouro) AS logradouro,
                COALESCE(pl.numero, fpl.numero) AS numero,
                COALESCE(pl.bairro, fpl.bairro) AS bairro,
@@ -5200,6 +5200,7 @@ async function startServer() {
                p.name AS provider_name,
                p.sgu_code AS provider_code,
                pl.cidade AS city,
+               NULLIF(pl.logradouro, '') AS unidade,
                p.provider_group,
                ei.status, ei.seal,
                -- Finalizadas: nota oficial gravada no parecer (base + bônus).
@@ -5254,7 +5255,7 @@ async function startServer() {
           id: Number(r.id), provider_id: Number(r.provider_id),
           location_id: r.location_id != null ? Number(r.location_id) : null,
           provider_name: r.provider_name, provider_code: r.provider_code,
-          city: r.city, provider_group: r.provider_group,
+          city: r.city, unidade: r.unidade, provider_group: r.provider_group,
           status: r.status, percentual: Number(r.percentual) || 0, seal: r.seal,
           has_certificate: !!r.has_certificate,
           certificate_id: r.certificate_id != null ? Number(r.certificate_id) : null,

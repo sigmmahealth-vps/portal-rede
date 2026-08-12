@@ -12,6 +12,8 @@ const SEAL_COLORS: Record<string, string> = {
 const NO_SEAL_COLOR = '#A5B4FC';
 
 // Instância fechada (terminal) → só visualização; a aberta é análise ativa.
+// Dimensões exibidas ao lado do total (Segurança já consolida Documento Legal no backend).
+const DIMENSOES: [string, string][] = [['Seg', 'Segurança'], ['Conf', 'Conforto'], ['Exp', 'Experiência do Cliente']];
 const isClosedInstance = (status: string) =>
   ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'].includes(status);
 // Prestador ainda não enviou o roteiro — nada para analisar, só acompanhar o progresso.
@@ -199,10 +201,9 @@ export default function PainelDoCiclo({ user }: { user: any }) {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="p-3 font-semibold text-gray-600 text-sm">Prestador</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Código</th>
-                <th className="p-3 font-semibold text-gray-600 text-sm">Município</th>
+                <th className="p-3 font-semibold text-gray-600 text-sm">Unidade</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Status</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Pontuação</th>
-                <th className="p-3 font-semibold text-gray-600 text-sm">Segurança</th>
                 <th className="p-3 font-semibold text-gray-600 text-sm">Ações</th>
               </tr>
             </thead>
@@ -213,20 +214,31 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                 <tr key={i.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="p-3 font-medium text-gray-900">{i.provider_name}</td>
                   <td className="p-3 text-sm text-gray-600">{i.provider_code || '—'}</td>
-                  <td className="p-3 text-sm text-gray-600">{i.city || '—'}</td>
+                  <td className="p-3 text-sm text-gray-600">{i.unidade || i.city || '—'}</td>
                   <td className="p-3">
                     <span className={`inline-block whitespace-nowrap px-2.5 py-1 text-[10px] font-bold uppercase rounded-full tracking-wide ${statusPill(i.status)}`}>
                       {statusLabel(i.status)}
                     </span>
                   </td>
-                  <td className="p-3 font-bold text-gray-700">{Number(i.percentual).toFixed(0)}%</td>
                   <td className="p-3">
-                    {i.seguranca_pct == null ? (
-                      <span className="text-sm text-gray-400">—</span>
-                    ) : (
-                      <span className={`px-2 py-0.5 rounded text-sm font-bold ${i.seguranca_pct < 60 ? 'bg-red-100 text-red-700' : 'text-gray-700'}`}>
-                        {Number(i.seguranca_pct).toFixed(0)}%
-                      </span>
+                    <div className="font-bold text-gray-700">{Number(i.percentual).toFixed(0)}%</div>
+                    {i.dims && (
+                      <div className="mt-1 space-y-0.5">
+                        {DIMENSOES.map(([abbr, key]) => {
+                          const pct = i.dims[key];
+                          if (pct == null) return null;
+                          const danger = key === 'Segurança' && pct < 60;
+                          return (
+                            <div key={key} className="flex items-center gap-1.5 text-[10px] text-gray-500" title={`${key}: ${pct.toFixed(0)}%`}>
+                              <span className="w-7 shrink-0">{abbr}</span>
+                              <span className="h-1.5 w-12 shrink-0 rounded-full bg-gray-200">
+                                <span className={`block h-full rounded-full ${danger ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                              </span>
+                              <span className={`tabular-nums ${danger ? 'font-semibold text-red-600' : ''}`}>{pct.toFixed(0)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </td>
                   <td className="p-3">

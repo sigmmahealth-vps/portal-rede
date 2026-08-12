@@ -5,7 +5,9 @@ export interface DashboardInstance {
   provider_name: string;
   provider_code: string | null;
   city: string | null;
+  unidade?: string | null;
   provider_group: string | null;
+  dims?: Record<string, number> | null;
   status: string;
   percentual: number;
   seal: string | null;
@@ -65,19 +67,28 @@ export function buildAuditorDashboard(
 
   const avg_score = scores.length ? Math.round((scores.reduce((s, x) => s + x, 0) / scores.length) * 10) / 10 : 0;
 
-  const secByInstance = new Map<number, number>();
+  // Agrupa todos os percentuais por dimensão de cada instância (Segurança já vem
+  // consolidada com Documento Legal na query). Serve pro filtro < 60% e pras
+  // mini-barras por dimensão ao lado do total.
+  const dimsByInstance = new Map<number, Record<string, number>>();
   for (const d of dimPct) {
-    if (d.dimension === 'Segurança') secByInstance.set(d.instance_id, d.pct);
+    const m = dimsByInstance.get(d.instance_id) ?? {};
+    m[d.dimension] = d.pct;
+    dimsByInstance.set(d.instance_id, m);
   }
   let low_security_count = 0;
-  for (const pct of secByInstance.values()) if (pct < 60) low_security_count++;
+  for (const dims of dimsByInstance.values()) {
+    if (dims['Segurança'] != null && dims['Segurança'] < 60) low_security_count++;
+  }
 
-  // Anexa o % de Segurança em cada prestador (null = sem resposta ainda), pra
-  // permitir o filtro "Segurança < 60%" no painel.
-  const enriched = instances.map(i => ({
-    ...i,
-    seguranca_pct: secByInstance.has(i.id) ? secByInstance.get(i.id)! : null,
-  }));
+  const enriched = instances.map(i => {
+    const dims = dimsByInstance.get(i.id) ?? null;
+    return {
+      ...i,
+      dims,
+      seguranca_pct: dims && dims['Segurança'] != null ? dims['Segurança'] : null,
+    };
+  });
 
   const group_distribution = Array.from(groupPairs.entries())
     .map(([group, pairs]) => ({ group, count: pairs.size }))

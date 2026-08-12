@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import {
   History, LogIn, KeyRound, ShieldCheck, UserPlus, User, Pencil,
-  FileText, CheckCircle, ClipboardCheck, ClipboardList, Activity,
+  FileText, CheckCircle, XCircle, RotateCcw, Undo2, Award, ClipboardCheck, ClipboardList, Activity,
   Megaphone, GraduationCap,
 } from 'lucide-react';
 
@@ -34,7 +34,17 @@ const ACTION_META: Record<string, { label: string; icon: any }> = {
   action_plan_status_changed: { label: 'Status do plano de ação alterado', icon: CheckCircle },
   evaluation_created: { label: 'Auditoria iniciada', icon: Activity },
   evaluation_answered: { label: 'Auditoria respondida', icon: Activity },
+  evaluation_submitted: { label: 'Avaliação enviada para análise', icon: ClipboardCheck },
   evaluation_status_changed: { label: 'Status da auditoria alterado', icon: CheckCircle },
+  evaluation_reopened: { label: 'Avaliação devolvida ao prestador', icon: Undo2 },
+  evaluation_finalized: { label: 'Análise concluída pelo auditor', icon: ShieldCheck },
+  answer_aprovou: { label: 'Critério aprovado pelo auditor', icon: CheckCircle },
+  answer_reprovou: { label: 'Critério reprovado pelo auditor', icon: XCircle },
+  answer_solicitou_reanalise: { label: 'Reanálise solicitada ao prestador', icon: RotateCcw },
+  certificate_issued: { label: 'Certificado emitido', icon: Award },
+  action_plan_generated: { label: 'Plano de ação gerado', icon: ClipboardCheck },
+  action_item_responded: { label: 'Item do plano de ação respondido', icon: ClipboardList },
+  action_item_validated: { label: 'Item do plano de ação validado', icon: CheckCircle },
 };
 
 function labelFor(action: string | null): { label: string; icon: any } {
@@ -71,7 +81,18 @@ function detailFor(action: string | null, meta: any): string | null {
       return [m.location_label && `Unidade ${m.location_label}`, m.status && `→ ${m.status}`, m.seal && `selo: ${m.seal}`]
         .filter(Boolean).join(' · ') || null;
     case 'evaluation_created':
+    case 'evaluation_submitted':
+    case 'evaluation_reopened':
       return m.location_label ? `Unidade ${m.location_label}` : null;
+    case 'evaluation_finalized':
+      return [
+        m.location_label && `Unidade ${m.location_label}`,
+        m.seal && `selo: ${m.seal}`,
+        m.percentual != null && `${Number(m.percentual).toFixed(0)}%`,
+      ].filter(Boolean).join(' · ') || null;
+    case 'certificate_issued':
+      return [m.seal && `selo: ${m.seal}`, m.valid_until && `válido até ${new Date(m.valid_until).toLocaleDateString('pt-BR')}`]
+        .filter(Boolean).join(' · ') || null;
     case 'provider_updated':
       return m.field ? `Campo: ${m.field}` : null;
     case 'provider_contact_created':

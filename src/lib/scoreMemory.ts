@@ -18,7 +18,8 @@ export type Classification = 'conta' | 'na_aprovado' | 'sem_resposta';
 export interface ScoreMemoryCriterion {
   question_id: number;
   code: string | null;
-  dimension: string;
+  dimension: string;   // consolidada (Documento Legal → Segurança) — usada no agrupamento/subtotal
+  classe: string;      // dimensão crua do roteiro (Documento Legal, Segurança, Conforto, ...) — exibição
   is_eliminatory: boolean;
   answer_value: string | null;
   evidence_status: string | null;
@@ -60,6 +61,7 @@ export function buildScoreMemory(
     question_id: r.question_id,
     code: r.code,
     dimension: consolidate(r.dimension),
+    classe: r.dimension ?? 'Outros',
     is_eliminatory: r.is_eliminatory,
     answer_value: r.answer_value,
     evidence_status: r.evidence_status,

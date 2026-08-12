@@ -55,6 +55,10 @@ test('Documento Legal consolida em Seguranca', () => {
   assert.equal(seg.obtained, 15);
   assert.equal(seg.max, 20);
   assert.equal(m.dimensions.some(d => d.dimension === 'Documento Legal'), false);
+  // A classe crua é preservada por critério mesmo consolidando o subtotal.
+  const dl = m.criteria.find(c => c.code === 'DL1')!;
+  assert.equal(dl.dimension, 'Segurança');       // consolidada p/ agrupar
+  assert.equal(dl.classe, 'Documento Legal');    // crua p/ exibir
 });
 
 test('bonus +10 no prazo, teto 100, e seal via computeSeal', () => {

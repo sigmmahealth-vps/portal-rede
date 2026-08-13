@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TrendingUp, LayoutGrid, CalendarRange, Target, Smile } from 'lucide-react';
 import GestorDashboard from './GestorDashboard';
 import PainelDoCiclo from './PainelDoCiclo';
@@ -16,9 +16,21 @@ const TABS: { slug: TabSlug; label: string; icon: React.ComponentType<{ classNam
   { slug: 'pesquisa',     label: 'Pesquisa de Satisfação', icon: Smile,  Comp: PesquisaDashboard },
 ];
 
+function readTabFromUrl(): TabSlug | null {
+  const p = new URLSearchParams(window.location.search).get('aba');
+  return TABS.some(t => t.slug === p) ? (p as TabSlug) : null;
+}
+
 export default function QualificacaoStaff({ user }: { user: any }) {
-  // Abre sempre no Estratégico (sem persistir a aba na URL).
-  const [tab, setTab] = useState<TabSlug>('estrategico');
+  // Default Estratégico na primeira visita; a aba escolhida persiste na URL
+  // (mantém a aba ao recarregar).
+  const [tab, setTab] = useState<TabSlug>(() => readTabFromUrl() || 'estrategico');
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('aba', tab);
+    window.history.replaceState({}, '', url.toString());
+  }, [tab]);
 
   const Comp = TABS.find(t => t.slug === tab)!.Comp;
 

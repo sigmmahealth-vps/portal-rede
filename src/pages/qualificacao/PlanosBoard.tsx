@@ -40,11 +40,12 @@ export default function PlanosBoard() {
   const [search, setSearch] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
-  const [providers, setProviders] = useState<any[]>([]);
+  // Linhas (prestador × endereço) elegíveis: só quem tem avaliação concluída no ciclo.
+  const [eligible, setEligible] = useState<any[]>([]);
+  const [loadingEligible, setLoadingEligible] = useState(false);
   const [newProviderId, setNewProviderId] = useState('');
   const [newLocations, setNewLocations] = useState<any[]>([]);
   const [newLocationId, setNewLocationId] = useState('');
-  const [loadingLocs, setLoadingLocs] = useState(false);
   const [providerSearch, setProviderSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -78,15 +79,25 @@ export default function PlanosBoard() {
     });
   }, [plans, search, statusFilter]);
 
+  // Prestadores distintos a partir das linhas elegíveis (avaliação concluída no ciclo).
+  const eligibleProviders = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; code: string }>();
+    for (const r of eligible) {
+      const id = String(r.provider_id);
+      if (!map.has(id)) map.set(id, { id, name: r.provider_name, code: r.provider_code });
+    }
+    return [...map.values()];
+  }, [eligible]);
+
   const providerOptions = useMemo(() => {
     const q = providerSearch.trim().toLowerCase();
     const list = q
-      ? providers.filter((p: any) =>
+      ? eligibleProviders.filter((p) =>
           (p.name || '').toLowerCase().includes(q) ||
           (p.code || '').toLowerCase().includes(q))
-      : providers;
+      : eligibleProviders;
     return list.slice(0, 50); // ponytail: cap render; busca estreita antes de rolar
-  }, [providers, providerSearch]);
+  }, [eligibleProviders, providerSearch]);
 
   const activeFilterCount = statusFilter ? 1 : 0;
 
@@ -100,34 +111,38 @@ export default function PlanosBoard() {
     setNewLocations([]);
     setNewLocationId('');
     setShowNewModal(true);
-    if (providers.length === 0) setProviders(await fetchApi('/providers'));
+    if (cycleId == null) { setEligible([]); return; }
+    setLoadingEligible(true);
+    try { setEligible(await fetchApi(`/eval/plan-eligible?cycle_id=${cycleId}`)); }
+    catch { setEligible([]); }
+    finally { setLoadingEligible(false); }
   };
 
-  // Só unidades comerciais (mesma regra do backend: exclui residencial).
-  const isCommercialLoc = (l: any) =>
-    !/^residencial/i.test(l.label || '') && !/-RES$/.test(l.sgu_location_code || '');
   const locLabel = (l: any) => {
     const uf = l.uf ? '/' + String(l.uf).toUpperCase() : '';
     const city = l.cidade ? `${l.cidade}${uf}` : '';
-    const main = l.logradouro || l.label || 'Unidade';
+    const main = l.label || 'Unidade';
     return city ? `${main} — ${city}` : main;
   };
 
-  // Ao escolher o prestador, carrega as unidades. 1 comercial → pré-seleciona;
-  // várias → exige escolher; nenhuma → plano fica sem endereço.
-  const selectProvider = async (id: string) => {
+  // Endereços elegíveis do prestador = os que tiveram avaliação concluída (linhas
+  // de `eligible` com location_id). 1 → pré-seleciona; vários → exige escolher;
+  // nenhum (avaliação sem unidade) → plano fica sem endereço específico.
+  const selectProvider = (id: string) => {
     setNewProviderId(id);
     setNewLocationId('');
-    setNewLocations([]);
-    if (!id) return;
-    setLoadingLocs(true);
-    try {
-      const p = await fetchApi(`/providers/${id}`);
-      const locs = (p?.locations ?? []).filter(isCommercialLoc);
-      setNewLocations(locs);
-      if (locs.length === 1) setNewLocationId(String(locs[0].id));
-    } catch { setNewLocations([]); }
-    finally { setLoadingLocs(false); }
+    if (!id) { setNewLocations([]); return; }
+    const seen = new Set<string>();
+    const uniq: any[] = [];
+    for (const r of eligible) {
+      if (String(r.provider_id) !== id || r.location_id == null) continue;
+      const k = String(r.location_id);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push({ id: r.location_id, label: r.location_label, cidade: r.location_cidade, uf: r.location_uf });
+    }
+    setNewLocations(uniq);
+    if (uniq.length === 1) setNewLocationId(String(uniq[0].id));
   };
 
   const needsLocationChoice = newLocations.length > 1 && !newLocationId;
@@ -295,9 +310,15 @@ export default function PlanosBoard() {
               />
             </div>
             <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
-              {providerOptions.length === 0 ? (
-                <p className="p-4 text-center text-sm text-gray-400">Nenhum prestador encontrado.</p>
-              ) : providerOptions.map((p: any) => (
+              {loadingEligible ? (
+                <p className="p-4 text-center text-sm text-gray-400">Carregando prestadores...</p>
+              ) : providerOptions.length === 0 ? (
+                <p className="p-4 text-center text-sm text-gray-400">
+                  {providerSearch.trim()
+                    ? 'Nenhum prestador encontrado.'
+                    : 'Nenhum prestador com avaliação concluída neste ciclo.'}
+                </p>
+              ) : providerOptions.map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -315,10 +336,8 @@ export default function PlanosBoard() {
             {newProviderId && (
               <div>
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Unidade / endereço</p>
-                {loadingLocs ? (
-                  <p className="text-sm text-gray-400">Carregando unidades...</p>
-                ) : newLocations.length === 0 ? (
-                  <p className="text-sm text-gray-500">Este prestador não tem unidade comercial cadastrada — o plano ficará sem endereço.</p>
+                {newLocations.length === 0 ? (
+                  <p className="text-sm text-gray-500">Avaliação concluída sem endereço específico — o plano ficará sem endereço.</p>
                 ) : newLocations.length === 1 ? (
                   <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
                     <MapPin className="h-4 w-4 shrink-0" /> {locLabel(newLocations[0])}

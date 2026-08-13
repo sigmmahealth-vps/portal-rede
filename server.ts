@@ -4642,6 +4642,30 @@ async function startServer() {
   });
 
   // Plano avulso (spec 5.4.4.1 - Manual). Body: { provider_id, location_id?, cycle_id? }
+  // Prestadores + endereços elegíveis para plano de ação manual: só os que têm
+  // avaliação CONCLUÍDA (parecer emitido) no ciclo. 'ciclo_encerrado' é fechamento
+  // forçado, não conclusão — fica de fora. Uma linha por (prestador, endereço).
+  const CONCLUDED_STATUSES = ['aprovado', 'reprovado', 'finalizado'];
+  app.get('/api/eval/plan-eligible', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = req.query.cycle_id ? Number(req.query.cycle_id) : null;
+      const { rows } = await query(`
+        SELECT DISTINCT p.id AS provider_id, p.name AS provider_name, p.sgu_code AS provider_code,
+               ei.location_id,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
+               pl.cidade AS location_cidade, pl.uf AS location_uf
+          FROM eval_instances ei
+          JOIN providers p ON p.id = ei.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+         WHERE ei.status = ANY($1)
+           AND ($2::bigint IS NULL OR ei.cycle_id = $2)
+         ORDER BY p.name, location_label
+      `, [CONCLUDED_STATUSES, cycleId]);
+      res.json(rows);
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   app.post('/api/eval/action-plans', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
@@ -4660,6 +4684,19 @@ async function startServer() {
           [provider_id],
         );
         if (locs.length === 1) locationId = Number(locs[0].id);
+      }
+      // Regra: plano manual só para prestador/endereço com avaliação concluída no
+      // ciclo (mesma fonte do GET /plan-eligible). Defesa no servidor — não confia só na UI.
+      const { rows: elig } = await query(`
+        SELECT 1 FROM eval_instances
+         WHERE provider_id = $1
+           AND status = ANY($2)
+           AND ($3::bigint IS NULL OR cycle_id = $3)
+           AND ($4::bigint IS NULL OR location_id = $4 OR location_id IS NULL)
+         LIMIT 1
+      `, [provider_id, CONCLUDED_STATUSES, cycle_id ?? null, locationId]);
+      if (elig.length === 0) {
+        return res.status(409).json({ error: 'Prestador/endereço sem avaliação concluída neste ciclo.' });
       }
       const { rows: [plan] } = await query(`
         INSERT INTO eval_action_plans (cycle_id, provider_id, location_id, origin, created_by)

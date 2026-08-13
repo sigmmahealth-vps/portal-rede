@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { Search, Download, Eye, Undo2, Award, AlertTriangle } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import AuditorPlayer from './AuditorPlayer';
 import { statusLabel } from '../../lib/statusLabels';
 
@@ -102,7 +101,6 @@ export default function PainelDoCiclo({ user }: { user: any }) {
 
   const k = data.kpis;
   const sentPct = k.sent + k.pending > 0 ? Math.round((k.sent / (k.sent + k.pending)) * 100) : 0;
-  const sealPieData = Object.entries(k.seal_distribution).filter(([, v]) => (v as number) > 0).map(([name, value]) => ({ name, value }));
 
   return (
     <div className="space-y-6">
@@ -139,32 +137,35 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         <Card label="Aguardando reanálise" value={k.awaiting_provider} />
         <Card label="Média geral" value={`${k.avg_score.toFixed(1)}%`} />
         <Card label="Segurança < 60%" value={k.low_security_count} />
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
-          <div className="h-24">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={sealPieData} dataKey="value" nameKey="name" innerRadius={20} outerRadius={40}>
-                  {sealPieData.map((s: any) => <Cell key={s.name} fill={SEAL_COLORS[s.name] || '#9CA3AF'} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Grupos (top 5)</p>
-          <div className="h-24">
-            <ResponsiveContainer>
-              <BarChart data={k.group_distribution.slice(0, 5)} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="group" hide />
-                <Tooltip />
-                <Bar dataKey="count" fill="#00995D" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      </div>
+
+      {/* Selos emitidos no ciclo — emoji (cor do selo) + quantidade · % */}
+      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
+        {(() => {
+          const dist = k.seal_distribution as Record<string, number>;
+          const totalSeals = Object.values(dist).reduce((a, b) => a + (b as number), 0);
+          const SEAL_EMOJI: Record<string, string> = {
+            'Ouro': '🥇', 'Prata': '🥈', 'Bronze': '🥉', 'Não Qualificado': '🚫',
+          };
+          const order = ['Ouro', 'Prata', 'Bronze', 'Não Qualificado'].filter(s => (dist[s] || 0) > 0);
+          if (totalSeals === 0) {
+            return <p className="mt-1 text-sm text-gray-400">Nenhum selo emitido ainda.</p>;
+          }
+          return (
+            <div className="mt-2 flex flex-wrap gap-x-8 gap-y-2">
+              {order.map(s => (
+                <span key={s} className="inline-flex items-center gap-2">
+                  <span className="text-2xl" aria-hidden="true">{SEAL_EMOJI[s]}</span>
+                  <span className="text-sm text-gray-600">{s}</span>
+                  <span className="text-lg font-bold text-secondary-900">
+                    {dist[s]} <span className="text-sm font-semibold text-gray-500">· {Math.round((dist[s] / totalSeals) * 100)}%</span>
+                  </span>
+                </span>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

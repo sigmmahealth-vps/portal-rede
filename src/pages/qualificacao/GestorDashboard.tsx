@@ -5,7 +5,6 @@ import {
   CheckCircle,
   TrendingUp,
   AlertTriangle,
-  Award,
   MapPin
 } from 'lucide-react';
 import { 
@@ -76,15 +75,6 @@ export default function GestorDashboard({ user }: { user: any }) {
       console.error('Erro ao carregar dashboard', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'em_andamento': return 'text-blue-600 bg-blue-100';
-      case 'pendente': return 'text-amber-600 bg-amber-100';
-      case 'finalizado': return 'text-emerald-600 bg-emerald-100';
-      default: return 'text-gray-600 bg-gray-100';
     }
   };
 

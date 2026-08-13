@@ -72,23 +72,6 @@ export default function GestorDashboard({ user }: { user: any }) {
     }
   };
 
-  const exportRankingCsv = () => {
-    const rows = data?.ranking || [];
-    const headers = ['Colocacao', 'Prestador', 'Score', 'Selo'];
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((r: any, i: number) =>
-        [i + 1, `"${(r.provider || '').replace(/"/g, '""')}"`, r.score, r.seal || ''].join(',')),
-    ].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute('download', 'ranking_qualificacao.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -110,12 +93,6 @@ export default function GestorDashboard({ user }: { user: any }) {
               ))}
             </select>
           </label>
-          <button
-            className="btn btn-outline"
-            onClick={exportRankingCsv}
-          >
-            Exportar Relatório
-          </button>
         </div>
       </div>
 

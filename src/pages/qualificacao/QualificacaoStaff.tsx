@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { TrendingUp, LayoutGrid, CalendarRange, Target, Smile } from 'lucide-react';
 import GestorDashboard from './GestorDashboard';
 import PainelDoCiclo from './PainelDoCiclo';
@@ -10,29 +10,15 @@ type TabSlug = 'estrategico' | 'painel-ciclo' | 'ciclos' | 'planos' | 'pesquisa'
 
 const TABS: { slug: TabSlug; label: string; icon: React.ComponentType<{ className?: string }>; Comp: React.ComponentType<{ user: any }> }[] = [
   { slug: 'estrategico',  label: 'Estratégico',     icon: TrendingUp,    Comp: GestorDashboard },
-  { slug: 'painel-ciclo', label: 'Painel do Ciclo', icon: LayoutGrid,    Comp: PainelDoCiclo },
   { slug: 'ciclos',       label: 'Ciclos',          icon: CalendarRange, Comp: CiclosAdmin },
+  { slug: 'painel-ciclo', label: 'Painel do Ciclo', icon: LayoutGrid,    Comp: PainelDoCiclo },
   { slug: 'planos',       label: 'Plano de Ação',   icon: Target,        Comp: PlanosBoard },
   { slug: 'pesquisa',     label: 'Pesquisa de Satisfação', icon: Smile,  Comp: PesquisaDashboard },
 ];
 
-function defaultTabFor(role: string): TabSlug {
-  return role === 'auditoria' ? 'painel-ciclo' : 'estrategico';
-}
-
-function readTabFromUrl(): TabSlug | null {
-  const p = new URLSearchParams(window.location.search).get('aba');
-  return TABS.some(t => t.slug === p) ? (p as TabSlug) : null;
-}
-
 export default function QualificacaoStaff({ user }: { user: any }) {
-  const [tab, setTab] = useState<TabSlug>(() => readTabFromUrl() || defaultTabFor(user.role));
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('aba', tab);
-    window.history.replaceState({}, '', url.toString());
-  }, [tab]);
+  // Abre sempre no Estratégico (sem persistir a aba na URL).
+  const [tab, setTab] = useState<TabSlug>('estrategico');
 
   const Comp = TABS.find(t => t.slug === tab)!.Comp;
 

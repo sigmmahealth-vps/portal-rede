@@ -153,11 +153,10 @@ export default function PainelDoCiclo({ user }: { user: any }) {
             return <p className="mt-1 text-sm text-gray-400">Nenhum selo emitido ainda.</p>;
           }
           return (
-            <div className="mt-2 flex flex-wrap gap-x-8 gap-y-2">
+            <div className="mt-2 flex items-center gap-x-6 overflow-x-auto">
               {order.map(s => (
-                <span key={s} className="inline-flex items-center gap-2">
+                <span key={s} className="inline-flex shrink-0 items-center gap-1.5" title={s}>
                   <span className="text-2xl" aria-hidden="true">{SEAL_EMOJI[s]}</span>
-                  <span className="text-sm text-gray-600">{s}</span>
                   <span className="text-lg font-bold text-secondary-900">
                     {dist[s]} <span className="text-sm font-semibold text-gray-500">· {Math.round((dist[s] / totalSeals) * 100)}%</span>
                   </span>

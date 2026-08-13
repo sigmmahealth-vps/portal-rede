@@ -4925,7 +4925,12 @@ async function startServer() {
       const { rows } = await query(`
         SELECT p.id, p.cycle_id, c.label AS cycle_label, p.created_at, p.closed_without_completion,
                COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
-               pl.cidade AS location_cidade, pl.uf AS location_uf
+               pl.cidade AS location_cidade, pl.uf AS location_uf,
+               (NOT p.closed_without_completion AND EXISTS (
+                  SELECT 1 FROM eval_action_items ai
+                   WHERE ai.plan_id = p.id
+                     AND ai.status IN ('nao_iniciada','em_andamento','solicitada_revisao','reprovada')
+               )) AS pending
           FROM eval_action_plans p
           LEFT JOIN eval_cycles c ON c.id = p.cycle_id
           LEFT JOIN provider_locations pl ON pl.id = p.location_id

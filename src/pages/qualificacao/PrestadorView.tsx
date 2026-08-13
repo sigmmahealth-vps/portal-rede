@@ -44,6 +44,69 @@ function EmBreve({ icon: Icon, title, desc }: { icon: any; title: string; desc: 
   );
 }
 
+// --- Mural de alertas (spec 2026-08-13) — escopo de módulo -------------------
+// Identidade estável entre renders: fora do componente, não remonta (e não
+// perde o estado `open` de cada card) quando PrestadorView re-renderiza.
+const GROUP_META: Record<AlertType, { label: string; Icon: any; dot: string; card: string; btn: string }> = {
+  corrigir:  { label: 'Corrigir e reenviar',      Icon: AlertTriangle, dot: 'bg-red-500',     card: 'border-red-200 bg-red-50/60',       btn: 'bg-red-500 hover:bg-red-600' },
+  plano:     { label: 'Responder plano de ação',  Icon: Target,        dot: 'bg-orange-500',  card: 'border-orange-200 bg-orange-50/60', btn: 'bg-orange-500 hover:bg-orange-600' },
+  continuar: { label: 'Continuar avaliação',      Icon: Clock,         dot: 'bg-amber-500',   card: 'border-amber-200 bg-amber-50/60',   btn: 'bg-amber-500 hover:bg-amber-600' },
+  iniciar:   { label: 'Iniciar avaliação',        Icon: Play,          dot: 'bg-blue-500',    card: 'border-blue-200 bg-blue-50/60',     btn: 'bg-blue-500 hover:bg-blue-600' },
+  pesquisa:  { label: 'Responder pesquisa (+10)', Icon: Smile,         dot: 'bg-emerald-500', card: 'border-emerald-200 bg-emerald-50/60', btn: 'bg-emerald-500 hover:bg-emerald-600' },
+};
+
+const itemBtnLabel = (type: AlertType): string =>
+  type === 'corrigir' ? 'Corrigir' : type === 'plano' ? 'Responder' : type === 'pesquisa' ? 'Responder' : type === 'continuar' ? 'Continuar' : 'Iniciar';
+
+// key? — sem @types/react neste projeto, JSX não infere LibraryManagedAttributes;
+// o campo é só para o checker aceitar `key=` no map, React descarta em runtime.
+const AlertGroupCard = ({ type, items, onRun }: { key?: string; type: AlertType; items: AlertItem[]; onRun: (type: AlertType, it: AlertItem) => void }) => {
+  const meta = GROUP_META[type];
+  // Grupo com 1 item já vem expandido, sem colapso (spec §2).
+  const [open, setOpen] = useState(items.length === 1);
+  const single = items.length === 1;
+  return (
+    <div className={`rounded-2xl border ${meta.card}`}>
+      <button
+        type="button"
+        onClick={() => !single && setOpen(v => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 p-4 text-left"
+      >
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-white ${meta.dot}`}>
+          <meta.Icon className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="font-bold text-secondary-900">{meta.label}</span>
+          <span className="ml-2 text-sm font-medium text-gray-500">{items.length} roteiro{items.length > 1 ? 's' : ''}</span>
+        </span>
+        {!single && (open ? <ChevronDown className="h-5 w-5 text-gray-400" /> : <ChevronRight className="h-5 w-5 text-gray-400" />)}
+      </button>
+      {open && (
+        <ul className="space-y-2 px-4 pb-4">
+          {items.map(it => (
+            <li key={it.key} className="flex flex-col gap-2 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-secondary-900">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" /> {it.ref}
+                </p>
+                {it.detail && <p className="mt-0.5 text-xs font-medium text-gray-500">{it.detail}</p>}
+                {it.deadline && <p className="mt-0.5 text-xs font-medium text-gray-500">até {new Date(it.deadline).toLocaleDateString('pt-BR')}</p>}
+              </div>
+              <button
+                onClick={() => onRun(type, it)}
+                className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors ${meta.btn}`}
+              >
+                {itemBtnLabel(type)} <ArrowRight className="h-4 w-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 export default function PrestadorView({ user }: { user: any }) {
   const [scripts, setScripts] = useState<any[]>([]);
   const [instances, setInstances] = useState<any[]>([]);
@@ -150,71 +213,12 @@ export default function PrestadorView({ user }: { user: any }) {
   // --- Mural de alertas (spec 2026-08-13) ------------------------------------
   const model = buildInicioModel({ instances, surveys: survey?.surveys ?? [], plans, certificates });
 
-  const GROUP_META: Record<AlertType, { label: string; Icon: any; dot: string; card: string; btn: string }> = {
-    corrigir:  { label: 'Corrigir e reenviar',      Icon: AlertTriangle, dot: 'bg-red-500',     card: 'border-red-200 bg-red-50/60',       btn: 'bg-red-500 hover:bg-red-600' },
-    plano:     { label: 'Responder plano de ação',  Icon: Target,        dot: 'bg-orange-500',  card: 'border-orange-200 bg-orange-50/60', btn: 'bg-orange-500 hover:bg-orange-600' },
-    continuar: { label: 'Continuar avaliação',      Icon: Clock,         dot: 'bg-amber-500',   card: 'border-amber-200 bg-amber-50/60',   btn: 'bg-amber-500 hover:bg-amber-600' },
-    iniciar:   { label: 'Iniciar avaliação',        Icon: Play,          dot: 'bg-blue-500',    card: 'border-blue-200 bg-blue-50/60',     btn: 'bg-blue-500 hover:bg-blue-600' },
-    pesquisa:  { label: 'Responder pesquisa (+10)', Icon: Smile,         dot: 'bg-emerald-500', card: 'border-emerald-200 bg-emerald-50/60', btn: 'bg-emerald-500 hover:bg-emerald-600' },
-  };
-
   // Ação de cada item, por tipo de grupo.
   const runItem = (type: AlertType, it: AlertItem) => {
     if (type === 'pesquisa') { setActiveTab('pesquisa'); return; }
     if (type === 'plano') { setActiveTab('planos'); return; }
     // corrigir / continuar / iniciar → abre o player do roteiro.
     setActivePlayer({ scriptId: it.scriptId!, instanceId: it.instanceId, locationId: it.locationId ?? undefined, readOnly: false });
-  };
-  const itemBtnLabel = (type: AlertType): string =>
-    type === 'corrigir' ? 'Corrigir' : type === 'plano' ? 'Responder' : type === 'pesquisa' ? 'Responder' : type === 'continuar' ? 'Continuar' : 'Iniciar';
-
-  // key? — sem @types/react neste projeto, JSX não infere LibraryManagedAttributes;
-  // o campo é só para o checker aceitar `key=` no map, React descarta em runtime.
-  const AlertGroupCard = ({ type, items }: { key?: string; type: AlertType; items: AlertItem[] }) => {
-    const meta = GROUP_META[type];
-    // Grupo com 1 item já vem expandido, sem colapso (spec §2).
-    const [open, setOpen] = useState(items.length === 1);
-    const single = items.length === 1;
-    return (
-      <div className={`rounded-2xl border ${meta.card}`}>
-        <button
-          type="button"
-          onClick={() => !single && setOpen(v => !v)}
-          aria-expanded={open}
-          className="flex w-full items-center gap-3 p-4 text-left"
-        >
-          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-white ${meta.dot}`}>
-            <meta.Icon className="h-5 w-5" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="font-bold text-secondary-900">{meta.label}</span>
-            <span className="ml-2 text-sm font-medium text-gray-500">{items.length} roteiro{items.length > 1 ? 's' : ''}</span>
-          </span>
-          {!single && (open ? <ChevronDown className="h-5 w-5 text-gray-400" /> : <ChevronRight className="h-5 w-5 text-gray-400" />)}
-        </button>
-        {open && (
-          <ul className="space-y-2 px-4 pb-4">
-            {items.map(it => (
-              <li key={it.key} className="flex flex-col gap-2 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-secondary-900">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" /> {it.ref}
-                  </p>
-                  {it.detail && <p className="mt-0.5 text-xs font-medium text-gray-500">{it.detail}</p>}
-                  {it.deadline && <p className="mt-0.5 text-xs font-medium text-gray-500">até {new Date(it.deadline).toLocaleDateString('pt-BR')}</p>}
-                </div>
-                <button
-                  onClick={() => runItem(type, it)}
-                  className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors ${meta.btn}`}
-                >
-                  {itemBtnLabel(type)} <ArrowRight className="h-4 w-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
   };
 
   const inicioTab = (
@@ -239,7 +243,7 @@ export default function PrestadorView({ user }: { user: any }) {
       )}
 
       {/* Grupos de alerta, na ordem de urgência do modelo */}
-      {model.groups.map(g => <AlertGroupCard key={g.type} type={g.type} items={g.items} />)}
+      {model.groups.map(g => <AlertGroupCard key={g.type} type={g.type} items={g.items} onRun={runItem} />)}
 
       {/* Bloco positivo: certificado novo (não conta em N; some após 1ª abertura) */}
       {model.newCertificates.map(c => (

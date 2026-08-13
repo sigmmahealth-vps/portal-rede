@@ -42,6 +42,9 @@ export default function PlanosBoard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [newProviderId, setNewProviderId] = useState('');
+  const [newLocations, setNewLocations] = useState<any[]>([]);
+  const [newLocationId, setNewLocationId] = useState('');
+  const [loadingLocs, setLoadingLocs] = useState(false);
   const [providerSearch, setProviderSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -94,20 +97,57 @@ export default function PlanosBoard() {
   const openNewModal = async () => {
     setProviderSearch('');
     setNewProviderId('');
+    setNewLocations([]);
+    setNewLocationId('');
     setShowNewModal(true);
     if (providers.length === 0) setProviders(await fetchApi('/providers'));
   };
 
+  // Só unidades comerciais (mesma regra do backend: exclui residencial).
+  const isCommercialLoc = (l: any) =>
+    !/^residencial/i.test(l.label || '') && !/-RES$/.test(l.sgu_location_code || '');
+  const locLabel = (l: any) => {
+    const uf = l.uf ? '/' + String(l.uf).toUpperCase() : '';
+    const city = l.cidade ? `${l.cidade}${uf}` : '';
+    const main = l.logradouro || l.label || 'Unidade';
+    return city ? `${main} — ${city}` : main;
+  };
+
+  // Ao escolher o prestador, carrega as unidades. 1 comercial → pré-seleciona;
+  // várias → exige escolher; nenhuma → plano fica sem endereço.
+  const selectProvider = async (id: string) => {
+    setNewProviderId(id);
+    setNewLocationId('');
+    setNewLocations([]);
+    if (!id) return;
+    setLoadingLocs(true);
+    try {
+      const p = await fetchApi(`/providers/${id}`);
+      const locs = (p?.locations ?? []).filter(isCommercialLoc);
+      setNewLocations(locs);
+      if (locs.length === 1) setNewLocationId(String(locs[0].id));
+    } catch { setNewLocations([]); }
+    finally { setLoadingLocs(false); }
+  };
+
+  const needsLocationChoice = newLocations.length > 1 && !newLocationId;
+
   const createPlan = async () => {
-    if (!newProviderId || cycleId == null) return;
+    if (!newProviderId || cycleId == null || needsLocationChoice) return;
     setSaving(true);
     try {
       await fetchApi('/eval/action-plans', {
         method: 'POST',
-        body: JSON.stringify({ provider_id: Number(newProviderId), cycle_id: cycleId }),
+        body: JSON.stringify({
+          provider_id: Number(newProviderId),
+          cycle_id: cycleId,
+          ...(newLocationId ? { location_id: Number(newLocationId) } : {}),
+        }),
       });
       setShowNewModal(false);
       setNewProviderId('');
+      setNewLocations([]);
+      setNewLocationId('');
       setProviderSearch('');
       await loadPlans(cycleId);
     } catch (e: any) {
@@ -250,7 +290,7 @@ export default function PlanosBoard() {
                 autoFocus
                 placeholder="Buscar por nome ou código..."
                 value={providerSearch}
-                onChange={e => { setProviderSearch(e.target.value); setNewProviderId(''); }}
+                onChange={e => { setProviderSearch(e.target.value); selectProvider(''); }}
                 className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
               />
             </div>
@@ -261,7 +301,7 @@ export default function PlanosBoard() {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => setNewProviderId(String(p.id))}
+                  onClick={() => selectProvider(String(p.id))}
                   className={`w-full text-left px-3 py-2 text-sm transition-colors ${
                     String(p.id) === newProviderId ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-gray-50 text-gray-700'
                   }`}
@@ -271,11 +311,38 @@ export default function PlanosBoard() {
                 </button>
               ))}
             </div>
+
+            {newProviderId && (
+              <div>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">Unidade / endereço</p>
+                {loadingLocs ? (
+                  <p className="text-sm text-gray-400">Carregando unidades...</p>
+                ) : newLocations.length === 0 ? (
+                  <p className="text-sm text-gray-500">Este prestador não tem unidade comercial cadastrada — o plano ficará sem endereço.</p>
+                ) : newLocations.length === 1 ? (
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                    <MapPin className="h-4 w-4 shrink-0" /> {locLabel(newLocations[0])}
+                  </p>
+                ) : (
+                  <select
+                    value={newLocationId}
+                    onChange={e => setNewLocationId(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">Selecione a unidade...</option>
+                    {newLocations.map((l: any) => (
+                      <option key={l.id} value={l.id}>{locLabel(l)}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setShowNewModal(false); setProviderSearch(''); setNewProviderId(''); }} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+              <button onClick={() => { setShowNewModal(false); setProviderSearch(''); selectProvider(''); }} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
               <button
                 onClick={createPlan}
-                disabled={!newProviderId || saving}
+                disabled={!newProviderId || saving || needsLocationChoice}
                 className="flex items-center gap-2 bg-[#00995D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#007A4A] transition-colors disabled:opacity-50"
               >
                 {saving ? 'Criando...' : 'Criar plano'}

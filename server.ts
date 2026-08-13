@@ -4645,14 +4645,28 @@ async function startServer() {
   app.post('/api/eval/action-plans', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
-      const { provider_id, location_id, cycle_id } = req.body || {};
+      const { provider_id, cycle_id } = req.body || {};
       if (!provider_id) return res.status(400).json({ error: 'provider_id obrigatório' });
+      // Plano é por unidade de atendimento (mesma regra do eval_instances). Sem
+      // location_id no body e com exatamente 1 unidade comercial, resolve automático;
+      // com 0 ou >1 sem escolha, fica NULL.
+      let locationId: number | null = req.body.location_id ? Number(req.body.location_id) : null;
+      if (locationId == null) {
+        const { rows: locs } = await query(
+          `SELECT id FROM provider_locations
+            WHERE provider_id = $1
+              AND COALESCE(label,'') NOT ILIKE 'residencial%'
+              AND COALESCE(sgu_location_code,'') !~ '-RES$'`,
+          [provider_id],
+        );
+        if (locs.length === 1) locationId = Number(locs[0].id);
+      }
       const { rows: [plan] } = await query(`
         INSERT INTO eval_action_plans (cycle_id, provider_id, location_id, origin, created_by)
         VALUES ($1,$2,$3,'manual',$4) RETURNING *
-      `, [cycle_id ?? null, provider_id, location_id ?? null, req.user.id]);
+      `, [cycle_id ?? null, provider_id, locationId, req.user.id]);
       await auditLog({ query, userId: req.user.id, action: 'action_plan_generated',
-        meta: { provider_id: Number(provider_id), plan_id: Number(plan.id), origin: 'manual' },
+        meta: { provider_id: Number(provider_id), plan_id: Number(plan.id), origin: 'manual', location_id: locationId },
         ip: hashClientIp(req) });
       res.status(201).json(plan);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }

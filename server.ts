@@ -4945,7 +4945,7 @@ async function startServer() {
   // whereSql é literal fixo (nunca input do usuário); $1 é o único parâmetro.
   const loadCertificates = async (whereSql: string, params: any[]) => {
       const { rows: certs } = await query(`
-        SELECT ec.id, ec.verify_code, ec.issued_at, ec.valid_until,
+        SELECT ec.id, ec.verify_code, ec.issued_at, ec.valid_until, ec.first_viewed_at,
                ei.id AS instance_id, ei.provider_id, ei.seal, ei.percentual,
                c.id AS cycle_id, c.label AS cycle_label, c.active AS cycle_active,
                p.name AS provider_name,
@@ -5009,6 +5009,7 @@ async function startServer() {
           verify_code: r.verify_code,
           issued_at: r.issued_at,
           valid_until: r.valid_until,
+          seen: r.first_viewed_at != null,
           seal: r.seal,
           percentual: Number(r.percentual) || 0,
           cycle_id: r.cycle_id != null ? Number(r.cycle_id) : null,
@@ -5028,6 +5029,25 @@ async function startServer() {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
       res.json(await loadCertificates('ei.provider_id = $1', [providerId]));
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Marca o certificado como aberto pela 1ª vez (spec 2026-08-13, estado #6):
+  // some do mural de Início e continua acessível em Certificados. Idempotente.
+  app.post('/api/me/certificates/:id/seen', authenticate, async (req: any, res) => {
+    try {
+      const providerId = req.user.provider_id;
+      if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
+      const { rowCount } = await query(`
+        UPDATE eval_certificates ec
+           SET first_viewed_at = now()
+          FROM eval_instances ei
+         WHERE ec.id = $1
+           AND ei.id = ec.instance_id
+           AND ei.provider_id = $2
+           AND ec.first_viewed_at IS NULL
+      `, [Number(req.params.id), providerId]);
+      res.json({ ok: true, updated: rowCount });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 

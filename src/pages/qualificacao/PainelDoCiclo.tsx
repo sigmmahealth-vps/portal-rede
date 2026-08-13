@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Download, Eye, Undo2, Award, Shield, Users, ClipboardList, Clock, TrendingUp, AlertTriangle, Building2 } from 'lucide-react';
+import { Search, Download, Eye, Undo2, Award, AlertTriangle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 import AuditorPlayer from './AuditorPlayer';
 import { statusLabel } from '../../lib/statusLabels';
@@ -133,14 +133,14 @@ export default function PainelDoCiclo({ user }: { user: any }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi icon={<Building2 className="w-5 h-5" />} label="Locais no ciclo" value={k.total_locations} tone="blue" />
-        <Kpi icon={<ClipboardList className="w-5 h-5" />} label="Enviados / Pendentes" value={`${k.sent} / ${k.pending}`} sub={`${sentPct}% enviados`} tone="emerald" />
-        <Kpi icon={<Eye className="w-5 h-5" />} label="Em análise" value={k.in_review} tone="purple" />
-        <Kpi icon={<Clock className="w-5 h-5" />} label="Aguardando reanálise" value={k.awaiting_provider} tone="orange" />
-        <Kpi icon={<TrendingUp className="w-5 h-5" />} label="Média geral" value={`${k.avg_score.toFixed(1)}%`} tone="indigo" />
-        <Kpi icon={<AlertTriangle className="w-5 h-5" />} label="Segurança < 60%" value={k.low_security_count} tone={k.low_security_count > 0 ? 'red' : 'gray'} />
+        <Card label="Locais no ciclo" value={k.total_locations} />
+        <Card label="Enviados / Pendentes" value={`${k.sent} / ${k.pending}`} sub={`${sentPct}% enviados`} />
+        <Card label="Em análise" value={k.in_review} />
+        <Card label="Aguardando reanálise" value={k.awaiting_provider} />
+        <Card label="Média geral" value={`${k.avg_score.toFixed(1)}%`} />
+        <Card label="Segurança < 60%" value={k.low_security_count} />
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-2"><Award className="w-4 h-4" /> Selos</p>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
           <div className="h-24">
             <ResponsiveContainer>
               <PieChart>
@@ -153,7 +153,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
           </div>
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-500 font-medium mb-2 flex items-center gap-2"><Users className="w-4 h-4" /> Grupos (top 5)</p>
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Grupos (top 5)</p>
           <div className="h-24">
             <ResponsiveContainer>
               <BarChart data={k.group_distribution.slice(0, 5)} layout="vertical" margin={{ left: 8, right: 8 }}>
@@ -301,18 +301,13 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   );
 }
 
-function Kpi({ icon, label, value, sub, tone }: { icon: React.ReactNode; label: string; value: React.ReactNode; sub?: string; tone: 'blue'|'emerald'|'purple'|'orange'|'indigo'|'red'|'gray' }) {
-  const bg = { blue: 'bg-blue-50 text-blue-600', emerald: 'bg-emerald-50 text-emerald-600', purple: 'bg-purple-50 text-purple-600', orange: 'bg-orange-50 text-orange-600', indigo: 'bg-indigo-50 text-indigo-600', red: 'bg-red-50 text-red-600', gray: 'bg-gray-50 text-gray-500' }[tone];
+// Card de métrica no padrão do dashboard da Pesquisa (rótulo, número grande, legenda).
+function Card({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${bg}`}>{icon}</div>
-        <div>
-          <p className="text-xs text-gray-500 font-medium">{label}</p>
-          <p className="text-xl font-bold text-gray-900">{value}</p>
-          {sub && <p className="text-[11px] text-gray-500 mt-0.5">{sub}</p>}
-        </div>
-      </div>
+    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-secondary-900">{value}</p>
+      {sub && <p className="text-xs text-gray-500">{sub}</p>}
     </div>
   );
 }

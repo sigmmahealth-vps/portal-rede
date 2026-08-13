@@ -1,13 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import {
-  Building2,
-  CheckCircle,
-  TrendingUp,
-  AlertTriangle,
-  MapPin
-} from 'lucide-react';
-import { 
   BarChart, 
   Bar, 
   XAxis, 
@@ -94,62 +87,75 @@ export default function GestorDashboard({ user }: { user: any }) {
 
       {!loading && data ? (
         <>
-          {/* KPIs */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-            <StatCard icon={Building2} iconBg="bg-blue-50" iconColor="text-blue-600" label="Total de Avaliações" value={data.total}>
-              {(() => {
-                const byStatus: any[] = data.by_status || [];
-                const countOf = (s: string) => Number(byStatus.find((r) => r.status === s)?.count || 0);
-                const finalizadas = countOf('finalizado') + countOf('aprovado');
-                const pendentes = countOf('pendente');
-                const provs = Number(data.providers_evaluated || 0);
-                const total = Number(data.total || 0);
-                const parts: string[] = [];
-                if (finalizadas > 0) parts.push(`${finalizadas} ${finalizadas === 1 ? 'finalizada' : 'finalizadas'}`);
-                if (pendentes > 0) parts.push(`${pendentes} ${pendentes === 1 ? 'pendente' : 'pendentes'}`);
-                // Só sinaliza multi-unidade quando prestadores < instâncias.
-                if (provs > 0 && provs < total) parts.push(`em ${provs} ${provs === 1 ? 'prestador' : 'prestadores'}`);
-                return parts.length ? <p className="mt-1 text-xs text-gray-500">{parts.join(' · ')}</p> : null;
-              })()}
-            </StatCard>
+          {/* KPIs (padrão do dashboard da Pesquisa) */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <Card label="Total de Avaliações" value={data.total} sub={(() => {
+              const byStatus: any[] = data.by_status || [];
+              const countOf = (s: string) => Number(byStatus.find((r) => r.status === s)?.count || 0);
+              const finalizadas = countOf('finalizado') + countOf('aprovado');
+              const pendentes = countOf('pendente');
+              const provs = Number(data.providers_evaluated || 0);
+              const total = Number(data.total || 0);
+              const parts: string[] = [];
+              if (finalizadas > 0) parts.push(`${finalizadas} ${finalizadas === 1 ? 'finalizada' : 'finalizadas'}`);
+              if (pendentes > 0) parts.push(`${pendentes} ${pendentes === 1 ? 'pendente' : 'pendentes'}`);
+              if (provs > 0 && provs < total) parts.push(`em ${provs} ${provs === 1 ? 'prestador' : 'prestadores'}`);
+              return parts.join(' · ') || undefined;
+            })()} />
 
-            <StatCard icon={MapPin} iconBg="bg-indigo-50" iconColor="text-indigo-600" label="Cobertura"
-              value={(() => {
-                const net = Number(data.network_total || 0);
-                return `${net ? Math.round((Number(data.addresses_evaluated || 0) / net) * 100) : 0}%`;
-              })()}>
-              {(() => {
-                const net = Number(data.network_total || 0);
-                const pct = net ? Math.round((Number(data.addresses_evaluated || 0) / net) * 100) : 0;
-                return (
-                  <div className="mt-2">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                      <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">{Number(data.addresses_evaluated || 0)} de {net} endereços com roteiro</p>
-                  </div>
-                );
-              })()}
-            </StatCard>
+            <Card label="Cobertura"
+              value={(() => { const net = Number(data.network_total || 0); return `${net ? Math.round((Number(data.addresses_evaluated || 0) / net) * 100) : 0}%`; })()}
+              sub={`${Number(data.addresses_evaluated || 0)} de ${Number(data.network_total || 0)} endereços`} />
 
-            <StatCard icon={CheckCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" label="Qualificados"
-              value={(() => {
-                const net = Number(data.network_total || 0);
-                return `${net ? Math.round((Number(data.addresses_qualified || 0) / net) * 100) : 0}%`;
-              })()}>
-              <p className="mt-1 text-xs text-gray-500">{Number(data.addresses_qualified || 0)} de {Number(data.network_total || 0)} endereços</p>
-            </StatCard>
+            <Card label="Qualificados"
+              value={(() => { const net = Number(data.network_total || 0); return `${net ? Math.round((Number(data.addresses_qualified || 0) / net) * 100) : 0}%`; })()}
+              sub={`${Number(data.addresses_qualified || 0)} de ${Number(data.network_total || 0)} endereços`} />
 
-            <StatCard icon={TrendingUp} iconBg="bg-purple-50" iconColor="text-purple-600" label="Score médio"
-              value={`${Number(data.avg_score).toFixed(1)}%`} />
+            <Card label="Score médio" value={`${Number(data.avg_score).toFixed(1)}%`} sub="média das concluídas" />
 
-            <StatCard icon={AlertTriangle} iconBg={data.action_plans?.overdue > 0 ? 'bg-red-50' : 'bg-gray-50'}
-              iconColor={data.action_plans?.overdue > 0 ? 'text-red-600' : 'text-gray-500'} label="Planos atrasados"
-              value={Number(data.action_plans?.overdue || 0)}>
-              <p className="mt-1 text-xs text-gray-500">
-                {Number(data.action_plans?.open || 0)} abertos · {Number(data.action_plans?.concluded || 0)} concluídos
-              </p>
-            </StatCard>
+            <Card label="Planos atrasados" value={Number(data.action_plans?.overdue || 0)}
+              sub={`${Number(data.action_plans?.open || 0)} abertos · ${Number(data.action_plans?.concluded || 0)} concluídos`} />
+          </div>
+
+          {/* Análise comparativa por ciclo — observar a evolução */}
+          <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+            <div className="border-b border-gray-100 p-4">
+              <h3 className="text-lg font-bold text-gray-900">Análise comparativa por ciclo</h3>
+              <p className="text-xs text-gray-500">Evolução dos indicadores da rede entre ciclos</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="p-3">Ciclo</th>
+                    <th className="p-3">Avaliações</th>
+                    <th className="p-3">Cobertura</th>
+                    <th className="p-3">Qualificados</th>
+                    <th className="p-3">Score médio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.cycles_comparison || []).length === 0 ? (
+                    <tr><td colSpan={5} className="p-6 text-center text-gray-400">Nenhum ciclo.</td></tr>
+                  ) : (data.cycles_comparison || []).map((c: any) => {
+                    const net = Number(data.network_total || 0);
+                    const cov = net ? Math.round((Number(c.addresses_evaluated || 0) / net) * 100) : 0;
+                    return (
+                      <tr key={c.id} className="border-t border-gray-50">
+                        <td className="p-3 font-medium text-gray-900">
+                          {c.label}
+                          {c.active && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">ativo</span>}
+                        </td>
+                        <td className="p-3 text-gray-600">{c.evaluations}</td>
+                        <td className="p-3 text-gray-600">{cov}% <span className="text-xs text-gray-400">({c.addresses_evaluated})</span></td>
+                        <td className="p-3 text-gray-600">{c.qualified}</td>
+                        <td className="p-3 font-semibold text-gray-700">{c.avg_score == null ? '—' : `${c.avg_score}%`}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -293,22 +299,13 @@ export default function GestorDashboard({ user }: { user: any }) {
   );
 }
 
-function StatCard({ icon: Icon, iconBg, iconColor, label, value, children }: {
-  icon: React.ComponentType<{ className?: string }>;
-  iconBg: string; iconColor: string;
-  label: string; value: React.ReactNode; children?: React.ReactNode;
-}) {
+// Card de métrica no padrão do dashboard da Pesquisa (rótulo, número grande, legenda).
+function Card({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="flex items-start gap-4 rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-      <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${iconBg}`}>
-        <Icon className={`h-6 w-6 ${iconColor}`} />
-      </div>
-      <div className="min-w-0">
-        {/* min-h reserva 2 linhas p/ o valor alinhar entre cards com rótulo de 1 ou 2 linhas */}
-        <p className="min-h-[2.5rem] text-sm font-medium leading-5 text-gray-500">{label}</p>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-        {children}
-      </div>
+    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-secondary-900">{value}</p>
+      {sub && <p className="text-xs text-gray-500">{sub}</p>}
     </div>
   );
 }

@@ -3542,6 +3542,20 @@ async function startServer() {
       `, [cycleId]);
       const histMap = new Map((histRows as any[]).map(r => [r.bucket, r.count]));
 
+      // Comparativo por ciclo (sempre todos os ciclos, independe do filtro) — observar a evolução.
+      const { rows: cmpRows } = await query(`
+        SELECT c.id, c.label, c.active,
+               COUNT(ei.id)::int AS evaluations,
+               COUNT(DISTINCT ei.location_id) FILTER (WHERE ei.location_id IS NOT NULL)::int AS addresses_evaluated,
+               COUNT(DISTINCT ei.location_id) FILTER (WHERE ei.location_id IS NOT NULL AND ei.seal IS NOT NULL
+                                                        AND ei.status IN ('finalizado','aprovado'))::int AS qualified,
+               ROUND(AVG(ei.percentual) FILTER (WHERE ei.status IN ('finalizado','aprovado')))::int AS avg_score
+          FROM eval_cycles c
+          LEFT JOIN eval_instances ei ON ei.cycle_id = c.id
+         GROUP BY c.id, c.label, c.active, c.start_date
+         ORDER BY c.start_date, c.id
+      `);
+
       res.json({
         total: (totalRows[0] as any).count,
         approved: (approvedRows[0] as any).count,
@@ -3553,6 +3567,7 @@ async function startServer() {
         ranking: rankingRows,
         evolution: evoRows,
         score_histogram: HIST_BUCKETS.map(b => ({ bucket: b, count: histMap.get(b) || 0 })),
+        cycles_comparison: cmpRows,
         network_total: (netRows[0] as any).count,
         addresses_evaluated: (addrEvalRows[0] as any).count,
         addresses_qualified: (addrQualRows[0] as any).count,

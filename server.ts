@@ -4981,14 +4981,33 @@ async function startServer() {
                   SELECT 1 FROM eval_action_items ai
                    WHERE ai.plan_id = p.id
                      AND ai.status IN ('nao_iniciada','em_andamento','solicitada_revisao','reprovada')
-               )) AS pending
+               )) AS pending,
+               COALESCE(json_agg(json_build_object('status', i.status, 'due_date', i.due_date))
+                        FILTER (WHERE i.id IS NOT NULL), '[]') AS items,
+               EXISTS (SELECT 1 FROM eval_action_events e
+                        JOIN eval_action_items ii ON ii.id = e.item_id
+                       WHERE ii.plan_id = p.id AND e.actor_role = 'prestador') AS has_provider_interaction
           FROM eval_action_plans p
           LEFT JOIN eval_cycles c ON c.id = p.cycle_id
           LEFT JOIN provider_locations pl ON pl.id = p.location_id
+          LEFT JOIN eval_action_items i ON i.plan_id = p.id
          WHERE p.provider_id = $1
+         GROUP BY p.id, c.label, pl.logradouro, pl.label, pl.cidade, pl.uf
          ORDER BY p.created_at DESC
       `, [providerId]);
-      res.json(rows);
+      const { computePlanStatus, planColor } = await import('./src/lib/actionPlan.js');
+      const now = new Date();
+      res.json(rows.map((r: any) => {
+        const status = computePlanStatus({
+          items: r.items, hasProviderInteraction: r.has_provider_interaction,
+          closedWithoutCompletion: r.closed_without_completion, now,
+        });
+        return {
+          ...r, status, color: planColor(status),
+          items_total: r.items.length,
+          items_done: r.items.filter((it: any) => it.status === 'concluida').length,
+        };
+      }));
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 

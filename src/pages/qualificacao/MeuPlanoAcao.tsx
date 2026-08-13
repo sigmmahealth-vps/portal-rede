@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
-import { Loader2, Paperclip, UploadCloud, Trash2, MapPin } from 'lucide-react';
+import { Loader2, Paperclip, UploadCloud, Trash2, MapPin, ArrowRight, ArrowLeft } from 'lucide-react';
 
 function fmtDate(d?: string | null): string {
   if (!d) return '—';
@@ -242,7 +242,6 @@ export default function MeuPlanoAcao() {
       try {
         const data = await fetchApi('/me/action-plans');
         setPlans(data || []);
-        if (data?.length) setPlanId(data[0].id);
       } catch (e: any) { alert(e?.message || 'Erro ao carregar planos de ação'); }
       finally { setLoadingList(false); }
     })();
@@ -297,70 +296,104 @@ export default function MeuPlanoAcao() {
     );
   }
 
+  // --- Lista de planos (padrão da Pesquisa): um card por plano/endereço -------
+  if (planId == null) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-bold text-secondary-900">Meus Planos de Ação</h2>
+          <p className="text-sm text-gray-500">Um plano por endereço avaliado. Abra para acompanhar e responder às ações.</p>
+        </div>
+        {plans.map(p => (
+          <div key={p.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 font-bold text-secondary-900">
+                  <MapPin className="h-4 w-4 text-emerald-600" /> {locOf(p) || 'Plano avulso'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {p.cycle_label || 'Plano avulso'} · criado em {fmtDate(p.created_at)}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-600">
+                  {p.items_done} de {p.items_total} {p.items_total === 1 ? 'ação concluída' : 'ações concluídas'}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className={`inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${PLAN_COLOR_CLASS[p.color] || 'bg-gray-100 text-gray-600'}`}>
+                  {PLAN_STATUS_LABEL[p.status] || p.status}
+                </span>
+                <button
+                  onClick={() => setPlanId(p.id)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
+                >
+                  Abrir <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // --- Detalhe de um plano ----------------------------------------------------
   const items = plan?.items || [];
   const doneCount = items.filter((it: any) => it.status === 'concluida').length;
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-gray-200 bg-white p-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-secondary-900">
-              Meu Plano de Ação — {plan?.cycle_label || 'Plano avulso'}
-            </h2>
-            {locOf(plan) && (
-              <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
-                <MapPin className="h-4 w-4" /> {locOf(plan)}
-              </p>
-            )}
-            {plan && <p className="mt-1 text-sm font-medium text-gray-500">{doneCount} de {items.length} ações concluídas</p>}
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            {plans.length > 1 && (
-              <select
-                value={planId ?? ''} onChange={e => setPlanId(Number(e.target.value))}
-                className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-secondary-900"
-              >
-                {plans.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {[p.cycle_label || `Plano #${p.id}`, locOf(p)].filter(Boolean).join(' — ')}
-                  </option>
-                ))}
-              </select>
-            )}
-            {plan && (
-              <span className={`inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${PLAN_COLOR_CLASS[plan.color] || 'bg-gray-100 text-gray-600'}`}>
-                {PLAN_STATUS_LABEL[plan.status] || plan.status}
-              </span>
-            )}
-          </div>
-        </div>
-        {plan && <WindowsTimeline windows={plan.windows || []} />}
-      </div>
-
-      {plan?.closed_without_completion && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
-          Encerrado sem conclusão
-        </div>
-      )}
+      <button
+        onClick={() => { setPlanId(null); setPlan(null); }}
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900"
+      >
+        <ArrowLeft className="h-4 w-4" /> Voltar aos planos
+      </button>
 
       {loadingPlan || !plan ? <Spinner /> : (
-        <div className="space-y-4">
-          {items.map((item: any) => (
-            <ItemCard
-              key={item.id}
-              item={item}
-              locked={!!plan.closed_without_completion}
-              showHistory={!!openHistory[item.id]}
-              onToggleHistory={() => setOpenHistory(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-              form={forms[item.id] || { file: null, comment: '' }}
-              setForm={(patch: any) => setForm(item.id, patch)}
-              saving={!!saving[item.id]}
-              onIniciar={() => iniciar(item.id)}
-              onResponder={(conclude: boolean) => responder(item.id, conclude)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-secondary-900">
+                  Meu Plano de Ação — {plan.cycle_label || 'Plano avulso'}
+                </h2>
+                {locOf(plan) && (
+                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                    <MapPin className="h-4 w-4" /> {locOf(plan)}
+                  </p>
+                )}
+                <p className="mt-1 text-sm font-medium text-gray-500">{doneCount} de {items.length} ações concluídas</p>
+              </div>
+              <span className={`inline-block shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${PLAN_COLOR_CLASS[plan.color] || 'bg-gray-100 text-gray-600'}`}>
+                {PLAN_STATUS_LABEL[plan.status] || plan.status}
+              </span>
+            </div>
+            <WindowsTimeline windows={plan.windows || []} />
+          </div>
+
+          {plan.closed_without_completion && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
+              Encerrado sem conclusão
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {items.map((item: any) => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                locked={!!plan.closed_without_completion}
+                showHistory={!!openHistory[item.id]}
+                onToggleHistory={() => setOpenHistory(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                form={forms[item.id] || { file: null, comment: '' }}
+                setForm={(patch: any) => setForm(item.id, patch)}
+                saving={!!saving[item.id]}
+                onIniciar={() => iniciar(item.id)}
+                onResponder={(conclude: boolean) => responder(item.id, conclude)}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

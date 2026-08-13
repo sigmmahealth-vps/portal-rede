@@ -396,7 +396,7 @@ export default function PrestadorView({ user }: { user: any }) {
       </nav>
 
       {/* Lembrete de Pesquisa de Satisfação pendente (no prazo) */}
-      {pendingSurveys.length > 0 && !['pesquisa', 'inicio'].includes(activeTab) && (
+      {pendingSurveys.length > 0 && !['pesquisa', 'inicio', 'planos'].includes(activeTab) && (
         <div className="flex flex-col gap-3 rounded-xl bg-amber-400 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <Smile className="mt-0.5 h-6 w-6 shrink-0" />

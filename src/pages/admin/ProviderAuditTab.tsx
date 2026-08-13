@@ -26,6 +26,7 @@ const ACTION_META: Record<string, { label: string; icon: any }> = {
   training_targeted: { label: 'Treinamento direcionado ao prestador', icon: GraduationCap },
   announcement_targeted: { label: 'Comunicado direcionado ao prestador', icon: Megaphone },
   survey_submitted: { label: 'Pesquisa respondida', icon: ClipboardList },
+  satisfaction_survey_submitted: { label: 'Pesquisa de satisfação respondida', icon: ClipboardList },
   contract_created: { label: 'Contrato enviado', icon: FileText },
   contract_signed: { label: 'Contrato assinado', icon: CheckCircle },
   qualification_submitted: { label: 'Qualificação submetida', icon: ClipboardCheck },
@@ -181,9 +182,10 @@ export default function ProviderAuditTab({ providerId }: { providerId: number | 
       )}
 
       <p className="border-t border-gray-100 pt-4 text-xs text-gray-400">
-        Registra acesso/credenciais e alterações neste prestador (documentos, qualificações,
-        auditorias, contratos, planos de ação, contatos, envios direcionados). Sincronizações
-        cadastrais do SGU ainda não são rastreadas individualmente.
+        Registra as interações dos usuários deste prestador no portal: logins, credenciais,
+        envio de avaliações e documentos, pesquisa de satisfação. Ações internas da operadora
+        não aparecem aqui. Sincronizações cadastrais do SGU ainda não são rastreadas
+        individualmente.
       </p>
     </div>
   );

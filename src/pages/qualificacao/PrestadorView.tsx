@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { welcomeLine } from '../../lib/greeting';
 import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
+  AlertTriangle, ChevronDown, ChevronRight, CheckCircle2,
 } from 'lucide-react';
 import RoteiroPlayer from './RoteiroPlayer';
 import MeuPlanoAcao from './MeuPlanoAcao';
 import CertificadosTab from './CertificadosTab';
 import PesquisaSatisfacao from './PesquisaSatisfacao';
 import { statusLabel } from '../../lib/statusLabels';
+import { buildInicioModel, type AlertType, type AlertItem } from '../../lib/inicioAlerts';
 
 const TABS = [
   { key: 'inicio', label: 'Início', icon: LayoutGrid, soon: false },
@@ -53,8 +54,16 @@ export default function PrestadorView({ user }: { user: any }) {
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean } | null>(null);
 
   const [survey, setSurvey] = useState<any>(null);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [certificates, setCertificates] = useState<any[]>([]);
   const loadSurvey = async () => {
     try { setSurvey(await fetchApi('/me/survey')); } catch { setSurvey(null); }
+  };
+
+  const openNewCertificate = async (id: number) => {
+    try { await fetchApi(`/me/certificates/${id}/seen`, { method: 'POST' }); } catch { /* segue mesmo assim */ }
+    await loadData();
+    setActiveTab('certificados');
   };
 
   useEffect(() => {
@@ -65,15 +74,19 @@ export default function PrestadorView({ user }: { user: any }) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [scriptsData, instancesData, providerData] = await Promise.all([
+      const [scriptsData, instancesData, providerData, plansData, certsData] = await Promise.all([
         fetchApi('/eval/scripts'),
         fetchApi('/eval/instances'),
         fetchApi('/me/provider').catch(() => null),
+        fetchApi('/me/action-plans').catch(() => []),
+        fetchApi('/me/certificates').catch(() => []),
       ]);
       setScripts(scriptsData);
       setInstances(instancesData);
       setEvalScriptId(providerData?.eval_script_id ?? null);
       setLocations(providerData?.locations ?? []);
+      setPlans(plansData ?? []);
+      setCertificates(certsData ?? []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -106,9 +119,6 @@ export default function PrestadorView({ user }: { user: any }) {
   const scriptsVigentes = evalScriptId != null
     ? scriptsVigentesRaw.filter((s: any) => s.id === evalScriptId)
     : scriptsVigentesRaw;
-  const openInstances = instances.filter(i => !OPEN_STATES.includes(i.status));
-  const lastSealed = instances.find(i => i.status === 'finalizado' && i.seal);
-  const greeting = welcomeLine(user?.last_login_at);
   // Pesquisas pendentes no prazo (uma por endereço) — alimenta o lembrete.
   const pendingSurveys = (survey?.surveys ?? []).filter((s: any) => s.state === 'disponivel' && !s.expired);
   const nextSurveyDeadline = pendingSurveys.map((s: any) => s.deadline).sort()[0];
@@ -137,86 +147,118 @@ export default function PrestadorView({ user }: { user: any }) {
 
   // --- Conteúdo por aba -------------------------------------------------------
 
-  const inicioTab = (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-gray-200 bg-white p-6">
-        <h2 className="text-lg font-bold text-secondary-900">{greeting}</h2>
+  // --- Mural de alertas (spec 2026-08-13) ------------------------------------
+  const model = buildInicioModel({ instances, surveys: survey?.surveys ?? [], plans, certificates });
 
-        {openInstances.length > 0 ? (
-          <>
-            <p className="mt-1 text-sm text-gray-500">
-              {openInstances.length > 1
-                ? `Você tem ${openInstances.length} locais de atendimento com qualificação disponível.`
-                : openInstances[0].status === 'pendente'
-                  ? 'Você tem uma nova qualificação disponível para preenchimento.'
-                  : EDITABLE_STATES.includes(openInstances[0].status)
-                    ? 'Você tem uma qualificação em andamento.'
-                    : 'Sua qualificação foi enviada e está aguardando auditoria.'}
-            </p>
-            <div className="mt-4 space-y-3">
-              {openInstances.map(inst => {
-                const act = actionFor(inst);
-                const loc = instLocation(inst);
-                return (
-                  <div key={inst.id} className="rounded-xl bg-emerald-50/60 p-4">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-secondary-900">{inst.script_title}</p>
-                        {loc && (
-                          <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-700">
-                            <MapPin className="h-3.5 w-3.5" /> {loc}
-                          </p>
-                        )}
-                        <p className="text-sm font-medium text-emerald-700">
-                          {fillPct(inst)}% respondido · {Number(inst.answered_count) || 0} de {Number(inst.total_questions) || 0} critérios
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          onClick={() => setActivePlayer({ scriptId: inst.script_id, instanceId: inst.id, locationId: inst.location_id ?? undefined, readOnly: !EDITABLE_STATES.includes(inst.status) })}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
-                        >
-                          <act.Icon className="h-4 w-4" /> {act.label}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
-                      <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out" style={{ width: `${fillPct(inst)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : lastSealed ? (
-          <>
-            <p className="mt-1 text-sm text-gray-500">Sua qualificação mais recente está concluída.</p>
-            <div className="mt-4 flex items-center gap-3 rounded-xl bg-amber-50 p-4">
-              <Award className="h-6 w-6 text-amber-500" />
-              <p className="text-sm font-semibold text-amber-800">Selo {lastSealed.seal} — {lastSealed.script_title}</p>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="mt-1 text-sm text-gray-500">Você ainda não iniciou sua qualificação da RN 630.</p>
-            <button
-              onClick={() => setActiveTab('roteiros')}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600"
-            >
-              Ver meus roteiros <ArrowRight className="h-4 w-4" />
-            </button>
-          </>
+  const GROUP_META: Record<AlertType, { label: string; Icon: any; dot: string; card: string; btn: string }> = {
+    corrigir:  { label: 'Corrigir e reenviar',      Icon: AlertTriangle, dot: 'bg-red-500',     card: 'border-red-200 bg-red-50/60',       btn: 'bg-red-500 hover:bg-red-600' },
+    plano:     { label: 'Responder plano de ação',  Icon: Target,        dot: 'bg-orange-500',  card: 'border-orange-200 bg-orange-50/60', btn: 'bg-orange-500 hover:bg-orange-600' },
+    continuar: { label: 'Continuar avaliação',      Icon: Clock,         dot: 'bg-amber-500',   card: 'border-amber-200 bg-amber-50/60',   btn: 'bg-amber-500 hover:bg-amber-600' },
+    iniciar:   { label: 'Iniciar avaliação',        Icon: Play,          dot: 'bg-blue-500',    card: 'border-blue-200 bg-blue-50/60',     btn: 'bg-blue-500 hover:bg-blue-600' },
+    pesquisa:  { label: 'Responder pesquisa (+10)', Icon: Smile,         dot: 'bg-emerald-500', card: 'border-emerald-200 bg-emerald-50/60', btn: 'bg-emerald-500 hover:bg-emerald-600' },
+  };
+
+  // Ação de cada item, por tipo de grupo.
+  const runItem = (type: AlertType, it: AlertItem) => {
+    if (type === 'pesquisa') { setActiveTab('pesquisa'); return; }
+    if (type === 'plano') { setActiveTab('planos'); return; }
+    // corrigir / continuar / iniciar → abre o player do roteiro.
+    setActivePlayer({ scriptId: it.scriptId!, instanceId: it.instanceId, locationId: it.locationId ?? undefined, readOnly: false });
+  };
+  const itemBtnLabel = (type: AlertType): string =>
+    type === 'corrigir' ? 'Corrigir' : type === 'plano' ? 'Responder' : type === 'pesquisa' ? 'Responder' : type === 'continuar' ? 'Continuar' : 'Iniciar';
+
+  // key? — sem @types/react neste projeto, JSX não infere LibraryManagedAttributes;
+  // o campo é só para o checker aceitar `key=` no map, React descarta em runtime.
+  const AlertGroupCard = ({ type, items }: { key?: string; type: AlertType; items: AlertItem[] }) => {
+    const meta = GROUP_META[type];
+    // Grupo com 1 item já vem expandido, sem colapso (spec §2).
+    const [open, setOpen] = useState(items.length === 1);
+    const single = items.length === 1;
+    return (
+      <div className={`rounded-2xl border ${meta.card}`}>
+        <button
+          type="button"
+          onClick={() => !single && setOpen(v => !v)}
+          aria-expanded={open}
+          className="flex w-full items-center gap-3 p-4 text-left"
+        >
+          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-white ${meta.dot}`}>
+            <meta.Icon className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="font-bold text-secondary-900">{meta.label}</span>
+            <span className="ml-2 text-sm font-medium text-gray-500">{items.length} roteiro{items.length > 1 ? 's' : ''}</span>
+          </span>
+          {!single && (open ? <ChevronDown className="h-5 w-5 text-gray-400" /> : <ChevronRight className="h-5 w-5 text-gray-400" />)}
+        </button>
+        {open && (
+          <ul className="space-y-2 px-4 pb-4">
+            {items.map(it => (
+              <li key={it.key} className="flex flex-col gap-2 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-secondary-900">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" /> {it.ref}
+                  </p>
+                  {it.detail && <p className="mt-0.5 text-xs font-medium text-gray-500">{it.detail}</p>}
+                  {it.deadline && <p className="mt-0.5 text-xs font-medium text-gray-500">até {new Date(it.deadline).toLocaleDateString('pt-BR')}</p>}
+                </div>
+                <button
+                  onClick={() => runItem(type, it)}
+                  className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors ${meta.btn}`}
+                >
+                  {itemBtnLabel(type)} <ArrowRight className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
+    );
+  };
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-6">
-        <h3 className="text-sm font-bold text-secondary-900">Sobre a qualificação</h3>
-        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-gray-500">
-          Os roteiros de avaliação técnica (RN 630) verificam as condições organizacionais, o atendimento
-          ao cliente e o abastecimento e apoio do seu estabelecimento. Responda cada critério com evidências
-          e acompanhe seu progresso na aba <span className="font-semibold text-secondary-900">Meus Roteiros</span>.
+  const inicioTab = (
+    <div className="space-y-6">
+      {/* Linha de resumo */}
+      {model.pendingCount > 0 ? (
+        <p className="text-lg font-bold text-secondary-900">
+          Você tem {model.pendingCount} atividade{model.pendingCount > 1 ? 's' : ''} pendente{model.pendingCount > 1 ? 's' : ''}.
         </p>
-      </div>
+      ) : model.newCertificates.length === 0 && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-6">
+          <p className="flex items-center gap-2 text-lg font-bold text-secondary-900">
+            <CheckCircle2 className="h-6 w-6 text-emerald-500" /> Tudo em dia
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Nada precisa da sua atenção agora.{' '}
+            <button onClick={() => setActiveTab('roteiros')} className="font-semibold text-emerald-700 hover:underline">
+              Ver Meus Roteiros
+            </button>
+          </p>
+        </div>
+      )}
+
+      {/* Grupos de alerta, na ordem de urgência do modelo */}
+      {model.groups.map(g => <AlertGroupCard key={g.type} type={g.type} items={g.items} />)}
+
+      {/* Bloco positivo: certificado novo (não conta em N; some após 1ª abertura) */}
+      {model.newCertificates.map(c => (
+        <div key={c.id} className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <Award className="h-7 w-7 text-amber-500" />
+            <div>
+              <p className="font-bold text-amber-900">Novo certificado disponível</p>
+              <p className="text-sm text-amber-800">Selo {c.seal}{c.locationLabel ? ` — ${c.locationLabel}` : ''}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => openNewCertificate(c.id)}
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-amber-600"
+          >
+            Ver certificado <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 
@@ -350,7 +392,7 @@ export default function PrestadorView({ user }: { user: any }) {
       </nav>
 
       {/* Lembrete de Pesquisa de Satisfação pendente (no prazo) */}
-      {pendingSurveys.length > 0 && activeTab !== 'pesquisa' && (
+      {pendingSurveys.length > 0 && !['pesquisa', 'inicio'].includes(activeTab) && (
         <div className="flex flex-col gap-3 rounded-xl bg-amber-400 p-4 text-amber-950 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <Smile className="mt-0.5 h-6 w-6 shrink-0" />

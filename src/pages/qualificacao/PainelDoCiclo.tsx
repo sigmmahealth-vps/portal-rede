@@ -136,12 +136,12 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         <Card label="Em análise" value={k.in_review} />
         <Card label="Aguardando reanálise" value={k.awaiting_provider} />
         <Card label="Média geral" value={`${k.avg_score.toFixed(1)}%`} />
-        <Card label="Segurança < 60%" value={k.low_security_count} />
-      </div>
+        <Card label="Segurança < 60%" value={k.low_security_count}
+          valueClass={k.low_security_count > 0 ? 'text-red-600' : undefined} />
 
-      {/* Selos emitidos no ciclo — emoji (cor do selo) + quantidade · % */}
-      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
+        {/* Selos emitidos no ciclo — emoji (cor do selo) + quantidade · % */}
+        <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm md:col-span-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
         {(() => {
           const dist = k.seal_distribution as Record<string, number>;
           const totalSeals = Object.values(dist).reduce((a, b) => a + (b as number), 0);
@@ -166,6 +166,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
             </div>
           );
         })()}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -303,11 +304,11 @@ export default function PainelDoCiclo({ user }: { user: any }) {
 }
 
 // Card de métrica no padrão do dashboard da Pesquisa (rótulo, número grande, legenda).
-function Card({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+function Card({ label, value, sub, valueClass }: { label: string; value: React.ReactNode; sub?: string; valueClass?: string }) {
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-secondary-900">{value}</p>
+      <p className={`mt-1 text-2xl font-bold ${valueClass || 'text-secondary-900'}`}>{value}</p>
       {sub && <p className="text-xs text-gray-500">{sub}</p>}
     </div>
   );

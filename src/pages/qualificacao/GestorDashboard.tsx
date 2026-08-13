@@ -16,8 +16,6 @@ import {
   Tooltip, 
   Legend, 
   ResponsiveContainer,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   Cell
@@ -25,14 +23,6 @@ import {
 
 const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
-};
-
-const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-// 'YYYY-MM' → 'mmm/aa' (ex.: '2026-07' → 'jul/26'). Fallback: valor cru.
-const fmtMonth = (v: any): string => {
-  const [y, m] = String(v).split('-');
-  const i = Number(m) - 1;
-  return MESES[i] ? `${MESES[i]}/${y.slice(2)}` : String(v);
 };
 
 const FUNNEL: { key: string; label: string; color: string }[] = [
@@ -123,8 +113,11 @@ export default function GestorDashboard({ user }: { user: any }) {
               })()}
             </StatCard>
 
-            <StatCard icon={MapPin} iconBg="bg-indigo-50" iconColor="text-indigo-600" label="Cobertura da rede"
-              value={`${Number(data.addresses_evaluated || 0)} / ${Number(data.network_total || 0)}`}>
+            <StatCard icon={MapPin} iconBg="bg-indigo-50" iconColor="text-indigo-600" label="Cobertura"
+              value={(() => {
+                const net = Number(data.network_total || 0);
+                return `${net ? Math.round((Number(data.addresses_evaluated || 0) / net) * 100) : 0}%`;
+              })()}>
               {(() => {
                 const net = Number(data.network_total || 0);
                 const pct = net ? Math.round((Number(data.addresses_evaluated || 0) / net) * 100) : 0;
@@ -133,24 +126,25 @@ export default function GestorDashboard({ user }: { user: any }) {
                     <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
                       <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">{pct}% dos endereços com roteiro</p>
+                    <p className="mt-1 text-xs text-gray-500">{Number(data.addresses_evaluated || 0)} de {net} endereços com roteiro</p>
                   </div>
                 );
               })()}
             </StatCard>
 
-            <StatCard icon={CheckCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" label="Endereços qualificados"
+            <StatCard icon={CheckCircle} iconBg="bg-emerald-50" iconColor="text-emerald-600" label="Qualificados"
               value={(() => {
                 const net = Number(data.network_total || 0);
-                const pct = net ? Math.round((Number(data.addresses_qualified || 0) / net) * 100) : 0;
-                return `${Number(data.addresses_qualified || 0)} (${pct}%)`;
-              })()} />
+                return `${net ? Math.round((Number(data.addresses_qualified || 0) / net) * 100) : 0}%`;
+              })()}>
+              <p className="mt-1 text-xs text-gray-500">{Number(data.addresses_qualified || 0)} de {Number(data.network_total || 0)} endereços</p>
+            </StatCard>
 
             <StatCard icon={TrendingUp} iconBg="bg-purple-50" iconColor="text-purple-600" label="Score médio"
               value={`${Number(data.avg_score).toFixed(1)}%`} />
 
             <StatCard icon={AlertTriangle} iconBg={data.action_plans?.overdue > 0 ? 'bg-red-50' : 'bg-gray-50'}
-              iconColor={data.action_plans?.overdue > 0 ? 'text-red-600' : 'text-gray-500'} label="Planos de ação atrasados"
+              iconColor={data.action_plans?.overdue > 0 ? 'text-red-600' : 'text-gray-500'} label="Planos atrasados"
               value={Number(data.action_plans?.overdue || 0)}>
               <p className="mt-1 text-xs text-gray-500">
                 {Number(data.action_plans?.open || 0)} abertos · {Number(data.action_plans?.concluded || 0)} concluídos
@@ -205,7 +199,7 @@ export default function GestorDashboard({ user }: { user: any }) {
                 <p className="text-sm text-gray-400">Nenhuma não-conformidade registrada.</p>
               ) : (
                 <ul className="space-y-2">
-                  {(data.top_nc_criteria || []).map((t: any) => (
+                  {(data.top_nc_criteria || []).slice(0, 5).map((t: any) => (
                     <li key={t.question_code} className="flex items-start gap-3">
                       <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-gray-600">{t.question_code}</span>
                       <span className="min-w-0 flex-1 truncate text-sm text-gray-700" title={t.question_text}>{t.question_text}</span>
@@ -250,20 +244,16 @@ export default function GestorDashboard({ user }: { user: any }) {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Evolução do Nível de Conformidade</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Distribuição de scores</h3>
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.evolution || []} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
+                  <BarChart data={data.score_histogram || []} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis
-                      dataKey="name" axisLine={false} tickLine={false}
-                      tick={{ fill: '#6B7280', fontSize: 12 }}
-                      tickFormatter={fmtMonth} padding={{ left: 24, right: 24 }} minTickGap={24}
-                    />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} domain={[0, 100]} width={32} />
-                    <Tooltip cursor={{ stroke: '#F3F4F6', strokeWidth: 2 }} labelFormatter={fmtMonth} formatter={(v: any) => [`${v}%`, 'Média']} />
-                    <Line type="monotone" dataKey="media" stroke="#00995D" strokeWidth={3} dot={{ r: 4, fill: '#00995D', strokeWidth: 0 }} activeDot={{ r: 6 }} />
-                  </LineChart>
+                    <XAxis dataKey="bucket" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} allowDecimals={false} width={32} />
+                    <Tooltip cursor={{ fill: '#F3F4F6' }} formatter={(v: any) => [v, 'Avaliações']} />
+                    <Bar dataKey="count" fill="#00995D" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>

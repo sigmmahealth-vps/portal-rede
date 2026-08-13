@@ -3525,6 +3525,23 @@ async function startServer() {
       const surveyResponded = srRows.length;
       const surveyWithinDeadline = (srRows as any[]).filter(r => r.within_deadline).length;
 
+      // Histograma de scores das avaliações concluídas (substitui a evolução no dashboard).
+      const HIST_BUCKETS = ['<60', '60–69', '70–79', '80–89', '90–100'];
+      const { rows: histRows } = await query(`
+        SELECT CASE
+                 WHEN percentual < 60 THEN '<60'
+                 WHEN percentual < 70 THEN '60–69'
+                 WHEN percentual < 80 THEN '70–79'
+                 WHEN percentual < 90 THEN '80–89'
+                 ELSE '90–100' END AS bucket,
+               COUNT(*)::int AS count
+          FROM eval_instances
+         WHERE status IN ('finalizado','aprovado') AND percentual IS NOT NULL
+           AND ($1::bigint IS NULL OR cycle_id = $1)
+         GROUP BY 1
+      `, [cycleId]);
+      const histMap = new Map((histRows as any[]).map(r => [r.bucket, r.count]));
+
       res.json({
         total: (totalRows[0] as any).count,
         approved: (approvedRows[0] as any).count,
@@ -3535,6 +3552,7 @@ async function startServer() {
         seal_distribution: sealRows,
         ranking: rankingRows,
         evolution: evoRows,
+        score_histogram: HIST_BUCKETS.map(b => ({ bucket: b, count: histMap.get(b) || 0 })),
         network_total: (netRows[0] as any).count,
         addresses_evaluated: (addrEvalRows[0] as any).count,
         addresses_qualified: (addrQualRows[0] as any).count,

@@ -4613,7 +4613,8 @@ async function startServer() {
         SELECT p.id, p.cycle_id, p.instance_id, p.provider_id, p.location_id,
                p.origin, p.closed_without_completion, p.created_at,
                pr.name AS provider_name,
-               pr.sgu_code AS provider_code, pl.cidade AS city,
+               pr.sgu_code AS provider_code, pl.cidade AS city, pl.uf AS location_uf,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
                COALESCE(json_agg(json_build_object('status', i.status, 'due_date', i.due_date))
                         FILTER (WHERE i.id IS NOT NULL), '[]') AS items,
                EXISTS (SELECT 1 FROM eval_action_events e
@@ -4624,7 +4625,7 @@ async function startServer() {
           LEFT JOIN provider_locations pl ON pl.id = p.location_id
           LEFT JOIN eval_action_items i ON i.plan_id = p.id
          WHERE ($1::bigint IS NULL OR p.cycle_id = $1)
-         GROUP BY p.id, pr.name, pr.sgu_code, pl.cidade
+         GROUP BY p.id, pr.name, pr.sgu_code, pl.cidade, pl.uf, pl.logradouro, pl.label
          ORDER BY p.created_at DESC
       `, [cycleId]);
 
@@ -4662,8 +4663,12 @@ async function startServer() {
     try {
       const id = Number(req.params.id);
       const { rows: [plan] } = await query(`
-        SELECT p.*, pr.name AS provider_name, pr.sgu_code AS provider_code
-          FROM eval_action_plans p JOIN providers pr ON pr.id = p.provider_id
+        SELECT p.*, pr.name AS provider_name, pr.sgu_code AS provider_code,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
+               pl.cidade AS location_cidade, pl.uf AS location_uf
+          FROM eval_action_plans p
+          JOIN providers pr ON pr.id = p.provider_id
+          LEFT JOIN provider_locations pl ON pl.id = p.location_id
          WHERE p.id = $1
       `, [id]);
       if (!plan) return res.status(404).json({ error: 'not found' });
@@ -4918,8 +4923,12 @@ async function startServer() {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
       const { rows } = await query(`
-        SELECT p.id, p.cycle_id, c.label AS cycle_label, p.created_at, p.closed_without_completion
-          FROM eval_action_plans p LEFT JOIN eval_cycles c ON c.id = p.cycle_id
+        SELECT p.id, p.cycle_id, c.label AS cycle_label, p.created_at, p.closed_without_completion,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
+               pl.cidade AS location_cidade, pl.uf AS location_uf
+          FROM eval_action_plans p
+          LEFT JOIN eval_cycles c ON c.id = p.cycle_id
+          LEFT JOIN provider_locations pl ON pl.id = p.location_id
          WHERE p.provider_id = $1
          ORDER BY p.created_at DESC
       `, [providerId]);

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS, ITEM_STATUS_LABEL } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
-import { ArrowLeft, Loader2, Plus, Check, XCircle, RotateCcw, Paperclip, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Check, XCircle, RotateCcw, Paperclip, MessageSquare, MapPin } from 'lucide-react';
 
 const ORIGIN_LABEL: Record<string, string> = {
   automatica: 'Automática',
@@ -87,6 +87,11 @@ export default function PlanoDetail({ planId, onClose }: { planId: number; onClo
                 {plan.provider_name}
                 {plan.provider_code && <span className="ml-2 text-base font-normal text-gray-400">({plan.provider_code})</span>}
               </h1>
+              {(plan.location_label || plan.location_cidade) && (
+                <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                  <MapPin className="h-4 w-4" /> {plan.location_label || plan.location_cidade}{plan.location_uf ? '/' + String(plan.location_uf).toUpperCase() : ''}
+                </p>
+              )}
               <p className="mt-1 text-xs text-gray-500">Origem: {ORIGIN_LABEL[plan.origin] || plan.origin}</p>
             </div>
             <div className="flex shrink-0 items-center gap-3">

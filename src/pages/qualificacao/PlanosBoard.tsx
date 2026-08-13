@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { Search, Plus, Filter, Calendar, ArrowUpCircle } from 'lucide-react';
+import { Search, Plus, Filter, Calendar, ArrowUpCircle, MapPin } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
 
@@ -321,9 +321,12 @@ function PlanoCard({ plan, colKey, onOpen }: any) {
       className="block w-full rounded-xl border border-gray-200 bg-white p-3.5 text-left shadow-sm transition hover:border-gray-300 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
     >
       <p className="text-sm font-bold leading-tight text-gray-900">{plan.provider_name}</p>
-      <p className="mt-0.5 text-xs text-gray-500">
-        Cod: {plan.provider_code || '—'}{plan.city ? ` · ${plan.city}` : ''}
-      </p>
+      <p className="mt-0.5 text-xs text-gray-500">Cod: {plan.provider_code || '—'}</p>
+      {(plan.location_label || plan.city) && (
+        <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-700">
+          <MapPin className="h-3 w-3 shrink-0" /> {plan.location_label || plan.city}{plan.location_uf ? '/' + String(plan.location_uf).toUpperCase() : ''}
+        </p>
+      )}
 
       <span className={`mt-2.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${tone.pill}`}>
         {pillText}

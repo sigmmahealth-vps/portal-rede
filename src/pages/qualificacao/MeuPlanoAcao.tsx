@@ -2,11 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
-import { Loader2, Paperclip, UploadCloud, Trash2 } from 'lucide-react';
+import { Loader2, Paperclip, UploadCloud, Trash2, MapPin } from 'lucide-react';
 
 function fmtDate(d?: string | null): string {
   if (!d) return '—';
   try { return new Date(d).toLocaleDateString('pt-BR'); } catch { return d; }
+}
+
+// "Rua — Cidade/UF" para identificar o endereço do plano.
+function locOf(p: any): string | null {
+  if (!p) return null;
+  const uf = p.location_uf ? '/' + String(p.location_uf).toUpperCase() : '';
+  const city = p.location_cidade ? `${p.location_cidade}${uf}` : '';
+  if (p.location_label && city) return `${p.location_label} — ${city}`;
+  return p.location_label || city || null;
 }
 
 function fmtDateTime(d?: string | null): string {
@@ -299,6 +308,11 @@ export default function MeuPlanoAcao() {
             <h2 className="text-lg font-bold text-secondary-900">
               Meu Plano de Ação — {plan?.cycle_label || 'Plano avulso'}
             </h2>
+            {locOf(plan) && (
+              <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                <MapPin className="h-4 w-4" /> {locOf(plan)}
+              </p>
+            )}
             {plan && <p className="mt-1 text-sm font-medium text-gray-500">{doneCount} de {items.length} ações concluídas</p>}
           </div>
           <div className="flex shrink-0 items-center gap-3">
@@ -308,7 +322,9 @@ export default function MeuPlanoAcao() {
                 className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-secondary-900"
               >
                 {plans.map(p => (
-                  <option key={p.id} value={p.id}>{p.cycle_label || `Plano #${p.id}`}</option>
+                  <option key={p.id} value={p.id}>
+                    {[p.cycle_label || `Plano #${p.id}`, locOf(p)].filter(Boolean).join(' — ')}
+                  </option>
                 ))}
               </select>
             )}

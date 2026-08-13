@@ -3041,6 +3041,14 @@ async function startServer() {
 
       if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
+      // Anti-IDOR (mesma regra do loadInstanceForWrite): prestador/cooperado só lê a
+      // própria avaliação; admin/auditoria leem qualquer uma.
+      const { role: viewerRole, provider_id: viewerProviderId } = req.user;
+      if (viewerRole !== 'admin' && viewerRole !== 'auditoria'
+          && String(instance.provider_id) !== String(viewerProviderId)) {
+        return res.status(403).json({ error: 'Você não tem permissão para ver esta avaliação' });
+      }
+
       const { rows: answers } = await query('SELECT * FROM eval_answers WHERE instance_id = $1', [req.params.id]);
 
       const { rows: evidences } = await query('SELECT * FROM documents WHERE type = $1 AND reference_id = $2', ['qualificacao_evidencia', req.params.id]);

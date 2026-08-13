@@ -3446,6 +3446,85 @@ async function startServer() {
         GROUP BY 1 ORDER BY 1
       `, [cycleId]);
 
+      // Denominador da cobertura: endereços comerciais de prestadores com roteiro (independe de ciclo).
+      const { rows: netRows } = await query(`
+        SELECT COUNT(*)::int AS count
+          FROM provider_locations pl
+          JOIN providers p ON p.id = pl.provider_id
+         WHERE p.eval_script_id IS NOT NULL
+           AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
+           AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'`);
+      // Numeradores na granularidade de endereço (endereços distintos avaliados / com selo).
+      const { rows: addrEvalRows } = await query(
+        "SELECT COUNT(DISTINCT ei.location_id)::int AS count FROM eval_instances ei WHERE ei.location_id IS NOT NULL AND ($1::bigint IS NULL OR ei.cycle_id = $1)", [cycleId]);
+      const { rows: addrQualRows } = await query(
+        "SELECT COUNT(DISTINCT ei.location_id)::int AS count FROM eval_instances ei WHERE ei.location_id IS NOT NULL AND ei.seal IS NOT NULL AND ei.status IN ('finalizado','aprovado') AND ($1::bigint IS NULL OR ei.cycle_id = $1)", [cycleId]);
+
+      // Não-conformidade por dimensão (DL consolida em Segurança).
+      const { rows: dimRows } = await query(`
+        SELECT CASE WHEN eq.dimension IN ('Segurança','Documento Legal') THEN 'Segurança' ELSE eq.dimension END AS dimension,
+               COUNT(*) FILTER (WHERE ea.is_non_compliant)::int AS nc,
+               COUNT(*)::int AS total
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+          JOIN eval_instances ei ON ei.id = ea.instance_id
+         WHERE eq.dimension IS NOT NULL AND ($1::bigint IS NULL OR ei.cycle_id = $1)
+         GROUP BY 1
+         ORDER BY nc DESC
+      `, [cycleId]);
+
+      // Top critérios mais reprovados na rede.
+      const { rows: topNcRows } = await query(`
+        SELECT eq.code AS question_code, eq.text AS question_text, COUNT(*)::int AS count
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+          JOIN eval_instances ei ON ei.id = ea.instance_id
+         WHERE ea.is_non_compliant AND ($1::bigint IS NULL OR ei.cycle_id = $1)
+         GROUP BY eq.code, eq.text
+         ORDER BY count DESC
+         LIMIT 8
+      `, [cycleId]);
+
+      // Saúde dos planos de ação (reusa computePlanStatus).
+      const { rows: planAggRows } = await query(`
+        SELECT p.id, p.closed_without_completion,
+               COALESCE(json_agg(json_build_object('status', i.status, 'due_date', i.due_date))
+                        FILTER (WHERE i.id IS NOT NULL), '[]') AS items,
+               EXISTS (SELECT 1 FROM eval_action_events e JOIN eval_action_items ii ON ii.id = e.item_id
+                        WHERE ii.plan_id = p.id AND e.actor_role = 'prestador') AS has_provider_interaction
+          FROM eval_action_plans p
+          LEFT JOIN eval_action_items i ON i.plan_id = p.id
+         WHERE ($1::bigint IS NULL OR p.cycle_id = $1)
+         GROUP BY p.id
+      `, [cycleId]);
+      const { computePlanStatus } = await import('./src/lib/actionPlan.js');
+      const nowDash = new Date();
+      let apOpen = 0, apOverdue = 0, apConcluded = 0;
+      for (const r of planAggRows as any[]) {
+        const st = computePlanStatus({
+          items: r.items, hasProviderInteraction: r.has_provider_interaction,
+          closedWithoutCompletion: r.closed_without_completion, now: nowDash,
+        });
+        if (st === 'concluido') apConcluded++;
+        else if (st !== 'encerrado_sem_conclusao') { apOpen++; if (st === 'atrasado') apOverdue++; }
+      }
+
+      // Engajamento na Pesquisa de Satisfação (reusa computeSurveyStats).
+      const { rows: availRows } = await query(
+        "SELECT COUNT(*)::int AS count FROM eval_instances WHERE submitted_at IS NOT NULL AND ($1::bigint IS NULL OR cycle_id = $1)", [cycleId]);
+      const { rows: srRows } = await query(`
+        SELECT sr.q1_clareza, sr.q2_portal, sr.q3_documentos, sr.q4_dificuldade,
+               sr.q5_geral, sr.q6_nps, sr.within_deadline
+          FROM eval_survey_responses sr
+          JOIN eval_instances ei ON ei.id = sr.instance_id
+         WHERE ($1::bigint IS NULL OR ei.cycle_id = $1)
+      `, [cycleId]);
+      const { computeSurveyStats } = await import('./src/lib/surveyStats.js');
+      const sstats = computeSurveyStats(srRows as any[]);
+      const surveyAvailable = (availRows[0] as any).count;
+      const surveyResponded = srRows.length;
+      const surveyWithinDeadline = (srRows as any[]).filter(r => r.within_deadline).length;
+
       res.json({
         total: (totalRows[0] as any).count,
         approved: (approvedRows[0] as any).count,
@@ -3455,7 +3534,24 @@ async function startServer() {
         non_conformities: (ncRows[0] as any).count,
         seal_distribution: sealRows,
         ranking: rankingRows,
-        evolution: evoRows
+        evolution: evoRows,
+        network_total: (netRows[0] as any).count,
+        addresses_evaluated: (addrEvalRows[0] as any).count,
+        addresses_qualified: (addrQualRows[0] as any).count,
+        by_dimension_nc: (dimRows as any[]).map(r => ({
+          dimension: r.dimension, nc: r.nc, total: r.total,
+          rate: r.total ? Math.round((r.nc / r.total) * 100) : 0,
+        })),
+        top_nc_criteria: topNcRows,
+        action_plans: { open: apOpen, overdue: apOverdue, concluded: apConcluded },
+        survey_engagement: {
+          available: surveyAvailable,
+          responded: surveyResponded,
+          response_rate: surveyAvailable ? Math.round((surveyResponded / surveyAvailable) * 100) : 0,
+          within_deadline_rate: surveyResponded ? Math.round((surveyWithinDeadline / surveyResponded) * 100) : 0,
+          nps: sstats.nps.score,
+          csat: sstats.csat.q5,
+        },
       });
     } catch (err: any) {
       console.error(err);

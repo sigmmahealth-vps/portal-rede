@@ -25,7 +25,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
     fetchApi(`/providers/${providerId}/access`)
       .then((d) => {
         setAccess(d);
-        setEmail(d.user?.email || '');
+        setEmail(d.user?.email || d.suggested_email || '');
       })
       .catch((e) => setFeedback({ type: 'err', msg: e.message }))
       .finally(() => setLoading(false));
@@ -34,22 +34,40 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   const exists = !!access?.exists;
   const user = access?.user;
 
-  const save = async (e: FormEvent) => {
-    e.preventDefault();
+  const submitAccess = async (withPassword: boolean) => {
     setSaving(true);
     setFeedback(null);
     try {
       const d = await fetchApi(`/providers/${providerId}/access`, {
         method: 'POST',
-        body: JSON.stringify({ email, password: password || undefined }),
+        body: JSON.stringify({ email, password: withPassword && password ? password : undefined }),
       });
       setAccess(d);
       setPassword('');
-      setFeedback({ type: 'ok', msg: exists ? 'Credenciais atualizadas.' : 'Acesso criado com sucesso.' });
+      setFeedback({
+        type: 'ok',
+        msg: exists ? 'Credenciais atualizadas.'
+          : withPassword ? 'Acesso criado com sucesso.'
+          : 'Acesso criado — convite enviado ao prestador.',
+      });
     } catch (err: any) {
       setFeedback({ type: 'err', msg: err.message });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resendInvite = async () => {
+    if (!user?.id) return;
+    setSendingReset(true);
+    setFeedback(null);
+    try {
+      await fetchApi(`/users/${user.id}/resend-invite`, { method: 'POST' });
+      setFeedback({ type: 'ok', msg: 'Convite reenviado ao prestador.' });
+    } catch (err: any) {
+      setFeedback({ type: 'err', msg: err.message });
+    } finally {
+      setSendingReset(false);
     }
   };
 
@@ -99,7 +117,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <form onSubmit={save} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); submitAccess(true); }} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">E-mail de acesso</label>
             <div className="relative">
@@ -135,21 +153,41 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
 
           {canEdit ? (
             <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-[#00995D] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#007A4A] disabled:opacity-50"
-              >
-                <Save className="h-4 w-4" />
-                {saving ? 'Salvando...' : exists ? 'Salvar credenciais' : 'Criar acesso'}
-              </button>
-              {exists && (
+              {!exists && (
                 <button
                   type="button"
-                  onClick={sendReset}
+                  onClick={() => submitAccess(false)}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg bg-[#00995D] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#007A4A] disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                  {saving ? 'Enviando...' : 'Criar acesso e enviar convite'}
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={saving || (!exists && !password)}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+                  exists ? 'bg-[#00995D] text-white hover:bg-[#007A4A]' : 'border border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <Save className="h-4 w-4" />
+                {saving ? 'Salvando...' : exists ? 'Salvar credenciais' : 'Criar com senha manual'}
+              </button>
+              {exists && user?.invite_status === 'pending' && (
+                <button
+                  type="button"
+                  onClick={resendInvite}
                   disabled={sendingReset}
                   className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
                 >
+                  <Send className="h-4 w-4" />
+                  {sendingReset ? 'Enviando...' : 'Reenviar convite'}
+                </button>
+              )}
+              {exists && user?.invite_status !== 'pending' && (
+                <button type="button" onClick={sendReset} disabled={sendingReset}
+                  className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50">
                   <Send className="h-4 w-4" />
                   {sendingReset ? 'Enviando...' : 'Enviar redefinição por e-mail'}
                 </button>
@@ -190,6 +228,11 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
               >
                 {user?.is_active ? 'Acesso ativo' : 'Acesso inativo'}
               </span>
+              {exists && user?.invite_status === 'pending' && (
+                <span className="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  Convite pendente
+                </span>
+              )}
             </div>
           )}
         </div>

@@ -1014,11 +1014,16 @@ async function startServer() {
       const targetId = parseInt(req.params.id, 10);
       if (!Number.isInteger(targetId)) return res.status(400).json({ error: 'ID inválido.' });
 
-      const { rows: targetRows } = await query('SELECT id, role, is_active FROM users WHERE id = $1', [targetId]);
+      const { rows: targetRows } = await query('SELECT id, role, is_active, email, invite_status FROM users WHERE id = $1', [targetId]);
       const target = targetRows[0];
       if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
       const { role: newRole, is_active: newActive } = req.body ?? {};
+      const newEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : undefined;
+
+      if (typeof newEmail !== 'undefined' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+        return res.status(400).json({ error: 'E-mail inválido.' });
+      }
 
       if (typeof newRole !== 'undefined') {
         if (newRole !== 'admin' && newRole !== 'auditoria' && newRole !== 'prestador' && newRole !== 'cooperado') {
@@ -1046,6 +1051,11 @@ async function startServer() {
         params.push(newActive);
         updates.push(`is_active = $${params.length}`);
       }
+      const emailChanged = typeof newEmail !== 'undefined' && newEmail !== String(target.email).toLowerCase();
+      if (emailChanged) {
+        params.push(newEmail);
+        updates.push(`email = $${params.length}`);
+      }
 
       if (updates.length === 0) {
         const { rows } = await query('SELECT id, name, email, role, is_active, invite_status, last_login_at FROM users WHERE id = $1', [targetId]);
@@ -1053,11 +1063,31 @@ async function startServer() {
       }
 
       params.push(targetId);
-      const { rows } = await query(
-        `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
-         RETURNING id, name, email, role, is_active, invite_status, last_login_at`,
-        params
-      );
+      let rows: any[];
+      try {
+        ({ rows } = await query(
+          `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
+           RETURNING id, name, email, role, is_active, invite_status, last_login_at`,
+          params
+        ));
+      } catch (e: any) {
+        if (e?.code === '23505') return res.status(409).json({ error: 'Este e-mail já está em uso por outro usuário.' });
+        throw e;
+      }
+
+      if (emailChanged) {
+        // Convite pendente apontava pro e-mail antigo — invalida; o envio é ação separada do admin.
+        await query(
+          `UPDATE password_setup_tokens SET used_at = now()
+            WHERE user_id = $1 AND kind = 'invite' AND used_at IS NULL`,
+          [targetId]
+        );
+        await auditLog({
+          query, userId: req.user.id, action: 'user_email_changed',
+          meta: { target_user_id: targetId, from: target.email, to: newEmail },
+          ip: hashClientIp(req),
+        });
+      }
 
       if (typeof newRole !== 'undefined' && newRole !== target.role) {
         await auditLog({

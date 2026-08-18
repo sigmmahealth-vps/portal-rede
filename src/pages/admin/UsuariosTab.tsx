@@ -27,6 +27,9 @@ export default function UsuariosTab() {
   const [error, setError] = useState('');
   const [openModal, setOpenModal] = useState(false);
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
+  const [emailModalUser, setEmailModalUser] = useState<User | null>(null);
+  const [emailDraft, setEmailDraft] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -54,6 +57,17 @@ export default function UsuariosTab() {
       await fetchApi(`/users/${id}/resend-invite`, { method: 'POST' });
       load();
     } catch (e: any) { setError(e.message); }
+  };
+
+  const saveEmail = async () => {
+    if (!emailModalUser || !emailDraft.trim()) return;
+    setSavingEmail(true);
+    setError('');
+    try {
+      await fetchApi(`/users/${emailModalUser.id}`, { method: 'PATCH', body: JSON.stringify({ email: emailDraft.trim() }) });
+      setEmailModalUser(null);
+      load();
+    } catch (e: any) { setError(e.message); } finally { setSavingEmail(false); }
   };
 
   return (
@@ -109,10 +123,14 @@ export default function UsuariosTab() {
                           className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                           {u.is_active ? 'Desativar' : 'Reativar'}
                         </button>
+                        <button onClick={() => { setMenuOpenFor(null); setEmailModalUser(u); setEmailDraft(u.email); }}
+                          className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+                          Alterar e-mail
+                        </button>
                         {(u.invite_status === 'pending' || u.invite_status === 'expired') && (
                           <button onClick={() => resend(u.id)}
                             className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
-                            Reenviar convite
+                            Enviar convite
                           </button>
                         )}
                       </div>
@@ -129,6 +147,35 @@ export default function UsuariosTab() {
       )}
 
       {openModal && <NovoUsuarioModal onClose={() => setOpenModal(false)} onCreated={load} />}
+
+      {emailModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !savingEmail && setEmailModalUser(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-gray-800">Alterar e-mail</h3>
+            <p className="mt-1 text-sm text-gray-500">{emailModalUser.name}</p>
+            <form onSubmit={(e) => { e.preventDefault(); saveEmail(); }}>
+              <input
+                type="email" required autoFocus value={emailDraft}
+                onChange={(e) => setEmailDraft(e.target.value)}
+                className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+              />
+              {emailModalUser.invite_status !== 'accepted' && (
+                <p className="mt-2 text-xs text-gray-400">Trocar o e-mail invalida o convite anterior — envie um novo convite pelo menu.</p>
+              )}
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setEmailModalUser(null)} disabled={savingEmail}
+                  className="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={savingEmail}
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                  {savingEmail ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

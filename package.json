@@ -15,6 +15,7 @@
     "lint": "tsc --noEmit",
     "db:migrate": "tsx db/migrate.ts",
     "db:backfill-ip-hash": "tsx db/backfill-ip-hash.ts",
+    "db:provision-users": "tsx db/provision-users.ts",
     "db:import-roteiros": "tsx db/import-roteiros.ts",
     "db:import-providers": "tsx db/import-providers.ts",
     "db:import-tabela": "tsx db/import-tabela.ts",

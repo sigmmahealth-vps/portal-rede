@@ -180,6 +180,21 @@ Hoje a aba exige e-mail + senha digitados na mão e não tem convite.
   password?})` — chamadores não sabem se o modelo é 1:1; um futuro 1:N troca só
   essa função.
 
+### Ajuste 2026-08-18 (pós-entrega): geração em massa + gestão pela tela Equipe
+
+- `db:provision-users` (dry-run; `--commit` aplica): cria usuário para TODO
+  prestador sem acesso — nome/e-mail do cadastro, role `cooperado` (PF) /
+  `prestador` (PJ), `invite_status='pending'`, sem senha e **sem enviar
+  convite**. Idempotente; exceções (sem e-mail válido, e-mail compartilhado —
+  UNIQUE) ficam de fora e entram no relatório do dry-run.
+- Tela Equipe→Usuários (kebab): "Alterar e-mail" (PATCH /users/:id aceita
+  `email`; troca invalida tokens de convite pendentes, sem envio automático) e
+  "Enviar convite" (reusa resend-invite; rótulo cobre 1º envio e reenvio).
+- Nenhum e-mail sai automaticamente em nenhum caminho de provisionamento — o
+  convite é sempre um clique explícito do admin.
+- Rodado com `--commit` no dev em 2026-08-18: 436 criados (325 cooperado, 111
+  prestador), 120 sem e-mail, 114 com e-mail compartilhado/em uso.
+
 ## Testes
 
 - `src/lib/notifyCatalog.test.ts` (ou similar): catálogo renderiza os 12 tipos com

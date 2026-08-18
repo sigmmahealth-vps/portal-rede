@@ -3306,6 +3306,11 @@ async function startServer() {
         },
         ip: hashClientIp(req),
       });
+
+      const { rows: [pv] } = await query('SELECT name FROM providers WHERE id = $1', [instance.provider_id]);
+      void notifyEvent('roteiro_enviado', { provider_name: pv?.name ?? '' },
+        await auditoriaRecipients(), { providerId: Number(instance.provider_id), email: false });
+
       res.json({ success: true });
     } catch (err: any) {
       console.error(err);
@@ -3395,6 +3400,10 @@ async function startServer() {
         },
         ip: hashClientIp(req),
       });
+
+      void notifyEvent('reanalise_solicitada', { integral: true },
+        await prestadorRecipients(Number(reopened.provider_id)), { providerId: Number(reopened.provider_id) });
+
       res.json({ success: true, new_status: reopened.status });
     } catch (err: any) {
       console.error(err);
@@ -4193,6 +4202,7 @@ async function startServer() {
     const { rows: existInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
     if (existInst.length) return { ok: false, code: 409, error: 'ciclo já tem instâncias' };
 
+    let cycleProviderIds: number[] = [];
     const created = await withTransaction(async (client) => {
         // 1. Popula eval_cycle_groups — SÓ SE ainda não houver mapeamento salvo pro ciclo.
         //    Se o admin gravou via PUT /cycles/:id/groups, respeita e não sobrescreve.
@@ -4228,6 +4238,7 @@ async function startServer() {
              AND COALESCE(ov.script_id, ecg.script_id) IS NOT NULL
           RETURNING id, provider_id, script_id
         `, [cycleId]);
+        cycleProviderIds = [...new Set(instances.map((r: any) => Number(r.provider_id)))];
 
         // 3. DL bypass em lote — para cada instância, cria answer 'aprovado' para os critérios DL
         //    que têm documento válido no cadastro do prestador.
@@ -4273,6 +4284,14 @@ async function startServer() {
 
         return { groups: groups.length, instances: instances.length, dl_bypass: bypassAnswers.length };
       });
+
+      // Notifica os prestadores do ciclo (fire-and-forget; não atrasa a resposta).
+      void (async () => {
+        for (const pid of cycleProviderIds) {
+          await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label },
+            await prestadorRecipients(pid), { providerId: pid });
+        }
+      })();
 
       return { ok: true, created };
   }
@@ -4467,6 +4486,12 @@ async function startServer() {
         },
         ip: hashClientIp(req),
       });
+
+      if (action === 'solicitou_reanalise') {
+        const { rows: [q] } = await query('SELECT code FROM eval_questions WHERE id = $1', [ans.question_id]);
+        void notifyEvent('reanalise_solicitada', { question_code: q?.code ?? '' },
+          await prestadorRecipients(Number(ans.provider_id)), { providerId: Number(ans.provider_id) });
+      }
 
       res.json({ success: true, evidence_status: newEvidenceStatus });
     } catch (err: any) {

@@ -126,7 +126,7 @@ export default function Layout() {
         <div className="fixed inset-0 bg-gray-900/80" onClick={() => setSidebarOpen(false)} />
         <div className="fixed inset-y-0 left-0 w-64 bg-[#00995D] flex flex-col shadow-xl">
           <div className="flex items-center justify-between h-16 px-4 bg-white border-b">
-            <img src="/logo.svg" alt="Unimed Rede+" className="h-10" />
+            <img src="/logo-prp.png" alt="PRP — Portal da Rede de Prestadores" className="h-9" />
             <button onClick={() => setSidebarOpen(false)} className="text-gray-500">
               <X className="w-6 h-6" />
             </button>
@@ -171,7 +171,7 @@ export default function Layout() {
         onMouseLeave={() => setIsSidebarExpanded(false)}
       >
         <div className="flex items-center justify-center h-16 bg-white border-b border-gray-200 px-4 flex-shrink-0">
-          <img src="/logo.svg" alt="Unimed" className="h-8 object-contain transition-all duration-300" />
+          <img src={isSidebarExpanded ? '/logo-prp.png' : '/logo-prp-icon.png'} alt="PRP — Portal da Rede de Prestadores" className="h-8 object-contain transition-all duration-300" />
         </div>
         <div className="flex flex-col flex-1 overflow-y-auto py-4 space-y-2 px-3">
           {filteredNavigation.map((item) => {

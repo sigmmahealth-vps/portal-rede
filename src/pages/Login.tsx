@@ -135,7 +135,7 @@ export default function Login() {
       {/* Left Side - Login Form */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center items-center bg-[#f4f4f4] px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-md flex flex-col items-center mb-8">
-          <img src="/logo.svg" alt="Unimed Rede+" className="h-16 mb-4" />
+          <img src="/logo-prp.png" alt="PRP — Portal da Rede de Prestadores" className="h-14 mb-4" />
           <p className="text-center text-gray-600 font-medium">
             Acesse o portal da rede de prestadores
           </p>
@@ -285,6 +285,10 @@ export default function Login() {
             </Link>
           </p>
         </div>
+
+        <div className="w-full max-w-md mt-8">
+          <img src="/logo.svg" alt="Unimed Criciúma" className="h-9" />
+        </div>
       </div>
 
       {/* Credenciamento Modal */}
@@ -362,32 +366,11 @@ export default function Login() {
         </div>
       )}
 
-      {/* Right Side - Background Pattern */}
-      <div className="hidden lg:block lg:w-1/2 relative bg-[#041d10] overflow-hidden">
-        {/* Abstract Network Pattern Simulation */}
-        <div className="absolute inset-0 opacity-40" style={{
-          backgroundImage: `radial-gradient(circle at 20% 30%, rgba(0, 255, 100, 0.15) 0%, transparent 50%),
-                            radial-gradient(circle at 80% 70%, rgba(0, 255, 100, 0.15) 0%, transparent 50%),
-                            radial-gradient(circle at 50% 50%, rgba(0, 255, 100, 0.1) 0%, transparent 60%)`
-        }}></div>
-        
-        {/* Dots and lines simulation using SVG */}
-        <svg className="absolute inset-0 w-full h-full opacity-30" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="network" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
-              <circle cx="20" cy="20" r="2" fill="#4ade80" />
-              <circle cx="80" cy="40" r="3" fill="#4ade80" />
-              <circle cx="40" cy="80" r="1.5" fill="#4ade80" />
-              <circle cx="90" cy="90" r="2.5" fill="#4ade80" />
-              <line x1="20" y1="20" x2="80" y2="40" stroke="#4ade80" strokeWidth="0.5" />
-              <line x1="20" y1="20" x2="40" y2="80" stroke="#4ade80" strokeWidth="0.5" />
-              <line x1="80" y1="40" x2="90" y2="90" stroke="#4ade80" strokeWidth="0.5" />
-              <line x1="40" y1="80" x2="90" y2="90" stroke="#4ade80" strokeWidth="0.5" />
-            </pattern>
-          </defs>
-          <rect x="0" y="0" width="100%" height="100%" fill="url(#network)" />
-        </svg>
-      </div>
+      {/* Right Side - Background Image */}
+      <div
+        className="hidden lg:block lg:w-1/2 bg-[#0b1f14] bg-cover bg-center"
+        style={{ backgroundImage: "url('/login-bg.jpg')" }}
+      />
     </div>
   );
 }

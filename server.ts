@@ -5803,6 +5803,92 @@ async function startServer() {
   runAutoCycleJobs();
   setInterval(runAutoCycleJobs, 60 * 60 * 1000);
 
+  // Job de notificações (spec 5.4.7): varre condições de prazo (disparo único via
+  // dedupe_key) e re-tenta e-mails pendentes/falhos. Idempotente por construção.
+  async function runNotificationJobs() {
+    try {
+      // 1) Ação a vencer em até 15 dias — prestador.
+      const { rows: vencendo } = await query(`
+        SELECT it.id, it.what, it.due_date, ap.provider_id
+          FROM eval_action_items it
+          JOIN eval_action_plans ap ON ap.id = it.plan_id
+         WHERE it.status <> 'concluida'
+           AND COALESCE(ap.closed_without_completion, false) = false
+           AND it.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 15`);
+      for (const it of vencendo) {
+        await notifyEvent('acao_vencendo', { what: it.what, due_date: it.due_date },
+          await prestadorRecipients(Number(it.provider_id)),
+          { providerId: Number(it.provider_id), dedupeRef: `item:${it.id}` });
+      }
+
+      // 2) Ação em atraso — prestador + auditoria.
+      const { rows: atrasadas } = await query(`
+        SELECT it.id, it.what, it.due_date, ap.provider_id, p.name AS provider_name
+          FROM eval_action_items it
+          JOIN eval_action_plans ap ON ap.id = it.plan_id
+          JOIN providers p ON p.id = ap.provider_id
+         WHERE it.status <> 'concluida'
+           AND COALESCE(ap.closed_without_completion, false) = false
+           AND it.due_date < CURRENT_DATE`);
+      for (const it of atrasadas) {
+        await notifyEvent('acao_atrasada',
+          { what: it.what, due_date: it.due_date, provider_name: it.provider_name },
+          [...await prestadorRecipients(Number(it.provider_id)), ...await auditoriaRecipients()],
+          { providerId: Number(it.provider_id), dedupeRef: `item:${it.id}` });
+      }
+
+      // 3) Roteiro pendente a 30 dias do fim do ciclo — SÓ E-MAIL (spec).
+      //    Prestador: individual por instância. Auditoria: resumo por ciclo.
+      const { rows: pendentes } = await query(`
+        SELECT ei.id, ei.provider_id, c.id AS cycle_id, c.label, c.end_date
+          FROM eval_instances ei
+          JOIN eval_cycles c ON c.id = ei.cycle_id
+         WHERE ei.status IN ('pendente', 'em_andamento')
+           AND c.active = true
+           AND c.end_date - 30 <= CURRENT_DATE AND c.end_date >= CURRENT_DATE`);
+      for (const inst of pendentes) {
+        await notifyEvent('roteiro_pendente', { end_date: inst.end_date },
+          await prestadorRecipients(Number(inst.provider_id)),
+          { providerId: Number(inst.provider_id), dedupeRef: `inst:${inst.id}`, portal: false });
+      }
+      const byCycle = new Map<number, { label: string; end_date: string; count: number }>();
+      for (const inst of pendentes) {
+        const c = byCycle.get(Number(inst.cycle_id)) ?? { label: inst.label, end_date: inst.end_date, count: 0 };
+        c.count++; byCycle.set(Number(inst.cycle_id), c);
+      }
+      for (const [cycleId, c] of byCycle) {
+        await notifyEvent('roteiro_pendente',
+          { digest: true, count: c.count, cycle_label: c.label, end_date: c.end_date },
+          await auditoriaRecipients(), { dedupeRef: `cycle:${cycleId}`, portal: false });
+      }
+
+      // 4) Certificado a vencer em até 30 dias — prestador.
+      const { rows: certs } = await query(`
+        SELECT ec.id, ec.valid_until, ei.provider_id
+          FROM eval_certificates ec
+          JOIN eval_instances ei ON ei.id = ec.instance_id
+         WHERE ec.valid_until - 30 <= CURRENT_DATE AND ec.valid_until >= CURRENT_DATE`);
+      for (const ct of certs) {
+        await notifyEvent('certificado_vencendo', { valid_until: ct.valid_until },
+          await prestadorRecipients(Number(ct.provider_id)),
+          { providerId: Number(ct.provider_id), dedupeRef: `cert:${ct.id}` });
+      }
+
+      // 5) Retry do outbox de e-mail (o claim em sendNotificationEmail evita corrida).
+      const { rows: retry } = await query(`
+        SELECT id, email_to, title, body, link FROM notifications
+         WHERE email_status IN ('pendente','falhou') AND email_attempts < 3 AND email_to IS NOT NULL
+         ORDER BY id LIMIT 50`);
+      for (const n of retry) {
+        await sendNotificationEmail(Number(n.id), n.email_to, n.title, n.body ?? '', n.link ?? '/qualificacao');
+      }
+    } catch (e) {
+      console.error('[notify] job de notificações falhou:', e);
+    }
+  }
+  runNotificationJobs();
+  setInterval(runNotificationJobs, 60 * 60 * 1000);
+
   console.log("=== ROUTES REGISTERED ===");
   // Se existe build do cliente (dist/index.html), serve-o estaticamente — caminho de produção.
   // Independe de NODE_ENV e nunca carrega o Vite em produção (import dinâmico só no dev).

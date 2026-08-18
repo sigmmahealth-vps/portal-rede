@@ -14,7 +14,6 @@ import {
   Menu,
   X,
   Search,
-  Bell,
   Accessibility,
   User,
   Users,
@@ -23,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import RightSidebar from './RightSidebar';
+import NotificationsBell from './NotificationsBell';
 import { fetchApi } from '../lib/api';
 
 const navigation = [
@@ -62,21 +62,18 @@ export default function Layout() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showAccessibility, setShowAccessibility] = useState(false);
   const [highContrast, setHighContrast] = useState(false);
   const [largeText, setLargeText] = useState(false);
 
   const searchRef = useRef<HTMLDivElement>(null);
-  const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const accessRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) setShowSearch(false);
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) setShowNotifications(false);
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) setShowProfile(false);
       if (accessRef.current && !accessRef.current.contains(event.target as Node)) setShowAccessibility(false);
     }
@@ -293,34 +290,7 @@ export default function Layout() {
               
               <div className="h-5 w-px bg-gray-300 hidden sm:block"></div>
               
-              <div className="relative" ref={notifRef}>
-                <button 
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className="text-gray-500 hover:text-[#00995D] transition-colors relative" 
-                  title="Notificações"
-                >
-                  <Bell className="h-6 w-6" />
-                  <span className="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-[#f4f4f4]" />
-                </button>
-                {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
-                    <div className="px-4 py-2 border-b border-gray-100"><h3 className="font-bold text-gray-800">Notificações</h3></div>
-                    <div className="max-h-64 overflow-y-auto">
-                      <div className="px-4 py-3 hover:bg-gray-50 border-b border-gray-50 cursor-pointer">
-                        <p className="text-sm text-gray-800 font-medium">Novo documento disponível</p>
-                        <p className="text-xs text-gray-500">Manual de Faturamento 2026</p>
-                      </div>
-                      <div className="px-4 py-3 hover:bg-gray-50 border-b border-gray-50 cursor-pointer">
-                        <p className="text-sm text-gray-800 font-medium">Chamado #2345 atualizado</p>
-                        <p className="text-xs text-gray-500">Sua solicitação foi respondida.</p>
-                      </div>
-                    </div>
-                    <div className="px-4 py-2 text-center border-t border-gray-100">
-                      <button className="text-xs font-bold text-[#00995D]">Ver todas</button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <NotificationsBell />
               
               <Link to="/chamados" className="text-gray-500 hover:text-[#00995D] transition-colors" title="Ajuda">
                 <HelpCircle className="h-6 w-6" />

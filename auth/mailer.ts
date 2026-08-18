@@ -4,6 +4,7 @@ export interface Mailer {
   sendOtp(to: string, code: string): Promise<void>;
   sendInvite(to: string, name: string, link: string): Promise<void>;
   sendPasswordReset(to: string, link: string): Promise<void>;
+  sendNotification(to: string, subject: string, text: string): Promise<void>;
 }
 
 const OTP_SUBJECT = (code: string) => `Seu código de acesso ao Portal Unimed: ${code}`;
@@ -38,6 +39,9 @@ export class ConsoleMailer implements Mailer {
   async sendPasswordReset(to: string, link: string): Promise<void> {
     this.log(`[ConsoleMailer] Para: ${to} | ${RESET_SUBJECT} | ${link}`);
   }
+  async sendNotification(to: string, subject: string, text: string): Promise<void> {
+    this.log(`[ConsoleMailer] Para: ${to} | ${subject} | ${text.slice(0, 120)}`);
+  }
 }
 
 export class ResendMailer implements Mailer {
@@ -57,6 +61,9 @@ export class ResendMailer implements Mailer {
   }
   async sendPasswordReset(to: string, link: string): Promise<void> {
     await this.send(to, RESET_SUBJECT, RESET_BODY(link));
+  }
+  async sendNotification(to: string, subject: string, text: string): Promise<void> {
+    await this.send(to, subject, text);
   }
 }
 

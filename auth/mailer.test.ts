@@ -27,3 +27,11 @@ test('ConsoleMailer.sendPasswordReset logs link', async () => {
   assert.equal(logs.length, 1);
   assert.match(logs[0], /https:\/\/portal\/definir-senha\?token=XYZ/);
 });
+
+test('ConsoleMailer.sendNotification loga destinatário e assunto', async () => {
+  const logs: string[] = [];
+  const m = new ConsoleMailer((msg) => logs.push(msg));
+  await m.sendNotification('x@y.com', 'Portal Unimed — Teste', 'corpo');
+  assert.ok(logs[0].includes('x@y.com'));
+  assert.ok(logs[0].includes('Portal Unimed — Teste'));
+});

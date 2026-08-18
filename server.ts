@@ -4741,6 +4741,21 @@ async function startServer() {
         });
       }
 
+      const provRecipients = await prestadorRecipients(Number(inst.provider_id));
+      const { rows: [pvName] } = await query('SELECT name FROM providers WHERE id = $1', [inst.provider_id]);
+      void notifyEvent(seal ? 'parecer_aprovado' : 'parecer_reprovado', { seal, percentual },
+        provRecipients, { providerId: Number(inst.provider_id) });
+      if (certificateId) {
+        void notifyEvent('certificado_emitido', { valid_until: validUntil },
+          provRecipients, { providerId: Number(inst.provider_id) });
+      }
+      if (planId) {
+        void notifyEvent('plano_gerado',
+          { provider_name: pvName?.name ?? '', items: chosen.length },
+          [...provRecipients, ...await auditoriaRecipients()],
+          { providerId: Number(inst.provider_id) });
+      }
+
       res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed, plan_id: planId, certificate_id: certificateId });
     } catch (err: any) {
       console.error(err);
@@ -4957,6 +4972,10 @@ async function startServer() {
       await auditLog({ query, userId: req.user.id, action: 'action_plan_generated',
         meta: { provider_id: Number(provider_id), plan_id: Number(plan.id), origin: 'manual', location_id: locationId },
         ip: hashClientIp(req) });
+      const { rows: [pvManual] } = await query('SELECT name FROM providers WHERE id = $1', [provider_id]);
+      void notifyEvent('plano_gerado', { provider_name: pvManual?.name ?? '' },
+        [...await prestadorRecipients(Number(provider_id)), ...await auditoriaRecipients()],
+        { providerId: Number(provider_id) });
       res.status(201).json(plan);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
@@ -5531,6 +5550,14 @@ async function startServer() {
           `, [item.id, req.user.id, req.user.name]);
         }
       });
+
+      if (conclude) {
+        const { rows: [pvResp] } = await query('SELECT name FROM providers WHERE id = $1', [req.user.provider_id]);
+        void notifyEvent('acao_aguardando_validacao',
+          { provider_name: pvResp?.name ?? '', what: item.what },
+          await auditoriaRecipients(),
+          { providerId: Number(req.user.provider_id), email: false });
+      }
 
       await auditLog({ query, userId: req.user.id, action: 'action_item_responded',
         meta: { item_id: Number(item.id), conclude, has_file: !!req.file }, ip: hashClientIp(req) });

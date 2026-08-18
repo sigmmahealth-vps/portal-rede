@@ -1591,6 +1591,11 @@ async function startServer() {
           if (password) {
             const pwHash = await bcrypt.hash(password, 10);
             await query(`UPDATE users SET email = $1, password = $2, invite_status = 'accepted' WHERE id = $3`, [email, pwHash, existing.id]);
+            await query(
+              `UPDATE password_setup_tokens SET used_at = now()
+                WHERE user_id = $1 AND kind = 'invite' AND used_at IS NULL`,
+              [existing.id]
+            );
           } else {
             await query('UPDATE users SET email = $1 WHERE id = $2', [email, existing.id]);
             if (existing.invite_status === 'pending' && email !== existing.email) {

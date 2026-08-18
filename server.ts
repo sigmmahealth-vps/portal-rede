@@ -460,6 +460,45 @@ async function startServer() {
     return isRateLimited(rows.map((r: any) => r.created_at), new Date(), PASSWORD_WINDOW_MS, PASSWORD_MAX_FAILURES);
   };
 
+  // Notificações do portal (Task 8) — sempre filtradas por user_id (anti-IDOR).
+  app.get('/api/notifications', authenticate, async (req: any, res) => {
+    try {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const onlyUnread = req.query.unread === '1';
+      const { rows } = await query(
+        `SELECT id, type, title, body, link, read_at, created_at
+           FROM notifications
+          WHERE user_id = $1 ${onlyUnread ? 'AND read_at IS NULL' : ''}
+          ORDER BY id DESC LIMIT 20 OFFSET $2`,
+        [req.user.id, (page - 1) * 20]);
+      res.json({ page, items: rows });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  app.get('/api/notifications/unread-count', authenticate, async (req: any, res) => {
+    try {
+      const { rows } = await query(
+        'SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND read_at IS NULL',
+        [req.user.id]);
+      res.json({ count: rows[0].count });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/notifications/:id/read', authenticate, async (req: any, res) => {
+    try {
+      await query('UPDATE notifications SET read_at = now() WHERE id = $1 AND user_id = $2 AND read_at IS NULL',
+        [req.params.id, req.user.id]);
+      res.json({ ok: true });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/notifications/read-all', authenticate, async (req: any, res) => {
+    try {
+      await query('UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL', [req.user.id]);
+      res.json({ ok: true });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   // Login — etapa 1: senha. Emite sessão se o dispositivo for confiável; senão, dispara OTP.
   app.post('/api/auth/login', async (req, res) => {
     try {

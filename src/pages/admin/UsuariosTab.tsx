@@ -40,9 +40,15 @@ export default function UsuariosTab() {
 
   useEffect(load, []);
 
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
-    return u.name.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q);
+    if (q && !u.name.toLowerCase().includes(q) && !(u.email ?? '').toLowerCase().includes(q)) return false;
+    if (roleFilter && u.role !== roleFilter) return false;
+    if (statusFilter && STATUS_BADGE(u).label !== statusFilter) return false;
+    return true;
   });
 
   const patch = async (id: number, body: Partial<{ role: User['role']; is_active: boolean }>) => {
@@ -80,7 +86,25 @@ export default function UsuariosTab() {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nome ou e-mail..."
             className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500" />
         </div>
-        <button onClick={() => setOpenModal(true)} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-md font-medium hover:bg-emerald-700">
+        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
+          className="border border-gray-300 rounded-md py-2 px-2 text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500">
+          <option value="">Função: todas</option>
+          <option value="prestador">Prestador</option>
+          <option value="cooperado">Cooperado</option>
+          <option value="auditoria">Auditoria</option>
+          <option value="admin">Admin</option>
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+          className="border border-gray-300 rounded-md py-2 px-2 text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500">
+          <option value="">Status: todos</option>
+          <option value="Ativo">Ativo</option>
+          <option value="Pendente">Pendente</option>
+          <option value="Sem e-mail">Sem e-mail</option>
+          <option value="Expirado">Expirado</option>
+          <option value="Inativo">Inativo</option>
+        </select>
+        <span className="text-sm text-gray-400 whitespace-nowrap">{filtered.length} de {users.length}</span>
+        <button onClick={() => setOpenModal(true)} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-md font-medium hover:bg-emerald-700 whitespace-nowrap">
           <Plus className="h-4 w-4" /> Novo usuário
         </button>
       </div>
@@ -106,11 +130,17 @@ export default function UsuariosTab() {
               const s = STATUS_BADGE(u);
               return (
                 <tr key={u.id} className="border-t border-gray-100">
-                  <td className="p-3 font-medium text-gray-900">{u.name}</td>
-                  <td className="p-3 text-gray-700">{u.email ?? <span className="italic text-gray-400">não definido</span>}</td>
+                  <td className="p-3 font-medium text-gray-900">
+                    <div className="max-w-[240px] truncate" title={u.name}>{u.name}</div>
+                  </td>
+                  <td className="p-3 text-gray-700">
+                    {u.email
+                      ? <div className="max-w-[220px] truncate" title={u.email}>{u.email}</div>
+                      : <span className="italic text-gray-400">não definido</span>}
+                  </td>
                   <td className="p-3 capitalize">{u.role}</td>
-                  <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
-                  <td className="p-3 text-gray-500 text-sm">{u.last_login_at ? new Date(u.last_login_at).toLocaleString('pt-BR') : '—'}</td>
+                  <td className="p-3"><span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
+                  <td className="p-3 text-gray-500 text-sm whitespace-nowrap">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="p-3 relative">
                     <button onClick={() => setMenuOpenFor(menuOpenFor === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-700"><MoreVertical /></button>
                     {menuOpenFor === u.id && (

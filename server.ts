@@ -1555,7 +1555,15 @@ async function startServer() {
       const { rows: provRows } = await query('SELECT id, name FROM providers WHERE id = $1', [req.params.id]);
       if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
       const user = await findProviderUser(req.params.id);
-      res.json({ exists: !!user, provider_name: provRows[0].name, user });
+      let suggestedEmail: string | null = null;
+      if (!user) {
+        const { rows: sug } = await query(
+          `SELECT email FROM provider_locations
+            WHERE provider_id = $1 AND email ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'
+            ORDER BY id LIMIT 1`, [req.params.id]);
+        suggestedEmail = sug[0]?.email?.trim().toLowerCase() ?? null;
+      }
+      res.json({ exists: !!user, provider_name: provRows[0].name, user, suggested_email: suggestedEmail });
     } catch (err: any) {
       console.error('GET /providers/:id/access:', err);
       res.status(500).json({ error: err.message });
@@ -1585,14 +1593,26 @@ async function startServer() {
             await query(`UPDATE users SET email = $1, password = $2, invite_status = 'accepted' WHERE id = $3`, [email, pwHash, existing.id]);
           } else {
             await query('UPDATE users SET email = $1 WHERE id = $2', [email, existing.id]);
+            if (existing.invite_status === 'pending' && email !== existing.email) {
+              await query(`UPDATE password_setup_tokens SET used_at = now()
+                            WHERE user_id = $1 AND kind = 'invite' AND used_at IS NULL`, [existing.id]);
+              const token = generateToken();
+              const tokenHash = await hashToken(token);
+              const expiresAt = expirationFor('invite');
+              await query(
+                `INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at, created_by_user_id)
+                 VALUES ($1, $2, 'invite', $3, $4)`, [existing.id, tokenHash, expiresAt, req.user.id]);
+              const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
+              await mailer.sendInvite(email, provRows[0].name, `${appUrl}/definir-senha?token=${token}`);
+            }
           }
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_updated',
             meta: { provider_id: Number(providerId), user_id: existing.id, password_changed: !!password },
             ip: hashClientIp(req),
           });
-        } else {
-          if (!password) return res.status(400).json({ error: 'Defina uma senha para criar o acesso do prestador.' });
+        } else if (password) {
+          // Caminho com senha manual (solicitação do cliente): comportamento atual.
           const pwHash = await bcrypt.hash(password, 10);
           const { rows: created } = await query(
             `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
@@ -1601,7 +1621,28 @@ async function startServer() {
           );
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_created',
-            meta: { provider_id: Number(providerId), user_id: created[0].id },
+            meta: { provider_id: Number(providerId), user_id: created[0].id, invited: false },
+            ip: hashClientIp(req),
+          });
+        } else {
+          // Convite: cria sem senha; prestador define a própria via link (setup token).
+          const { rows: created } = await query(
+            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
+             VALUES ($1, $2, NULL, 'prestador', $3, true, 'pending') RETURNING id`,
+            [provRows[0].name, email, providerId],
+          );
+          const token = generateToken();
+          const tokenHash = await hashToken(token);
+          const expiresAt = expirationFor('invite');
+          await query(
+            `INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at, created_by_user_id)
+             VALUES ($1, $2, 'invite', $3, $4)`,
+            [created[0].id, tokenHash, expiresAt, req.user.id]);
+          const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
+          await mailer.sendInvite(email, provRows[0].name, `${appUrl}/definir-senha?token=${token}`);
+          await auditLog({
+            query, userId: req.user.id, action: 'provider_access_created',
+            meta: { provider_id: Number(providerId), user_id: created[0].id, invited: true },
             ip: hashClientIp(req),
           });
         }

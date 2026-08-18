@@ -6,7 +6,7 @@ import NovoUsuarioModal from './NovoUsuarioModal';
 interface User {
   id: number;
   name: string;
-  email: string;
+  email: string | null;
   role: 'admin' | 'auditoria' | 'prestador' | 'cooperado';
   is_active: boolean;
   invite_status: 'pending' | 'accepted' | 'expired';
@@ -15,6 +15,8 @@ interface User {
 
 const STATUS_BADGE = (u: User) => {
   if (!u.is_active) return { label: 'Inativo', color: 'bg-red-100 text-red-700' };
+  // Gerado do cadastro sem e-mail utilizável — admin define o e-mail antes do convite.
+  if (!u.email) return { label: 'Sem e-mail', color: 'bg-orange-100 text-orange-800' };
   if (u.invite_status === 'pending') return { label: 'Pendente', color: 'bg-amber-100 text-amber-800' };
   if (u.invite_status === 'expired') return { label: 'Expirado', color: 'bg-gray-200 text-gray-600' };
   return { label: 'Ativo', color: 'bg-emerald-100 text-emerald-700' };
@@ -40,7 +42,7 @@ export default function UsuariosTab() {
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
-    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    return u.name.toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q);
   });
 
   const patch = async (id: number, body: Partial<{ role: User['role']; is_active: boolean }>) => {
@@ -105,7 +107,7 @@ export default function UsuariosTab() {
               return (
                 <tr key={u.id} className="border-t border-gray-100">
                   <td className="p-3 font-medium text-gray-900">{u.name}</td>
-                  <td className="p-3 text-gray-700">{u.email}</td>
+                  <td className="p-3 text-gray-700">{u.email ?? <span className="italic text-gray-400">não definido</span>}</td>
                   <td className="p-3 capitalize">{u.role}</td>
                   <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
                   <td className="p-3 text-gray-500 text-sm">{u.last_login_at ? new Date(u.last_login_at).toLocaleString('pt-BR') : '—'}</td>
@@ -123,11 +125,11 @@ export default function UsuariosTab() {
                           className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                           {u.is_active ? 'Desativar' : 'Reativar'}
                         </button>
-                        <button onClick={() => { setMenuOpenFor(null); setEmailModalUser(u); setEmailDraft(u.email); }}
+                        <button onClick={() => { setMenuOpenFor(null); setEmailModalUser(u); setEmailDraft(u.email ?? ''); }}
                           className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
-                          Alterar e-mail
+                          {u.email ? 'Alterar e-mail' : 'Definir e-mail'}
                         </button>
-                        {(u.invite_status === 'pending' || u.invite_status === 'expired') && (
+                        {u.email && (u.invite_status === 'pending' || u.invite_status === 'expired') && (
                           <button onClick={() => resend(u.id)}
                             className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                             Enviar convite
@@ -151,7 +153,7 @@ export default function UsuariosTab() {
       {emailModalUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !savingEmail && setEmailModalUser(null)}>
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-bold text-gray-800">Alterar e-mail</h3>
+            <h3 className="font-bold text-gray-800">{emailModalUser.email ? 'Alterar e-mail' : 'Definir e-mail'}</h3>
             <p className="mt-1 text-sm text-gray-500">{emailModalUser.name}</p>
             <form onSubmit={(e) => { e.preventDefault(); saveEmail(); }}>
               <input

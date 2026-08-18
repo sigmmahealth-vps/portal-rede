@@ -1,8 +1,9 @@
 // Gera usuários de acesso para prestadores a partir do cadastro (tela Equipe→Usuários).
 // 1 usuário por prestador sem usuário: nome/e-mail do cadastro, role por person_type
 // (PF→cooperado, PJ→prestador), sem senha e SEM enviar convite — o convite é ação
-// manual do admin no menu da tela. Idempotente: só cria para quem não tem usuário e
-// cujo e-mail ainda não está em uso; rodar de novo pega cadastros corrigidos.
+// manual do admin no menu da tela. Prestador sem e-mail utilizável (ausente,
+// inválido ou já em uso por outro usuário) TAMBÉM ganha usuário, com email NULL —
+// aparece como "Sem e-mail" na tela até o admin definir um. Idempotente.
 //
 // Uso: [APP_ENV=dev] npm run db:provision-users [-- --commit]   (dry-run por padrão)
 import 'dotenv/config';
@@ -38,12 +39,16 @@ async function main() {
     toCreate.push(c);
   }
 
+  // Sem e-mail utilizável (ausente ou já em uso) → cria mesmo assim, com email NULL.
+  const semEmailUtilizavel = [...semEmail, ...emailEmUso];
+
   console.log(`[provision-users] prestadores sem usuário: ${candidates.length}`);
-  console.log(`  → criar: ${toCreate.length} (${toCreate.filter(c => c.person_type === 'PF').length} cooperado, ${toCreate.filter(c => c.person_type !== 'PF').length} prestador)`);
-  console.log(`  → sem e-mail válido no cadastro: ${semEmail.length}`);
-  console.log(`  → e-mail já em uso/compartilhado: ${emailEmUso.length}`);
-  for (const c of emailEmUso.slice(0, 10)) console.log(`      ${c.id} ${c.name} <${c.email}>`);
-  if (emailEmUso.length > 10) console.log(`      ... e mais ${emailEmUso.length - 10}`);
+  console.log(`  → criar com e-mail: ${toCreate.length} (${toCreate.filter(c => c.person_type === 'PF').length} cooperado, ${toCreate.filter(c => c.person_type !== 'PF').length} prestador)`);
+  console.log(`  → criar SEM e-mail (status "Sem e-mail" na tela): ${semEmailUtilizavel.length}`);
+  console.log(`      sem e-mail válido no cadastro: ${semEmail.length}`);
+  console.log(`      e-mail já em uso/compartilhado: ${emailEmUso.length}`);
+  for (const c of emailEmUso.slice(0, 10)) console.log(`        ${c.id} ${c.name} <${c.email}>`);
+  if (emailEmUso.length > 10) console.log(`        ... e mais ${emailEmUso.length - 10}`);
 
   if (!COMMIT) {
     console.log('[provision-users] dry-run: nada gravado. Use --commit para aplicar.');
@@ -51,19 +56,21 @@ async function main() {
   }
 
   let created = 0;
-  for (const c of toCreate) {
+  const insert = async (c: any, email: string | null) => {
     try {
       await query(
         `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
          VALUES ($1, $2, NULL, $3, $4, true, 'pending')`,
-        [c.name, c.email, c.person_type === 'PF' ? 'cooperado' : 'prestador', c.id]
+        [c.name, email, c.person_type === 'PF' ? 'cooperado' : 'prestador', c.id]
       );
       created++;
     } catch (e: any) {
-      if (e?.code === '23505') { console.warn(`  e-mail duplicado (corrida): ${c.email} — pulado`); continue; }
+      if (e?.code === '23505') { console.warn(`  e-mail duplicado (corrida): ${email} — pulado`); return; }
       throw e;
     }
-  }
+  };
+  for (const c of toCreate) await insert(c, c.email);
+  for (const c of semEmailUtilizavel) await insert(c, null);
   console.log(`[provision-users] concluído: ${created} usuários criados.`);
 }
 

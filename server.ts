@@ -1051,7 +1051,7 @@ async function startServer() {
         params.push(newActive);
         updates.push(`is_active = $${params.length}`);
       }
-      const emailChanged = typeof newEmail !== 'undefined' && newEmail !== String(target.email).toLowerCase();
+      const emailChanged = typeof newEmail !== 'undefined' && newEmail !== (target.email ?? '').toLowerCase();
       if (emailChanged) {
         params.push(newEmail);
         updates.push(`email = $${params.length}`);
@@ -1122,6 +1122,9 @@ async function startServer() {
       if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
       if (target.invite_status === 'accepted') {
         return res.status(409).json({ error: 'Usuário já definiu senha. Oriente-o a usar "Esqueci minha senha".' });
+      }
+      if (!target.email) {
+        return res.status(400).json({ error: 'Usuário sem e-mail — defina o e-mail antes de enviar o convite.' });
       }
 
       await query(
@@ -1628,17 +1631,11 @@ async function startServer() {
             );
           } else {
             await query('UPDATE users SET email = $1 WHERE id = $2', [email, existing.id]);
-            if (existing.invite_status === 'pending' && email !== existing.email) {
+            // Nenhum e-mail sai automático: trocar o e-mail com convite pendente só
+            // invalida o link antigo — o envio é ação explícita (Reenviar convite).
+            if (existing.invite_status === 'pending' && email !== (existing.email ?? '')) {
               await query(`UPDATE password_setup_tokens SET used_at = now()
                             WHERE user_id = $1 AND kind = 'invite' AND used_at IS NULL`, [existing.id]);
-              const token = generateToken();
-              const tokenHash = await hashToken(token);
-              const expiresAt = expirationFor('invite');
-              await query(
-                `INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at, created_by_user_id)
-                 VALUES ($1, $2, 'invite', $3, $4)`, [existing.id, tokenHash, expiresAt, req.user.id]);
-              const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
-              await mailer.sendInvite(email, provRows[0].name, `${appUrl}/definir-senha?token=${token}`);
             }
           }
           await auditLog({

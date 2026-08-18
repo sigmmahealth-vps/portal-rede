@@ -191,9 +191,17 @@ Hoje a aba exige e-mail + senha digitados na mão e não tem convite.
   `email`; troca invalida tokens de convite pendentes, sem envio automático) e
   "Enviar convite" (reusa resend-invite; rótulo cobre 1º envio e reenvio).
 - Nenhum e-mail sai automaticamente em nenhum caminho de provisionamento — o
-  convite é sempre um clique explícito do admin.
-- Rodado com `--commit` no dev em 2026-08-18: 436 criados (325 cooperado, 111
-  prestador), 120 sem e-mail, 114 com e-mail compartilhado/em uso.
+  convite é sempre um clique explícito do admin (inclusive na troca de e-mail
+  pela aba Gestão de Acessos, que antes reenviava sozinha: agora só invalida).
+- **Todo prestador ganha usuário**, inclusive sem e-mail utilizável: migration
+  0031 tornou `users.email` nullable; usuário com `email IS NULL` aparece com o
+  status derivado **"Sem e-mail"** na tela Equipe (badge laranja), o kebab vira
+  "Definir e-mail" e "Enviar convite" só aparece com e-mail definido (o backend
+  também guarda: resend-invite retorna 400 sem e-mail). Login por e-mail nunca
+  casa NULL; notificações de portal continuam chegando (canal e-mail vira no-op).
+- Rodado no dev em 2026-08-18: 436 com e-mail (325 cooperado, 111 prestador) +
+  234 sem e-mail (120 cadastro vazio, 114 e-mail compartilhado/em uso) =
+  676/676 prestadores com usuário.
 
 ## Testes
 

@@ -102,6 +102,10 @@ Notas:
 - `roteiro_pendente` é só e-mail (canal da spec): grava a linha com `user_id` NULL
   e `email_to` = e-mail do usuário destinatário. A linha existe só para dedupe +
   outbox e nunca aparece no portal.
+- `roteiro_pendente` para a **auditoria** é um **resumo por ciclo** ("N roteiros
+  pendentes — ciclo X encerra em DD/MM"), dedupe `roteiro_pendente:cycle:<id>:<dest>`.
+  Individual por instância seria ~600 e-mails por auditor. O prestador recebe o
+  aviso individual da própria instância.
 
 ## Emissor — `src/lib/notify.ts` + wiring no `server.ts`
 

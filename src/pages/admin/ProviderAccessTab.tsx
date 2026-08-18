@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { ShieldCheck, Mail, Lock, Clock, Save, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
 

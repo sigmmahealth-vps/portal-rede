@@ -3290,23 +3290,44 @@ async function startServer() {
       if (curr[0].status !== 'em_analise') {
         return res.status(409).json({ error: `instância em status ${curr[0].status} não pode ser devolvida` });
       }
-      const { rows } = await query(
-        `UPDATE eval_instances SET status = 'aguardando_evidencia'
-          WHERE id = $1 RETURNING id, provider_id, location_id, status`,
-        [id]
-      );
-      if (!rows.length) return res.status(404).json({ error: 'instance not found' });
+      let reopened: any;
+      await withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `UPDATE eval_instances SET status = 'aguardando_evidencia'
+            WHERE id = $1 RETURNING id, provider_id, location_id, status`,
+          [id]
+        );
+        reopened = rows[0];
+        // Devolução integral: sem marcar os critérios, providerCanEditCriterion nega
+        // tudo (instância em aguardando_evidencia + critério sem histórico de reanálise)
+        // e o prestador não consegue anexar nem salvar nada. Registra a devolução como
+        // iteração 'solicitou_reanalise' em cada critério ainda não decidido — o
+        // histórico (everReanalise) é o que libera a edição. evidence_status fica
+        // intacto para não travar o resubmit; aprovado/reprovado seguem travados (D-04).
+        await client.query(`
+          INSERT INTO eval_answer_iterations
+            (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
+          SELECT ea.id,
+                 COALESCE((SELECT MAX(it.iteration_number) FROM eval_answer_iterations it WHERE it.answer_id = ea.id), 0) + 1,
+                 $2, 'auditor', 'solicitou_reanalise', ea.answer_value, ea.score_obtained, ea.evidence_url,
+                 'Avaliação devolvida integralmente ao prestador'
+            FROM eval_answers ea
+           WHERE ea.instance_id = $1
+             AND COALESCE(ea.evidence_status, 'pendente') NOT IN ('aprovado','reprovado')
+        `, [id, req.user.id]);
+      });
+      if (!reopened) return res.status(404).json({ error: 'instance not found' });
 
       await auditLog({
         query, userId: req.user.id, action: 'evaluation_reopened',
         meta: {
-          provider_id: Number(rows[0].provider_id),
+          provider_id: Number(reopened.provider_id),
           instance_id: id,
-          location_id: rows[0].location_id ?? null,
+          location_id: reopened.location_id ?? null,
         },
         ip: hashClientIp(req),
       });
-      res.json({ success: true, new_status: rows[0].status });
+      res.json({ success: true, new_status: reopened.status });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

@@ -69,5 +69,7 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
     case 'certificado_vencendo':
       return { title: 'Certificado próximo do vencimento',
                body: `Seu certificado de qualificação vence em ${fmtDate(ctx.valid_until)}.`, link };
+    default:
+      return { title: String(type), body: '', link };
   }
 }

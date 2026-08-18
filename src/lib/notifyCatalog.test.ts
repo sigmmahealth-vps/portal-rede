@@ -37,3 +37,9 @@ test('roteiro_pendente: individual vs resumo auditoria', () => {
 test('dedupeKey determinística', () => {
   assert.equal(dedupeKey('acao_vencendo', 'item:9', 7), 'acao_vencendo:item:9:7');
 });
+
+test('tipo desconhecido não quebra (fallback)', () => {
+  const c = renderNotification('tipo_inexistente' as any, {});
+  assert.equal(c.title, 'tipo_inexistente');
+  assert.equal(c.link, '/qualificacao');
+});

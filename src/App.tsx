@@ -32,6 +32,7 @@ import MeusDados from './pages/MeusDados';
 import ProviderDetail from './pages/admin/ProviderDetail';
 import CertificadoPrint from './pages/qualificacao/CertificadoPrint';
 import VerificarCertificado from './pages/VerificarCertificado';
+import Notificacoes from './pages/Notificacoes';
 
 export default function App() {
   return (
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="dispositivos" element={<Dispositivos />} />
           <Route path="meus-dados" element={<MeusDados />} />
           <Route path="ferramentas" element={<Ferramentas />} />
+          <Route path="notificacoes" element={<Notificacoes />} />
           <Route path="medicacoes" element={<EmConstrucao />} />
           <Route path="producao" element={<EmConstrucao />} />
           <Route path="agenda" element={<EmConstrucao />} />

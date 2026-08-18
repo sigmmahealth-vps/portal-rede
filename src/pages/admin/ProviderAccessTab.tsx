@@ -35,6 +35,10 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   const user = access?.user;
 
   const submitAccess = async (withPassword: boolean) => {
+    if (!email.trim()) {
+      setFeedback({ type: 'err', msg: 'Informe o e-mail de acesso.' });
+      return;
+    }
     setSaving(true);
     setFeedback(null);
     try {
@@ -228,7 +232,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
               >
                 {user?.is_active ? 'Acesso ativo' : 'Acesso inativo'}
               </span>
-              {exists && user?.invite_status === 'pending' && (
+              {user?.invite_status === 'pending' && (
                 <span className="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                   Convite pendente
                 </span>

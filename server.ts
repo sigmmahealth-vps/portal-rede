@@ -3392,9 +3392,11 @@ async function startServer() {
         ip: hashClientIp(req),
       });
 
-      const { rows: [pv] } = await query('SELECT name FROM providers WHERE id = $1', [instance.provider_id]);
-      void notifyEvent('roteiro_enviado', { provider_name: pv?.name ?? '' },
-        await auditoriaRecipients(), { providerId: Number(instance.provider_id), email: false });
+      void (async () => {
+        const { rows: [pv] } = await query('SELECT name FROM providers WHERE id = $1', [instance.provider_id]);
+        await notifyEvent('roteiro_enviado', { provider_name: pv?.name ?? '' },
+          await auditoriaRecipients(), { providerId: Number(instance.provider_id), email: false });
+      })().catch((e) => console.error('[notify] site roteiro_enviado:', e));
 
       res.json({ success: true });
     } catch (err: any) {
@@ -3486,8 +3488,10 @@ async function startServer() {
         ip: hashClientIp(req),
       });
 
-      void notifyEvent('reanalise_solicitada', { integral: true },
-        await prestadorRecipients(Number(reopened.provider_id)), { providerId: Number(reopened.provider_id) });
+      void (async () => {
+        await notifyEvent('reanalise_solicitada', { integral: true },
+          await prestadorRecipients(Number(reopened.provider_id)), { providerId: Number(reopened.provider_id) });
+      })().catch((e) => console.error('[notify] site reanalise_solicitada (reopen):', e));
 
       res.json({ success: true, new_status: reopened.status });
     } catch (err: any) {
@@ -4573,9 +4577,11 @@ async function startServer() {
       });
 
       if (action === 'solicitou_reanalise') {
-        const { rows: [q] } = await query('SELECT code FROM eval_questions WHERE id = $1', [ans.question_id]);
-        void notifyEvent('reanalise_solicitada', { question_code: q?.code ?? '' },
-          await prestadorRecipients(Number(ans.provider_id)), { providerId: Number(ans.provider_id) });
+        void (async () => {
+          const { rows: [q] } = await query('SELECT code FROM eval_questions WHERE id = $1', [ans.question_id]);
+          await notifyEvent('reanalise_solicitada', { question_code: q?.code ?? '' },
+            await prestadorRecipients(Number(ans.provider_id)), { providerId: Number(ans.provider_id) });
+        })().catch((e) => console.error('[notify] site reanalise_solicitada (auditorAction):', e));
       }
 
       res.json({ success: true, evidence_status: newEvidenceStatus });
@@ -4826,20 +4832,22 @@ async function startServer() {
         });
       }
 
-      const provRecipients = await prestadorRecipients(Number(inst.provider_id));
-      const { rows: [pvName] } = await query('SELECT name FROM providers WHERE id = $1', [inst.provider_id]);
-      void notifyEvent(seal ? 'parecer_aprovado' : 'parecer_reprovado', { seal, percentual },
-        provRecipients, { providerId: Number(inst.provider_id) });
-      if (certificateId) {
-        void notifyEvent('certificado_emitido', { valid_until: validUntil },
+      void (async () => {
+        const provRecipients = await prestadorRecipients(Number(inst.provider_id));
+        const { rows: [pvName] } = await query('SELECT name FROM providers WHERE id = $1', [inst.provider_id]);
+        await notifyEvent(seal ? 'parecer_aprovado' : 'parecer_reprovado', { seal, percentual },
           provRecipients, { providerId: Number(inst.provider_id) });
-      }
-      if (planId) {
-        void notifyEvent('plano_gerado',
-          { provider_name: pvName?.name ?? '', items: chosen.length },
-          [...provRecipients, ...await auditoriaRecipients()],
-          { providerId: Number(inst.provider_id) });
-      }
+        if (certificateId) {
+          await notifyEvent('certificado_emitido', { valid_until: validUntil },
+            provRecipients, { providerId: Number(inst.provider_id) });
+        }
+        if (planId) {
+          await notifyEvent('plano_gerado',
+            { provider_name: pvName?.name ?? '', items: chosen.length },
+            [...provRecipients, ...await auditoriaRecipients()],
+            { providerId: Number(inst.provider_id) });
+        }
+      })().catch((e) => console.error('[notify] site parecer:', e));
 
       res.json({ status: 'aprovado', percentual, seal, hasEliminatoryFailed, plan_id: planId, certificate_id: certificateId });
     } catch (err: any) {
@@ -5057,10 +5065,12 @@ async function startServer() {
       await auditLog({ query, userId: req.user.id, action: 'action_plan_generated',
         meta: { provider_id: Number(provider_id), plan_id: Number(plan.id), origin: 'manual', location_id: locationId },
         ip: hashClientIp(req) });
-      const { rows: [pvManual] } = await query('SELECT name FROM providers WHERE id = $1', [provider_id]);
-      void notifyEvent('plano_gerado', { provider_name: pvManual?.name ?? '' },
-        [...await prestadorRecipients(Number(provider_id)), ...await auditoriaRecipients()],
-        { providerId: Number(provider_id) });
+      void (async () => {
+        const { rows: [pvManual] } = await query('SELECT name FROM providers WHERE id = $1', [provider_id]);
+        await notifyEvent('plano_gerado', { provider_name: pvManual?.name ?? '' },
+          [...await prestadorRecipients(Number(provider_id)), ...await auditoriaRecipients()],
+          { providerId: Number(provider_id) });
+      })().catch((e) => console.error('[notify] site plano_gerado (manual):', e));
       res.status(201).json(plan);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
@@ -5637,11 +5647,13 @@ async function startServer() {
       });
 
       if (conclude) {
-        const { rows: [pvResp] } = await query('SELECT name FROM providers WHERE id = $1', [req.user.provider_id]);
-        void notifyEvent('acao_aguardando_validacao',
-          { provider_name: pvResp?.name ?? '', what: item.what },
-          await auditoriaRecipients(),
-          { providerId: Number(req.user.provider_id), email: false });
+        void (async () => {
+          const { rows: [pvResp] } = await query('SELECT name FROM providers WHERE id = $1', [req.user.provider_id]);
+          await notifyEvent('acao_aguardando_validacao',
+            { provider_name: pvResp?.name ?? '', what: item.what },
+            await auditoriaRecipients(),
+            { providerId: Number(req.user.provider_id), email: false });
+        })().catch((e) => console.error('[notify] site acao_aguardando_validacao:', e));
       }
 
       await auditLog({ query, userId: req.user.id, action: 'action_item_responded',
@@ -5893,11 +5905,13 @@ async function startServer() {
   async function runNotificationJobs() {
     try {
       // 1) Ação a vencer em até 15 dias — prestador.
+      //    Exclui 'aguardando_revisao': item já concluído pelo prestador e à espera
+      //    de validação do auditor não pode receber aviso de vencimento/atraso.
       const { rows: vencendo } = await query(`
         SELECT it.id, it.what, it.due_date, ap.provider_id
           FROM eval_action_items it
           JOIN eval_action_plans ap ON ap.id = it.plan_id
-         WHERE it.status <> 'concluida'
+         WHERE it.status NOT IN ('concluida','aguardando_revisao')
            AND COALESCE(ap.closed_without_completion, false) = false
            AND it.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 15`);
       for (const it of vencendo) {
@@ -5907,12 +5921,13 @@ async function startServer() {
       }
 
       // 2) Ação em atraso — prestador + auditoria.
+      //    Exclui 'aguardando_revisao' pelo mesmo motivo do item (1) acima.
       const { rows: atrasadas } = await query(`
         SELECT it.id, it.what, it.due_date, ap.provider_id, p.name AS provider_name
           FROM eval_action_items it
           JOIN eval_action_plans ap ON ap.id = it.plan_id
           JOIN providers p ON p.id = ap.provider_id
-         WHERE it.status <> 'concluida'
+         WHERE it.status NOT IN ('concluida','aguardando_revisao')
            AND COALESCE(ap.closed_without_completion, false) = false
            AND it.due_date < CURRENT_DATE`);
       for (const it of atrasadas) {

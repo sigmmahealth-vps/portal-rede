@@ -19,6 +19,7 @@ import { hashIp } from './auth/ipHash.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
+import { renderNotification, dedupeKey, type NotifyType } from './src/lib/notifyCatalog.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -246,6 +247,73 @@ async function startServer() {
   const app = express();
   const mailer = createMailer();
   const PORT = Number(process.env.PORT) || 3000;
+
+  // ===== Notificações (spec 5.4.7) =====
+  type NotifyRecipient = { user_id: number | null; email: string | null };
+
+  async function prestadorRecipients(providerId: number): Promise<NotifyRecipient[]> {
+    const { rows } = await query(
+      `SELECT id AS user_id, email FROM users
+        WHERE provider_id = $1 AND is_active = true AND role IN ('prestador','cooperado')`,
+      [providerId]);
+    return rows.map(r => ({ user_id: Number(r.user_id), email: r.email }));
+  }
+
+  async function auditoriaRecipients(): Promise<NotifyRecipient[]> {
+    const { rows } = await query(
+      `SELECT id AS user_id, email FROM users WHERE role = 'auditoria' AND is_active = true`);
+    return rows.map(r => ({ user_id: Number(r.user_id), email: r.email }));
+  }
+
+  // Envia o e-mail de uma notification e atualiza o outbox. O UPDATE inicial é o
+  // "claim": incrementa attempts atomicamente e some da fila se outro tick pegou.
+  async function sendNotificationEmail(rowId: number, to: string, title: string, body: string, link: string) {
+    try {
+      const { rows: claimed } = await query(
+        `UPDATE notifications SET email_attempts = email_attempts + 1
+          WHERE id = $1 AND email_attempts < 3 AND email_status IN ('pendente','falhou')
+          RETURNING id`, [rowId]);
+      if (!claimed.length) return;
+      const appUrl = process.env.APP_URL ?? `http://localhost:${PORT}`;
+      await mailer.sendNotification(to, `Portal Unimed — ${title}`, `${body}\n\nAcesse: ${appUrl}${link}`);
+      await query(`UPDATE notifications SET email_status = 'enviado' WHERE id = $1`, [rowId]);
+    } catch (e) {
+      console.error(`[notify] e-mail falhou (notification ${rowId}):`, e);
+      await query(`UPDATE notifications SET email_status = 'falhou' WHERE id = $1`, [rowId]).catch(() => {});
+    }
+  }
+
+  // Grava as notificações e dispara os e-mails (fire-and-forget). NUNCA lança.
+  // opts.email=false → só portal; opts.portal=false → só e-mail;
+  // opts.dedupeRef → eventos de prazo (disparo único por item×destinatário).
+  async function notifyEvent(
+    type: NotifyType,
+    ctx: Record<string, any>,
+    recipients: NotifyRecipient[],
+    opts: { providerId?: number; email?: boolean; portal?: boolean; dedupeRef?: string } = {},
+  ) {
+    const wantEmail = opts.email !== false;
+    const wantPortal = opts.portal !== false;
+    try {
+      const c = renderNotification(type, ctx);
+      for (const r of recipients) {
+        const userId = wantPortal ? r.user_id : null;
+        const emailTo = wantEmail ? r.email : null;
+        if (!userId && !emailTo) continue;
+        const key = opts.dedupeRef ? dedupeKey(type, opts.dedupeRef, r.user_id ?? r.email ?? '') : null;
+        const { rows } = await query(`
+          INSERT INTO notifications (user_id, email_to, provider_id, type, title, body, link, dedupe_key, email_status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $2::text IS NULL THEN 'na' ELSE 'pendente' END)
+          ON CONFLICT (dedupe_key) DO NOTHING
+          RETURNING id`,
+          [userId, emailTo, opts.providerId ?? null, type, c.title, c.body, c.link, key]);
+        const row = rows[0];
+        if (row && emailTo) void sendNotificationEmail(Number(row.id), emailTo, c.title, c.body, c.link);
+      }
+    } catch (e) {
+      console.error(`[notify] falha ao emitir ${type}:`, e);
+    }
+  }
 
   // Atrás do proxy do Railway: confia no X-Forwarded-For para obter o IP real do cliente (RN 630 — trilha de acesso).
   app.set('trust proxy', true);

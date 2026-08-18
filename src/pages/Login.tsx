@@ -287,7 +287,7 @@ export default function Login() {
         </div>
 
         <div className="w-full max-w-md mt-8">
-          <img src="/logo.svg" alt="Unimed Criciúma" className="h-9" />
+          <img src="/logo-unimed-criciuma.png" alt="Unimed Criciúma" className="h-10 mx-auto" />
         </div>
       </div>
 

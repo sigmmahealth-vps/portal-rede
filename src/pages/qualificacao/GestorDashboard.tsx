@@ -18,6 +18,26 @@ const SEAL_COLORS: Record<string, string> = {
   'Ouro': '#FCD34D', 'Prata': '#9CA3AF', 'Bronze': '#B45309', 'Não Qualificado': '#EF4444',
 };
 
+// Artes oficiais das medalhas (mesmas dos e-mails); Não Qualificado segue só com a cor.
+const SEAL_IMG: Record<string, string> = {
+  'Ouro': '/selos/ouro.png', 'Prata': '/selos/prata.png', 'Bronze': '/selos/bronze.png',
+};
+
+function SealLegend({ payload }: any) {
+  return (
+    <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 pt-2">
+      {(payload || []).map((p: any) => (
+        <span key={p.value} className="inline-flex items-center gap-1.5 text-sm text-gray-600">
+          {SEAL_IMG[p.value]
+            ? <img src={SEAL_IMG[p.value]} alt="" className="h-5 w-5 object-contain" />
+            : <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: p.color }} />}
+          {p.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const FUNNEL: { key: string; label: string; color: string }[] = [
   { key: 'pendente',             label: 'Não iniciado',    color: 'bg-gray-400' },
   { key: 'em_andamento',         label: 'Em preenchimento', color: 'bg-blue-500' },
@@ -283,7 +303,7 @@ export default function GestorDashboard({ user }: { user: any }) {
                       ))}
                     </Pie>
                     <Tooltip />
-                    <Legend />
+                    <Legend content={<SealLegend />} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

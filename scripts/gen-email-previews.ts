@@ -37,18 +37,18 @@ const modelos: Array<[string, string, { subject: string; html: string }]> = [
   ['03-reanalise-criterio', 'Reanálise de critério solicitada (Prestador)', renderNotificationEmail('reanalise_solicitada', CTX, APP, NOME)],
   ['04-devolucao-integral', 'Avaliação devolvida integralmente (Prestador)', renderNotificationEmail('reanalise_solicitada', { ...CTX, integral: true }, APP, NOME)],
   ['05-roteiro-aprovado', 'Roteiro aprovado (Prestador)', renderNotificationEmail('parecer_aprovado', CTX, APP, NOME)],
-  // 06 (reprovado) e 07 (certificado emitido) excluídos na rodada de aprovação
-  // de 2026-08-19 — os eventos seguem existindo, mas só como notificação no portal.
-  ['08-plano-acao-gerado', 'Plano de ação gerado (Prestador + Auditor)', renderNotificationEmail('plano_gerado', CTX, APP, NOME)],
-  ['09-acao-aguardando-validacao', 'Ação concluída aguardando validação (Auditor — hoje só portal)', renderNotificationEmail('acao_aguardando_validacao', CTX, APP, 'Auditoria Unimed')],
-  ['10-acao-proxima-vencimento', 'Ação próxima do vencimento — 15 dias (Prestador)', renderNotificationEmail('acao_vencendo', CTX, APP, NOME)],
-  ['11-acao-em-atraso', 'Ação em atraso (Prestador + Auditor)', renderNotificationEmail('acao_atrasada', CTX, APP, NOME)],
-  ['12-roteiro-pendente-30d', 'Roteiro pendente 30 dias antes do encerramento (Prestador)', renderNotificationEmail('roteiro_pendente', CTX, APP, NOME)],
-  ['13-roteiros-pendentes-resumo-auditoria', 'Roteiros pendentes — resumo por ciclo (Auditor)', renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP, 'Auditoria Unimed')],
-  ['14-certificado-proximo-vencimento', 'Certificado próximo do vencimento (Prestador)', renderNotificationEmail('certificado_vencendo', CTX, APP, NOME)],
-  ['15-convite-de-acesso', 'Convite de acesso — definir senha', { subject: 'Bem-vindo ao Portal Unimed Criciúma', html: inviteEmailHtml(NOME, `${APP}/definir-senha?token=exemplo`) }],
-  ['16-codigo-de-acesso-otp', 'Código de acesso (OTP do login)', { subject: 'Seu código de acesso ao Portal Unimed: 483920', html: otpEmailHtml('483920') }],
-  ['17-redefinicao-de-senha', 'Redefinição de senha', { subject: 'Redefinição de senha — Portal Unimed', html: resetEmailHtml(`${APP}/definir-senha?token=exemplo`) }],
+  // Reprovado e certificado emitido ficaram fora do canal e-mail (rodada de
+  // aprovação de 2026-08-19) — os eventos seguem como notificação no portal.
+  ['06-plano-acao-gerado', 'Plano de ação gerado (Prestador + Auditor)', renderNotificationEmail('plano_gerado', CTX, APP, NOME)],
+  ['07-acao-aguardando-validacao', 'Ação concluída aguardando validação (Auditor — hoje só portal)', renderNotificationEmail('acao_aguardando_validacao', CTX, APP, 'Auditoria Unimed')],
+  ['08-acao-proxima-vencimento', 'Ação próxima do vencimento — 15 dias (Prestador)', renderNotificationEmail('acao_vencendo', CTX, APP, NOME)],
+  ['09-acao-em-atraso', 'Ação em atraso (Prestador + Auditor)', renderNotificationEmail('acao_atrasada', CTX, APP, NOME)],
+  ['10-roteiro-pendente-30d', 'Roteiro pendente 30 dias antes do encerramento (Prestador)', renderNotificationEmail('roteiro_pendente', CTX, APP, NOME)],
+  ['11-roteiros-pendentes-resumo-auditoria', 'Roteiros pendentes — resumo por ciclo (Auditor)', renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP, 'Auditoria Unimed')],
+  ['12-certificado-proximo-vencimento', 'Certificado próximo do vencimento (Prestador)', renderNotificationEmail('certificado_vencendo', CTX, APP, NOME)],
+  ['13-convite-de-acesso', 'Convite de acesso — definir senha', { subject: 'Bem-vindo ao Portal Unimed Criciúma', html: inviteEmailHtml(NOME, `${APP}/definir-senha?token=exemplo`) }],
+  ['14-codigo-de-acesso-otp', 'Código de acesso (OTP do login)', { subject: 'Seu código de acesso ao Portal Unimed: 483920', html: otpEmailHtml('483920') }],
+  ['15-redefinicao-de-senha', 'Redefinição de senha', { subject: 'Redefinição de senha — Portal Unimed', html: resetEmailHtml(`${APP}/definir-senha?token=exemplo`) }],
 ];
 
 for (const [file, , e] of modelos) fs.writeFileSync(path.join(dest, `${file}.html`), embed(e.html));

@@ -114,7 +114,7 @@ export default function UsuariosTab() {
       {loading ? (
         <p className="text-gray-500">Carregando...</p>
       ) : (
-        {/* sem overflow-hidden: cortava o menu de ações das últimas linhas */}
+        // sem overflow-hidden no card: cortava o menu de ações das últimas linhas
         <table className="w-full bg-white rounded-xl border border-gray-100">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
             <tr>

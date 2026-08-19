@@ -4869,11 +4869,13 @@ async function startServer() {
       void (async () => {
         const provRecipients = await prestadorRecipients(Number(inst.provider_id));
         const { rows: [pvName] } = await query('SELECT name FROM providers WHERE id = $1', [inst.provider_id]);
+        // Decisão da rodada de aprovação dos modelos (2026-08-19): reprovado e
+        // certificado emitido não vão por e-mail — só notificação no portal.
         await notifyEvent(seal ? 'parecer_aprovado' : 'parecer_reprovado', { seal, percentual },
-          provRecipients, { providerId: Number(inst.provider_id) });
+          provRecipients, { providerId: Number(inst.provider_id), email: !!seal });
         if (certificateId) {
           await notifyEvent('certificado_emitido', { valid_until: validUntil },
-            provRecipients, { providerId: Number(inst.provider_id) });
+            provRecipients, { providerId: Number(inst.provider_id), email: false });
         }
         if (planId) {
           await notifyEvent('plano_gerado',

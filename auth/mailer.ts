@@ -12,7 +12,7 @@ export const otpEmailHtml = (code: string) => renderEmailHtml({
     'Ele vale por **10 minutos** e só pode ser usado uma vez.',
     'Se você não tentou entrar no portal, ignore este e-mail.',
   ],
-  highlight: { label: 'Seu código de acesso', value: code },
+  highlight: { label: 'Seu código de acesso', value: code, iconImg: `${appUrl()}/codigo.png` },
 }, appUrl());
 
 export const inviteEmailHtml = (name: string, link: string) => renderEmailHtml({

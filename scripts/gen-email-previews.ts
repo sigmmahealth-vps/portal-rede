@@ -9,16 +9,15 @@ import path from 'path';
 const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
 fs.mkdirSync(dest, { recursive: true });
 
-const logo = fs.readFileSync(path.resolve(process.cwd(), 'public/logo-unimed-criciuma.png')).toString('base64');
+// Embute em base64 todas as imagens que os modelos referenciam (abrem offline).
+const ASSETS = ['logo-unimed-criciuma.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
 const embed = (h: string) => {
-  let out = h.replace(/src="[^"]*\/logo-unimed-criciuma\.png"/g, `src="data:image/png;base64,${logo}"`);
-  // Medalhas dos selos (se as artes já estiverem em public/selos/).
-  for (const slug of ['ouro', 'prata', 'bronze']) {
-    const p = path.resolve(process.cwd(), `public/selos/${slug}.png`);
-    if (fs.existsSync(p)) {
-      const b64 = fs.readFileSync(p).toString('base64');
-      out = out.replace(new RegExp(`src="[^"]*/selos/${slug}\\.png"`, 'g'), `src="data:image/png;base64,${b64}"`);
-    }
+  let out = h;
+  for (const rel of ASSETS) {
+    const p = path.resolve(process.cwd(), 'public', rel);
+    if (!fs.existsSync(p)) continue;
+    const b64 = fs.readFileSync(p).toString('base64');
+    out = out.replace(new RegExp(`src="[^"]*/${rel.replace('/', '\\/').replace('.', '\\.')}"`, 'g'), `src="data:image/png;base64,${b64}"`);
   }
   return out;
 };
@@ -38,8 +37,8 @@ const modelos: Array<[string, string, { subject: string; html: string }]> = [
   ['03-reanalise-criterio', 'Reanálise de critério solicitada (Prestador)', renderNotificationEmail('reanalise_solicitada', CTX, APP, NOME)],
   ['04-devolucao-integral', 'Avaliação devolvida integralmente (Prestador)', renderNotificationEmail('reanalise_solicitada', { ...CTX, integral: true }, APP, NOME)],
   ['05-roteiro-aprovado', 'Roteiro aprovado (Prestador)', renderNotificationEmail('parecer_aprovado', CTX, APP, NOME)],
-  ['06-roteiro-reprovado', 'Roteiro reprovado (Prestador)', renderNotificationEmail('parecer_reprovado', CTX, APP, NOME)],
-  ['07-certificado-emitido', 'Certificado emitido (Prestador)', renderNotificationEmail('certificado_emitido', CTX, APP, NOME)],
+  // 06 (reprovado) e 07 (certificado emitido) excluídos na rodada de aprovação
+  // de 2026-08-19 — os eventos seguem existindo, mas só como notificação no portal.
   ['08-plano-acao-gerado', 'Plano de ação gerado (Prestador + Auditor)', renderNotificationEmail('plano_gerado', CTX, APP, NOME)],
   ['09-acao-aguardando-validacao', 'Ação concluída aguardando validação (Auditor — hoje só portal)', renderNotificationEmail('acao_aguardando_validacao', CTX, APP, 'Auditoria Unimed')],
   ['10-acao-proxima-vencimento', 'Ação próxima do vencimento — 15 dias (Prestador)', renderNotificationEmail('acao_vencendo', CTX, APP, NOME)],
@@ -57,8 +56,9 @@ for (const [file, , e] of modelos) fs.writeFileSync(path.join(dest, `${file}.htm
 const strip = (h: string) => h.replace(/^[\s\S]*?<body[^>]*>/, '').replace(/<\/body><\/html>$/, '');
 let out = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Modelos de e-mail — Qualificação da Rede (aprovação)</title></head><body style="background:#e5e7eb;font-family:Arial;margin:0;padding:24px 0;">';
 out += `<div style="max-width:640px;margin:0 auto 8px;text-align:center;"><h1 style="color:#00483A;font-size:22px;margin:0;">Modelos de e-mail — Programa de Qualificação da Rede</h1><p style="color:#6b7280;font-size:13px;">Para aprovação · dados ilustrativos · ${modelos.length} modelos</p></div>`;
-modelos.forEach(([, label, e], i) => {
-  out += `<p style="max-width:640px;margin:36px auto 8px;font-weight:bold;color:#374151;font-size:14px;">${String(i + 1).padStart(2, '0')}. ${label}<br><span style="font-weight:normal;color:#6b7280;">Assunto: ${e.subject}</span></p>${strip(embed(e.html))}`;
+modelos.forEach(([file, label, e]) => {
+  // Numeração pelo prefixo do arquivo (estável entre rodadas, mesmo com exclusões).
+  out += `<p style="max-width:640px;margin:36px auto 8px;font-weight:bold;color:#374151;font-size:14px;">${file.slice(0, 2)}. ${label}<br><span style="font-weight:normal;color:#6b7280;">Assunto: ${e.subject}</span></p>${strip(embed(e.html))}`;
 });
 out += '</body></html>';
 fs.writeFileSync(path.join(dest, '00-todos-os-modelos.html'), out);

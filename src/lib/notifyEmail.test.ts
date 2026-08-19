@@ -53,11 +53,14 @@ test('ícones do card de destaque por tipo', () => {
   assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Bronze' }, APP).html.includes(`${APP}/selos/bronze.png`));
   assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Diamante' }, APP).html.includes('🏅')); // selo sem arte → emoji
   for (const t of ['certificado_emitido', 'certificado_vencendo', 'acao_vencendo', 'acao_atrasada', 'roteiro_pendente'] as const) {
-    assert.ok(renderNotificationEmail(t, CTX, APP).html.includes('📅'), t);
+    assert.ok(renderNotificationEmail(t, CTX, APP).html.includes(`${APP}/calendario.png`), t);
   }
-  assert.ok(renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP).html.includes('📅'));
-  assert.ok(renderNotificationEmail('plano_gerado', CTX, APP).html.includes('📋'));
-  assert.ok(renderNotificationEmail('reanalise_solicitada', CTX, APP).html.includes('✉️')); // default preservado
+  assert.ok(renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP).html.includes(`${APP}/calendario.png`));
+});
+
+test('cards removidos na rodada de aprovação: reanálise e plano sem destaque', () => {
+  assert.ok(!renderNotificationEmail('reanalise_solicitada', CTX, APP).html.includes('CRITÉRIO EM REANÁLISE'));
+  assert.ok(!renderNotificationEmail('plano_gerado', CTX, APP).html.includes('AÇÕES DO PLANO'));
 });
 
 test('saudação ausente sem nome do destinatário', () => {

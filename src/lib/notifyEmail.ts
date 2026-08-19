@@ -91,7 +91,7 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
     <td style="background:${C.darkGreen};padding:22px 28px;">
       <table cellpadding="0" cellspacing="0"><tr>
         <td>
-          <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="52" style="display:block;height:52px;border-radius:8px;">
+          <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="52" style="display:block;height:52px;width:auto;">
         </td>
         <td style="padding-left:18px;${FONT}">
           <div style="font-size:16px;font-weight:bold;color:#ffffff;">Rede de Prestadores</div>

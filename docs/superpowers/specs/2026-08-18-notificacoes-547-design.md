@@ -190,6 +190,15 @@ Hoje a aba exige e-mail + senha digitados na mão e não tem convite.
 - Arquivos de aprovação: `npm run emails:preview` (pasta S5; numeração estável
   por prefixo de arquivo — 06/07 removidos).
 
+### Ajuste 2026-08-19 (2): /notificacoes vira caixa de entrada
+
+- Duas colunas (lista + painel de leitura; mobile alterna), filtros por
+  status/tipo, busca (`GET /notifications?type=&q=`), ícones por tipo, data
+  relativa. Sem excluir/arquivar (decisão explícita — só lida/não lida).
+- Detalhe rico: migration 0032 adiciona `notifications.ctx` (jsonb); o painel
+  renderiza os mesmos blocos do e-mail via `notificationBlocks` (extraído de
+  `notifyEmail.ts`, compartilhado SPA/e-mail). ctx NULL (antigas) → formato simples.
+
 ### Ajuste 2026-08-18 (pós-entrega): geração em massa + gestão pela tela Equipe
 
 - `db:provision-users` (dry-run; `--commit` aplica): cria usuário para TODO

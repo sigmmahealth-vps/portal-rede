@@ -304,11 +304,11 @@ async function startServer() {
         if (!userId && !emailTo) continue;
         const key = opts.dedupeRef ? dedupeKey(type, opts.dedupeRef, r.user_id ?? r.email ?? '') : null;
         const { rows } = await query(`
-          INSERT INTO notifications (user_id, email_to, provider_id, type, title, body, link, dedupe_key, email_status)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $2::text IS NULL THEN 'na' ELSE 'pendente' END)
+          INSERT INTO notifications (user_id, email_to, provider_id, type, title, body, link, dedupe_key, email_status, ctx)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $2::text IS NULL THEN 'na' ELSE 'pendente' END, $9)
           ON CONFLICT (dedupe_key) DO NOTHING
           RETURNING id`,
-          [userId, emailTo, opts.providerId ?? null, type, c.title, c.body, c.link, key]);
+          [userId, emailTo, opts.providerId ?? null, type, c.title, c.body, c.link, key, JSON.stringify(ctx ?? {})]);
         const row = rows[0];
         if (row && emailTo) {
           // HTML no padrão visual Unimed (spec do cliente); texto puro como fallback.
@@ -472,12 +472,24 @@ async function startServer() {
     try {
       const page = Math.max(1, Number(req.query.page) || 1);
       const onlyUnread = req.query.unread === '1';
+      const params: any[] = [req.user.id];
+      let where = 'user_id = $1';
+      if (onlyUnread) where += ' AND read_at IS NULL';
+      if (typeof req.query.type === 'string' && req.query.type) {
+        params.push(req.query.type);
+        where += ` AND type = $${params.length}`;
+      }
+      if (typeof req.query.q === 'string' && req.query.q.trim()) {
+        params.push(`%${req.query.q.trim()}%`);
+        where += ` AND (title ILIKE $${params.length} OR body ILIKE $${params.length})`;
+      }
+      params.push((page - 1) * 20);
       const { rows } = await query(
-        `SELECT id, type, title, body, link, read_at, created_at
+        `SELECT id, type, title, body, link, ctx, read_at, created_at
            FROM notifications
-          WHERE user_id = $1 ${onlyUnread ? 'AND read_at IS NULL' : ''}
-          ORDER BY id DESC LIMIT 20 OFFSET $2`,
-        [req.user.id, (page - 1) * 20]);
+          WHERE ${where}
+          ORDER BY id DESC LIMIT 20 OFFSET $${params.length}`,
+        params);
       res.json({ page, items: rows });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });

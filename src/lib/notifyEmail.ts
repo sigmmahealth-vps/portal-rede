@@ -155,12 +155,14 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
 // pré-visualização e uso futuro — o server simplesmente não os envia).
 // ---------------------------------------------------------------------------
 
-export function renderNotificationEmail(
+// Blocos por tipo (banner, corpo, destaque, próximos passos, CTA) — usados pelo
+// e-mail e pela caixa de entrada do portal (que renderiza os mesmos blocos em React;
+// com appUrl = '' as imagens saem relativas, prontas para a SPA).
+export function notificationBlocks(
   type: NotifyType,
   ctx: Record<string, any>,
   appUrl: string,
-  recipientName?: string,
-): { subject: string; html: string } {
+): EmailBlocks {
   const cta = { label: 'Acessar o portal', url: `${appUrl}/qualificacao` };
   let b: EmailBlocks;
 
@@ -289,7 +291,16 @@ export function renderNotificationEmail(
     default:
       b = { banner: String(type), paragraphs: [''], cta };
   }
+  return b;
+}
 
+export function renderNotificationEmail(
+  type: NotifyType,
+  ctx: Record<string, any>,
+  appUrl: string,
+  recipientName?: string,
+): { subject: string; html: string } {
+  const b = notificationBlocks(type, ctx, appUrl);
   b.recipientName = recipientName;
   return { subject: `Portal Unimed — ${b.banner}`, html: renderEmailHtml(b, appUrl) };
 }

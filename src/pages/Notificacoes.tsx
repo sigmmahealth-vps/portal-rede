@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, ChevronLeft, Search } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 import { notificationBlocks } from '../lib/notifyEmail';
@@ -89,7 +88,6 @@ export default function Notificacoes() {
   const [qInput, setQInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Notif | null>(null);
-  const navigate = useNavigate();
   const debounce = useRef<ReturnType<typeof setTimeout>>();
 
   const load = () => {
@@ -234,10 +232,6 @@ export default function Notificacoes() {
                     <strong>Próximos passos:</strong> <Rich text={blocks.steps} />
                   </div>
                 )}
-                <button onClick={() => navigate(selected.link || '/qualificacao')}
-                  className="rounded-lg bg-[#00995D] px-6 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#007A4A]">
-                  Acessar o portal
-                </button>
               </div>
             </div>
           )}

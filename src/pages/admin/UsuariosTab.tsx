@@ -114,15 +114,16 @@ export default function UsuariosTab() {
       {loading ? (
         <p className="text-gray-500">Carregando...</p>
       ) : (
-        <table className="w-full bg-white rounded-xl overflow-hidden border border-gray-100">
+        {/* sem overflow-hidden: cortava o menu de ações das últimas linhas */}
+        <table className="w-full bg-white rounded-xl border border-gray-100">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
             <tr>
-              <th className="text-left p-3">Nome</th>
+              <th className="text-left p-3 rounded-tl-xl">Nome</th>
               <th className="text-left p-3">E-mail</th>
               <th className="text-left p-3">Função</th>
               <th className="text-left p-3">Status</th>
               <th className="text-left p-3">Último acesso</th>
-              <th className="p-3 w-10"></th>
+              <th className="p-3 w-10 rounded-tr-xl"></th>
             </tr>
           </thead>
           <tbody>

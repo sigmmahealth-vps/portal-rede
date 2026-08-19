@@ -78,8 +78,10 @@ export class ConsoleMailer implements Mailer {
   }
 }
 
-// Allowlist de teste: com a lista não vazia, só endereços exatos ou domínios
-// ("@sigmma.health") listados recebem e-mail real — o resto é suprimido e logado.
+// Allowlist de teste: com a lista não vazia, só destinatários cujo endereço
+// TERMINA com alguma entrada recebem e-mail real — o resto é suprimido e logado.
+// Ex.: "homolog@hotmail.com" pega adm-homolog@/prestador-homolog@/...;
+// "@sigmma.health" pega o domínio todo; um e-mail completo pega só ele.
 // Garante que nenhum prestador recebe e-mail na fase de testes.
 export function parseAllowlist(raw: string | undefined): string[] {
   return (raw ?? '').split(/[,;\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -88,7 +90,7 @@ export function parseAllowlist(raw: string | undefined): string[] {
 export function emailAllowed(to: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true;
   const t = to.trim().toLowerCase();
-  return allowlist.some((e) => (e.startsWith('@') ? t.endsWith(e) : t === e));
+  return allowlist.some((e) => t.endsWith(e));
 }
 
 export class ResendMailer implements Mailer {

@@ -48,12 +48,14 @@ test('e-mails de auth em HTML no padrão da marca', () => {
   assert.ok(reset.includes('Cooperativa de Trabalho Médico'));
 });
 
-test('allowlist: exatos e domínios; vazia libera tudo', () => {
-  const list = parseAllowlist(' adm-homolog@hotmail.com, @sigmma.health ;auditoria-homolog@hotmail.com ');
-  assert.deepEqual(list, ['adm-homolog@hotmail.com', '@sigmma.health', 'auditoria-homolog@hotmail.com']);
+test('allowlist por sufixo: padrão homolog, domínio e exato; vazia libera tudo', () => {
+  const list = parseAllowlist(' homolog@hotmail.com, @sigmma.health ');
+  assert.deepEqual(list, ['homolog@hotmail.com', '@sigmma.health']);
   assert.equal(emailAllowed('ADM-Homolog@hotmail.com', list), true);
+  assert.equal(emailAllowed('prestador-homolog@hotmail.com', list), true);
   assert.equal(emailAllowed('katy.garcia@sigmma.health', list), true);
   assert.equal(emailAllowed('clinica-real@terra.com.br', list), false);
+  assert.equal(emailAllowed('outro@hotmail.com', list), false);
   assert.equal(emailAllowed('qualquer@um.com', []), true);
   assert.equal(emailAllowed('x@sigmma.health.evil.com', list), false);
 });

@@ -9,8 +9,9 @@ import path from 'path';
 const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
 fs.mkdirSync(dest, { recursive: true });
 
-// Embute em base64 todas as imagens que os modelos referenciam (abrem offline).
-const ASSETS = ['logo-unimed-criciuma.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
+// Embute em base64 imagens e fontes que os modelos referenciam (abrem offline).
+const ASSETS = ['logo-prp-branco.png', 'logo-unimed-criciuma.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
+const FONTES = ['fonts/Unimed-Regular.woff2', 'fonts/Unimed-Bold.woff2'];
 const embed = (h: string) => {
   let out = h;
   for (const rel of ASSETS) {
@@ -18,6 +19,12 @@ const embed = (h: string) => {
     if (!fs.existsSync(p)) continue;
     const b64 = fs.readFileSync(p).toString('base64');
     out = out.replace(new RegExp(`src="[^"]*/${rel.replace('/', '\\/').replace('.', '\\.')}"`, 'g'), `src="data:image/png;base64,${b64}"`);
+  }
+  for (const rel of FONTES) {
+    const p = path.resolve(process.cwd(), 'public', rel);
+    if (!fs.existsSync(p)) continue;
+    const b64 = fs.readFileSync(p).toString('base64');
+    out = out.replace(new RegExp(`url\\('[^']*/${rel.replace('/', '\\/').replace('.', '\\.')}'\\)`, 'g'), `url('data:font/woff2;base64,${b64}')`);
   }
   return out;
 };

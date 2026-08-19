@@ -18,7 +18,8 @@ const C = {
 
 export const CONTACT_EMAIL = 'rededeprestadores@criciuma.unimedsc.com.br';
 
-const FONT = "font-family:Arial,Helvetica,sans-serif;";
+// Unimed Sans via @font-face (clientes que suportam; os demais caem no Arial).
+const FONT = "font-family:'Unimed Sans',Arial,Helvetica,sans-serif;";
 
 function escapeHtml(s: unknown): string {
   return String(s ?? '')
@@ -96,21 +97,18 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
     </table>` : '';
 
   return `<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<style>
+  @font-face { font-family: 'Unimed Sans'; src: url('${escapeHtml(appUrl)}/fonts/Unimed-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; }
+  @font-face { font-family: 'Unimed Sans'; src: url('${escapeHtml(appUrl)}/fonts/Unimed-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; }
+</style>
+</head>
 <body style="margin:0;padding:0;background:#f3f4f6;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:16px 0;"><tr><td align="center">
 <table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;">
   <tr>
-    <td style="background:${C.darkGreen};padding:22px 28px;">
-      <table cellpadding="0" cellspacing="0"><tr>
-        <td>
-          <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="52" style="display:block;height:52px;width:auto;">
-        </td>
-        <td style="padding-left:18px;${FONT}">
-          <div style="font-size:16px;font-weight:bold;color:#ffffff;">Rede de Prestadores</div>
-          <div style="font-size:11px;letter-spacing:2px;color:#8FD3B6;font-weight:bold;">PROGRAMA DE QUALIFICAÇÃO</div>
-        </td>
-      </tr></table>
+    <td align="center" style="background:${C.darkGreen};padding:26px 28px;">
+      <img src="${escapeHtml(appUrl)}/logo-prp-branco.png" alt="PRP — Portal da Rede de Prestadores" height="44" style="display:block;height:44px;width:auto;">
     </td>
   </tr>
   <tr>
@@ -142,6 +140,11 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
   </tr>
   <tr>
     <td style="background:${C.darkGreen};padding:18px 28px;${FONT}text-align:center;">
+      <table cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 10px;"><tr>
+        <td style="background:#ffffff;border-radius:8px;padding:4px 8px;">
+          <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="26" style="display:block;height:26px;width:auto;">
+        </td>
+      </tr></table>
       <div style="font-size:12px;color:#ffffff;"><strong style="color:#8FD3B6;">Unimed Criciúma</strong> · Cooperativa de Trabalho Médico</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:4px;">Este é um e-mail automático. Em caso de dúvidas, entre em contato com a equipe da Rede de Prestadores.</div>
     </td>

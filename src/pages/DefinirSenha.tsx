@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
+import PasswordInput from '../components/PasswordInput';
 
 interface TokenInfo {
   valid: boolean;
@@ -84,12 +85,12 @@ export default function DefinirSenha() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
-            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required
+            <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} required
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar senha</label>
-            <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required
+            <PasswordInput value={pw2} onChange={(e) => setPw2(e.target.value)} required
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500" />
           </div>
           <ul className="text-xs space-y-1">

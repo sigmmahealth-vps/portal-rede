@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import PasswordInput from '../../components/PasswordInput';
 import { ShieldCheck, Mail, Lock, Clock, Save, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 function currentRole(): string | null {
@@ -141,9 +142,8 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">{exists ? 'Nova senha' : 'Senha'}</label>
             <div className="relative">
-              <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="password"
+              <Lock className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <PasswordInput
                 value={password}
                 disabled={!canEdit}
                 autoComplete="new-password"

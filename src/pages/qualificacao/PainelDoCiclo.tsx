@@ -139,14 +139,14 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         <Card label="Segurança < 60%" value={k.low_security_count}
           valueClass={k.low_security_count > 0 ? 'text-red-600' : undefined} />
 
-        {/* Selos emitidos no ciclo — emoji (cor do selo) + quantidade · % */}
+        {/* Selos emitidos no ciclo — medalha (arte oficial dos e-mails) + quantidade · % */}
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm md:col-span-2">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
         {(() => {
           const dist = k.seal_distribution as Record<string, number>;
           const totalSeals = Object.values(dist).reduce((a, b) => a + (b as number), 0);
-          const SEAL_EMOJI: Record<string, string> = {
-            'Ouro': '🥇', 'Prata': '🥈', 'Bronze': '🥉', 'Não Qualificado': '🚫',
+          const SEAL_IMG: Record<string, string> = {
+            'Ouro': '/selos/ouro.png', 'Prata': '/selos/prata.png', 'Bronze': '/selos/bronze.png',
           };
           const order = ['Ouro', 'Prata', 'Bronze', 'Não Qualificado'].filter(s => (dist[s] || 0) > 0);
           if (totalSeals === 0) {
@@ -156,7 +156,9 @@ export default function PainelDoCiclo({ user }: { user: any }) {
             <div className="mt-2 flex items-center gap-x-6 overflow-x-auto">
               {order.map(s => (
                 <span key={s} className="inline-flex shrink-0 items-center gap-1.5" title={s}>
-                  <span className="text-2xl" aria-hidden="true">{SEAL_EMOJI[s]}</span>
+                  {SEAL_IMG[s]
+                    ? <img src={SEAL_IMG[s]} alt={s} className="h-7 w-7 object-contain" />
+                    : <span className="text-2xl" aria-hidden="true">🚫</span>}
                   <span className="text-lg font-bold text-secondary-900">
                     {dist[s]} <span className="text-sm font-semibold text-gray-500">· {Math.round((dist[s] / totalSeals) * 100)}%</span>
                   </span>

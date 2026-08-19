@@ -140,7 +140,7 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
   </tr>
   <tr>
     <td style="background:${C.darkGreen};padding:18px 28px;${FONT}text-align:center;">
-      <img src="${escapeHtml(appUrl)}/logo-unimed-chip.png" alt="Unimed Criciúma" height="34" style="display:inline-block;height:34px;width:auto;margin-bottom:10px;">
+      <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="34" style="display:inline-block;height:34px;width:auto;margin-bottom:10px;">
       <div style="font-size:12px;color:#ffffff;"><strong style="color:#8FD3B6;">Unimed Criciúma</strong> · Cooperativa de Trabalho Médico</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:4px;">Este é um e-mail automático. Em caso de dúvidas, entre em contato com a equipe da Rede de Prestadores.</div>
     </td>

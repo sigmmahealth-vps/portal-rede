@@ -10,7 +10,7 @@ const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
 fs.mkdirSync(dest, { recursive: true });
 
 // Embute em base64 imagens e fontes que os modelos referenciam (abrem offline).
-const ASSETS = ['logo-prp-branco.png', 'logo-unimed-chip.png', 'logo-unimed-criciuma.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
+const ASSETS = ['logo-prp-branco.png', 'logo-unimed-criciuma.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
 const FONTES = ['fonts/Unimed-Regular.woff2', 'fonts/Unimed-Bold.woff2'];
 const embed = (h: string) => {
   let out = h;

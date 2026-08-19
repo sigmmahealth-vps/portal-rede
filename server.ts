@@ -20,6 +20,7 @@ import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, type NotifyType } from './src/lib/notifyCatalog.js';
+import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -249,33 +250,34 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   // ===== Notificações (spec 5.4.7) =====
-  type NotifyRecipient = { user_id: number | null; email: string | null };
+  type NotifyRecipient = { user_id: number | null; email: string | null; name?: string | null };
+
+  const notifyAppUrl = () => process.env.APP_URL ?? `http://localhost:${PORT}`;
 
   async function prestadorRecipients(providerId: number): Promise<NotifyRecipient[]> {
     const { rows } = await query(
-      `SELECT id AS user_id, email FROM users
+      `SELECT id AS user_id, email, name FROM users
         WHERE provider_id = $1 AND is_active = true AND role IN ('prestador','cooperado')`,
       [providerId]);
-    return rows.map(r => ({ user_id: Number(r.user_id), email: r.email }));
+    return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
   }
 
   async function auditoriaRecipients(): Promise<NotifyRecipient[]> {
     const { rows } = await query(
-      `SELECT id AS user_id, email FROM users WHERE role = 'auditoria' AND is_active = true`);
-    return rows.map(r => ({ user_id: Number(r.user_id), email: r.email }));
+      `SELECT id AS user_id, email, name FROM users WHERE role = 'auditoria' AND is_active = true`);
+    return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
   }
 
   // Envia o e-mail de uma notification e atualiza o outbox. O UPDATE inicial é o
   // "claim": incrementa attempts atomicamente e some da fila se outro tick pegou.
-  async function sendNotificationEmail(rowId: number, to: string, title: string, body: string, link: string) {
+  async function sendNotificationEmail(rowId: number, to: string, subject: string, text: string, html?: string) {
     try {
       const { rows: claimed } = await query(
         `UPDATE notifications SET email_attempts = email_attempts + 1
           WHERE id = $1 AND email_attempts < 3 AND email_status IN ('pendente','falhou')
           RETURNING id`, [rowId]);
       if (!claimed.length) return;
-      const appUrl = process.env.APP_URL ?? `http://localhost:${PORT}`;
-      await mailer.sendNotification(to, `Portal Unimed — ${title}`, `${body}\n\nAcesse: ${appUrl}${link}`);
+      await mailer.sendNotification(to, subject, text, html);
       await query(`UPDATE notifications SET email_status = 'enviado' WHERE id = $1`, [rowId]);
     } catch (e) {
       console.error(`[notify] e-mail falhou (notification ${rowId}):`, e);
@@ -308,7 +310,12 @@ async function startServer() {
           RETURNING id`,
           [userId, emailTo, opts.providerId ?? null, type, c.title, c.body, c.link, key]);
         const row = rows[0];
-        if (row && emailTo) void sendNotificationEmail(Number(row.id), emailTo, c.title, c.body, c.link);
+        if (row && emailTo) {
+          // HTML no padrão visual Unimed (spec do cliente); texto puro como fallback.
+          const appUrl = notifyAppUrl();
+          const { subject, html } = renderNotificationEmail(type, ctx, appUrl, r.name ?? undefined);
+          void sendNotificationEmail(Number(row.id), emailTo, subject, `${c.body}\n\nAcesse: ${appUrl}${c.link}`, html);
+        }
       }
     } catch (e) {
       console.error(`[notify] falha ao emitir ${type}:`, e);
@@ -6007,7 +6014,17 @@ async function startServer() {
          WHERE email_status IN ('pendente','falhou') AND email_attempts < 3 AND email_to IS NOT NULL
          ORDER BY id LIMIT 50`);
       for (const n of retry) {
-        await sendNotificationEmail(Number(n.id), n.email_to, n.title, n.body ?? '', n.link ?? '/qualificacao');
+        // Retry não tem mais o ctx original — remonta o e-mail no shell da marca
+        // a partir do que está na linha (sem o card de destaque, que é do 1º envio).
+        const appUrl = notifyAppUrl();
+        const link = n.link ?? '/qualificacao';
+        const html = renderEmailHtml({
+          banner: n.title,
+          paragraphs: n.body ? [n.body] : [],
+          cta: { label: 'Acessar o portal', url: `${appUrl}${link}` },
+        }, appUrl);
+        await sendNotificationEmail(Number(n.id), n.email_to, `Portal Unimed — ${n.title}`,
+          `${n.body ?? ''}\n\nAcesse: ${appUrl}${link}`, html);
       }
     } catch (e) {
       console.error('[notify] job de notificações falhou:', e);

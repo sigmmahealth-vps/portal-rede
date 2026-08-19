@@ -4,7 +4,7 @@ export interface Mailer {
   sendOtp(to: string, code: string): Promise<void>;
   sendInvite(to: string, name: string, link: string): Promise<void>;
   sendPasswordReset(to: string, link: string): Promise<void>;
-  sendNotification(to: string, subject: string, text: string): Promise<void>;
+  sendNotification(to: string, subject: string, text: string, html?: string): Promise<void>;
 }
 
 const OTP_SUBJECT = (code: string) => `Seu código de acesso ao Portal Unimed: ${code}`;
@@ -39,8 +39,8 @@ export class ConsoleMailer implements Mailer {
   async sendPasswordReset(to: string, link: string): Promise<void> {
     this.log(`[ConsoleMailer] Para: ${to} | ${RESET_SUBJECT} | ${link}`);
   }
-  async sendNotification(to: string, subject: string, text: string): Promise<void> {
-    this.log(`[ConsoleMailer] Para: ${to} | ${subject} | ${text.slice(0, 120)}`);
+  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<void> {
+    this.log(`[ConsoleMailer] Para: ${to} | ${subject} | ${text.slice(0, 120)}${html ? ' | [html]' : ''}`);
   }
 }
 
@@ -49,8 +49,8 @@ export class ResendMailer implements Mailer {
   constructor(apiKey: string, private readonly from: string) {
     this.client = new Resend(apiKey);
   }
-  private async send(to: string, subject: string, text: string): Promise<void> {
-    const { error } = await this.client.emails.send({ from: this.from, to, subject, text });
+  private async send(to: string, subject: string, text: string, html?: string): Promise<void> {
+    const { error } = await this.client.emails.send({ from: this.from, to, subject, text, ...(html ? { html } : {}) });
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
   }
   async sendOtp(to: string, code: string): Promise<void> {
@@ -62,8 +62,8 @@ export class ResendMailer implements Mailer {
   async sendPasswordReset(to: string, link: string): Promise<void> {
     await this.send(to, RESET_SUBJECT, RESET_BODY(link));
   }
-  async sendNotification(to: string, subject: string, text: string): Promise<void> {
-    await this.send(to, subject, text);
+  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<void> {
+    await this.send(to, subject, text, html);
   }
 }
 

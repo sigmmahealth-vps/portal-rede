@@ -12,7 +12,7 @@ export type NotifyType = typeof NOTIFY_TYPES[number];
 export interface NotifyContent { title: string; body: string; link: string; }
 
 // Datas date-only ('YYYY-MM-DD') ganham T12:00 para não voltar um dia por fuso.
-function fmtDate(v: string | Date | null | undefined): string {
+export function fmtDate(v: string | Date | null | undefined): string {
   if (!v) return '';
   const d = typeof v === 'string' ? new Date(v.length === 10 ? `${v}T12:00:00` : v) : v;
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');

@@ -180,6 +180,16 @@ Hoje a aba exige e-mail + senha digitados na mão e não tem convite.
   password?})` — chamadores não sabem se o modelo é 1:1; um futuro 1:N troca só
   essa função.
 
+### Ajuste 2026-08-19 (rodada de aprovação dos modelos de e-mail)
+
+- `parecer_reprovado` e `certificado_emitido` **não vão por e-mail** — só
+  notificação no portal (override da tabela 5.4.7 decidido na aprovação).
+- E-mails de reanálise de critério e plano de ação sem card de destaque (só
+  próximos passos). Destaques com data usam a arte `public/calendario.png`;
+  aprovação usa `public/selos/{ouro,prata,bronze}.png`; OTP usa `public/codigo.png`.
+- Arquivos de aprovação: `npm run emails:preview` (pasta S5; numeração estável
+  por prefixo de arquivo — 06/07 removidos).
+
 ### Ajuste 2026-08-18 (pós-entrega): geração em massa + gestão pela tela Equipe
 
 - `db:provision-users` (dry-run; `--commit` aplica): cria usuário para TODO

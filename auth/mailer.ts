@@ -1,4 +1,38 @@
 import { Resend } from 'resend';
+import { renderEmailHtml } from '../src/lib/notifyEmail.js';
+
+// HTML no padrão visual Unimed (mesmo shell das notificações 5.4.7). O texto puro
+// permanece como fallback. appUrl só alimenta o logo do cabeçalho.
+const appUrl = () => process.env.APP_URL ?? '';
+
+export const otpEmailHtml = (code: string) => renderEmailHtml({
+  banner: 'Código de acesso ao portal',
+  paragraphs: [
+    'Use o código abaixo para concluir o seu acesso ao Portal da Rede de Prestadores.',
+    'Ele vale por **10 minutos** e só pode ser usado uma vez.',
+    'Se você não tentou entrar no portal, ignore este e-mail.',
+  ],
+  highlight: { label: 'Seu código de acesso', value: code },
+}, appUrl());
+
+export const inviteEmailHtml = (name: string, link: string) => renderEmailHtml({
+  banner: 'Bem-vindo ao Portal da Rede de Prestadores',
+  recipientName: name,
+  paragraphs: [
+    'Sua conta foi criada no **Portal da Rede de Prestadores da Unimed Criciúma**. Para começar, defina a sua senha de acesso.',
+    'O link vale por **24 horas** e só pode ser usado uma vez. Se você não esperava este convite, ignore este e-mail.',
+  ],
+  cta: { label: 'Definir minha senha', url: link },
+}, appUrl());
+
+export const resetEmailHtml = (link: string) => renderEmailHtml({
+  banner: 'Redefinição de senha',
+  paragraphs: [
+    'Recebemos uma solicitação para redefinir a sua senha no Portal da Rede de Prestadores.',
+    'O link vale por **30 minutos** e só pode ser usado uma vez. Se você não solicitou, ignore este e-mail e sua senha continuará a mesma.',
+  ],
+  cta: { label: 'Redefinir senha', url: link },
+}, appUrl());
 
 export interface Mailer {
   sendOtp(to: string, code: string): Promise<void>;
@@ -54,13 +88,13 @@ export class ResendMailer implements Mailer {
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
   }
   async sendOtp(to: string, code: string): Promise<void> {
-    await this.send(to, OTP_SUBJECT(code), OTP_BODY(code));
+    await this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code));
   }
   async sendInvite(to: string, name: string, link: string): Promise<void> {
-    await this.send(to, INVITE_SUBJECT, INVITE_BODY(name, link));
+    await this.send(to, INVITE_SUBJECT, INVITE_BODY(name, link), inviteEmailHtml(name, link));
   }
   async sendPasswordReset(to: string, link: string): Promise<void> {
-    await this.send(to, RESET_SUBJECT, RESET_BODY(link));
+    await this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link));
   }
   async sendNotification(to: string, subject: string, text: string, html?: string): Promise<void> {
     await this.send(to, subject, text, html);

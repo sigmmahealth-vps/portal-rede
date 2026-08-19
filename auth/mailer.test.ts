@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ConsoleMailer } from './mailer.js';
+import { ConsoleMailer, otpEmailHtml, inviteEmailHtml, resetEmailHtml } from './mailer.js';
 
 test('ConsoleMailer entrega o código pelo logger injetado', async () => {
   const linhas: string[] = [];
@@ -34,4 +34,16 @@ test('ConsoleMailer.sendNotification loga destinatário e assunto', async () => 
   await m.sendNotification('x@y.com', 'Portal Unimed — Teste', 'corpo');
   assert.ok(logs[0].includes('x@y.com'));
   assert.ok(logs[0].includes('Portal Unimed — Teste'));
+});
+
+test('e-mails de auth em HTML no padrão da marca', () => {
+  const otp = otpEmailHtml('123456');
+  assert.ok(otp.includes('123456'));
+  assert.ok(otp.includes('CÓDIGO DE ACESSO AO PORTAL'));
+  const invite = inviteEmailHtml('Fulano', 'https://x/definir-senha?token=abc');
+  assert.ok(invite.includes('Olá, <strong>Fulano</strong>'));
+  assert.ok(invite.includes('https://x/definir-senha?token=abc'));
+  const reset = resetEmailHtml('https://x/definir-senha?token=r');
+  assert.ok(reset.includes('REDEFINIÇÃO DE SENHA'));
+  assert.ok(reset.includes('Cooperativa de Trabalho Médico'));
 });

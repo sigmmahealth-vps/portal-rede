@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 
-// Sininho do header: badge com contagem de não lidas (polling 60s, pausa com a
-// aba oculta); o clique abre direto a caixa de entrada /notificacoes.
+// Sininho do header: badge com contagem de não lidas; o clique abre direto a
+// caixa de entrada /notificacoes. Atualiza no polling de 60s (pausado com a aba
+// oculta), ao trocar de página, ao voltar para a aba e imediatamente quando a
+// inbox dispara o evento 'notifications:changed' (marcar lida/todas).
 export default function NotificationsBell() {
   const [count, setCount] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const refreshCount = () => {
     if (document.visibilityState !== 'visible') return;
@@ -17,8 +20,17 @@ export default function NotificationsBell() {
   useEffect(() => {
     refreshCount();
     const t = setInterval(refreshCount, 60_000);
-    return () => clearInterval(t);
+    const onVisible = () => refreshCount();
+    window.addEventListener('notifications:changed', refreshCount);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('notifications:changed', refreshCount);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
+
+  useEffect(refreshCount, [location.pathname]);
 
   return (
     <button onClick={() => navigate('/notificacoes')} className="text-gray-500 hover:text-[#00995D] transition-colors relative" title="Notificações">

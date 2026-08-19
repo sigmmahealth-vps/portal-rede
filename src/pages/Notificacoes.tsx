@@ -110,10 +110,13 @@ export default function Notificacoes() {
     debounce.current = setTimeout(() => { setPage(1); setQ(v); }, 400);
   };
 
+  // Avisa o sininho para atualizar o badge na hora.
+  const pingBell = () => window.dispatchEvent(new Event('notifications:changed'));
+
   const open = (n: Notif) => {
     setSelected(n);
     if (!n.read_at) {
-      fetchApi(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {});
+      fetchApi(`/notifications/${n.id}/read`, { method: 'POST' }).then(pingBell).catch(() => {});
       const now = new Date().toISOString();
       setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, read_at: now } : i)));
       setSelected({ ...n, read_at: now });
@@ -121,7 +124,7 @@ export default function Notificacoes() {
   };
 
   const markAll = async () => {
-    await fetchApi('/notifications/read-all', { method: 'POST' }).catch(() => {});
+    await fetchApi('/notifications/read-all', { method: 'POST' }).then(pingBell).catch(() => {});
     load();
   };
 

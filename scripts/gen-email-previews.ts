@@ -1,0 +1,54 @@
+// Gera os arquivos de pré-visualização/aprovação dos modelos de e-mail (5.4.7)
+// com dados ilustrativos e o logo embutido em base64 (abrem offline).
+// Uso: npm run emails:preview [-- "C:/caminho/da/pasta"]   (default: ../S5)
+import { renderNotificationEmail } from '../src/lib/notifyEmail.js';
+import { otpEmailHtml, inviteEmailHtml, resetEmailHtml } from '../auth/mailer.js';
+import fs from 'fs';
+import path from 'path';
+
+const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
+fs.mkdirSync(dest, { recursive: true });
+
+const logo = fs.readFileSync(path.resolve(process.cwd(), 'public/logo-unimed-criciuma.png')).toString('base64');
+const embed = (h: string) => h.replace(/src="[^"]*\/logo-unimed-criciuma\.png"/g, `src="data:image/png;base64,${logo}"`);
+
+const CTX = {
+  cycle_label: '2026', provider_name: 'Clínica de Fisioterapia Reabilitar Ltda',
+  question_code: '1.1.4', seal: 'Ouro', percentual: 87.3, valid_until: '2027-12-31',
+  items: 3, what: 'Elaborar e implantar o PGRSS', due_date: '2026-09-02',
+  end_date: '2026-12-31', count: 12,
+};
+const APP = 'https://portal-unimed-criciuma.exemplo';
+const NOME = 'Clínica de Fisioterapia Reabilitar';
+
+const modelos: Array<[string, string, { subject: string; html: string }]> = [
+  ['01-abertura-ciclo-roteiro-disponivel', 'Abertura do ciclo + roteiro disponível (Prestador)', renderNotificationEmail('ciclo_aberto', CTX, APP, NOME)],
+  ['02-roteiro-enviado-analise', 'Prestador enviou roteiro para análise (Auditor — hoje só portal)', renderNotificationEmail('roteiro_enviado', CTX, APP, 'Auditoria Unimed')],
+  ['03-reanalise-criterio', 'Reanálise de critério solicitada (Prestador)', renderNotificationEmail('reanalise_solicitada', CTX, APP, NOME)],
+  ['04-devolucao-integral', 'Avaliação devolvida integralmente (Prestador)', renderNotificationEmail('reanalise_solicitada', { ...CTX, integral: true }, APP, NOME)],
+  ['05-roteiro-aprovado', 'Roteiro aprovado (Prestador)', renderNotificationEmail('parecer_aprovado', CTX, APP, NOME)],
+  ['06-roteiro-reprovado', 'Roteiro reprovado (Prestador)', renderNotificationEmail('parecer_reprovado', CTX, APP, NOME)],
+  ['07-certificado-emitido', 'Certificado emitido (Prestador)', renderNotificationEmail('certificado_emitido', CTX, APP, NOME)],
+  ['08-plano-acao-gerado', 'Plano de ação gerado (Prestador + Auditor)', renderNotificationEmail('plano_gerado', CTX, APP, NOME)],
+  ['09-acao-aguardando-validacao', 'Ação concluída aguardando validação (Auditor — hoje só portal)', renderNotificationEmail('acao_aguardando_validacao', CTX, APP, 'Auditoria Unimed')],
+  ['10-acao-proxima-vencimento', 'Ação próxima do vencimento — 15 dias (Prestador)', renderNotificationEmail('acao_vencendo', CTX, APP, NOME)],
+  ['11-acao-em-atraso', 'Ação em atraso (Prestador + Auditor)', renderNotificationEmail('acao_atrasada', CTX, APP, NOME)],
+  ['12-roteiro-pendente-30d', 'Roteiro pendente 30 dias antes do encerramento (Prestador)', renderNotificationEmail('roteiro_pendente', CTX, APP, NOME)],
+  ['13-roteiros-pendentes-resumo-auditoria', 'Roteiros pendentes — resumo por ciclo (Auditor)', renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP, 'Auditoria Unimed')],
+  ['14-certificado-proximo-vencimento', 'Certificado próximo do vencimento (Prestador)', renderNotificationEmail('certificado_vencendo', CTX, APP, NOME)],
+  ['15-convite-de-acesso', 'Convite de acesso — definir senha', { subject: 'Bem-vindo ao Portal Unimed Criciúma', html: inviteEmailHtml(NOME, `${APP}/definir-senha?token=exemplo`) }],
+  ['16-codigo-de-acesso-otp', 'Código de acesso (OTP do login)', { subject: 'Seu código de acesso ao Portal Unimed: 483920', html: otpEmailHtml('483920') }],
+  ['17-redefinicao-de-senha', 'Redefinição de senha', { subject: 'Redefinição de senha — Portal Unimed', html: resetEmailHtml(`${APP}/definir-senha?token=exemplo`) }],
+];
+
+for (const [file, , e] of modelos) fs.writeFileSync(path.join(dest, `${file}.html`), embed(e.html));
+
+const strip = (h: string) => h.replace(/^[\s\S]*?<body[^>]*>/, '').replace(/<\/body><\/html>$/, '');
+let out = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Modelos de e-mail — Qualificação da Rede (aprovação)</title></head><body style="background:#e5e7eb;font-family:Arial;margin:0;padding:24px 0;">';
+out += `<div style="max-width:640px;margin:0 auto 8px;text-align:center;"><h1 style="color:#00483A;font-size:22px;margin:0;">Modelos de e-mail — Programa de Qualificação da Rede</h1><p style="color:#6b7280;font-size:13px;">Para aprovação · dados ilustrativos · ${modelos.length} modelos</p></div>`;
+modelos.forEach(([, label, e], i) => {
+  out += `<p style="max-width:640px;margin:36px auto 8px;font-weight:bold;color:#374151;font-size:14px;">${String(i + 1).padStart(2, '0')}. ${label}<br><span style="font-weight:normal;color:#6b7280;">Assunto: ${e.subject}</span></p>${strip(embed(e.html))}`;
+});
+out += '</body></html>';
+fs.writeFileSync(path.join(dest, '00-todos-os-modelos.html'), out);
+console.log(`[emails:preview] ${modelos.length + 1} arquivos salvos em ${dest}`);

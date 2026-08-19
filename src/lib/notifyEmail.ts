@@ -35,9 +35,18 @@ export interface EmailBlocks {
   banner: string;                                  // faixa verde (vira MAIÚSCULAS)
   recipientName?: string;                          // "Olá, Fulano."
   paragraphs: string[];                            // corpo; aceita **negrito**
-  highlight?: { label: string; value: string };    // card estilo "protocolo"
+  highlight?: { label: string; value: string; icon?: string };  // card estilo "protocolo"
   steps?: string;                                  // callout "Próximos passos:"
   cta?: { label: string; url: string };            // botão verde
+}
+
+// Medalha na cor do selo (aprovação): Ouro/Prata/Bronze.
+export function sealIcon(seal: unknown): string {
+  const s = String(seal ?? '').toLowerCase();
+  if (s.includes('ouro')) return '🥇';
+  if (s.includes('prata')) return '🥈';
+  if (s.includes('bronze')) return '🥉';
+  return '🏅';
 }
 
 export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
@@ -52,7 +61,7 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
       <tr>
         <td width="64" style="padding:18px 0 18px 18px;">
           <table cellpadding="0" cellspacing="0"><tr>
-            <td width="44" height="44" align="center" style="background:${C.green};border-radius:10px;${FONT}font-size:20px;color:#ffffff;">&#9993;</td>
+            <td width="44" height="44" align="center" style="background:${C.green};border-radius:10px;${FONT}font-size:20px;color:#ffffff;">${escapeHtml(b.highlight.icon ?? '✉️')}</td>
           </tr></table>
         </td>
         <td style="padding:18px;${FONT}">
@@ -191,7 +200,7 @@ export function renderNotificationEmail(
       b = {
         banner: 'Avaliação de qualificação aprovada',
         paragraphs: ['Sua avaliação de qualificação foi concluída pelo auditor com **aprovação**. Parabéns!'],
-        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${Math.round(Number(ctx.percentual ?? 0))}% de atingimento` },
+        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${Math.round(Number(ctx.percentual ?? 0))}% de atingimento`, icon: sealIcon(ctx.seal) },
         steps: 'acesse o portal para consultar o parecer completo e o seu certificado de qualificação.',
         cta,
       };
@@ -208,7 +217,7 @@ export function renderNotificationEmail(
       b = {
         banner: 'Certificado de qualificação emitido',
         paragraphs: ['Seu **Certificado de Qualificação** da Rede de Prestadores foi emitido e já está disponível no portal.'],
-        highlight: { label: 'Validade', value: fmtDate(ctx.valid_until) || '—' },
+        highlight: { label: 'Validade', value: fmtDate(ctx.valid_until) || '—', icon: '📅' },
         steps: 'acesse o portal para visualizar, imprimir e compartilhar o certificado. A autenticidade pode ser verificada pelo QR code.',
         cta,
       };
@@ -220,7 +229,7 @@ export function renderNotificationEmail(
           `Um plano de ação foi gerado${ctx.provider_name ? ` para **${ctx.provider_name}**` : ''} a partir da avaliação de qualificação.`,
         ],
         highlight: ctx.items
-          ? { label: 'Ações do plano', value: `${ctx.items} ação(ões) — prazo padrão de 90 dias` }
+          ? { label: 'Ações do plano', value: `${ctx.items} ação(ões) — prazo padrão de 90 dias`, icon: '📋' }
           : undefined,
         steps: 'acesse o portal para consultar as ações, os prazos e registrar as evidências de conclusão.',
         cta,
@@ -238,7 +247,7 @@ export function renderNotificationEmail(
       b = {
         banner: 'Ação do plano próxima do vencimento',
         paragraphs: [`A ação **"${ctx.what ?? ''}"** do seu plano de ação está próxima do vencimento.`],
-        highlight: { label: 'Vencimento', value: fmtDate(ctx.due_date) || '—' },
+        highlight: { label: 'Vencimento', value: fmtDate(ctx.due_date) || '—', icon: '📅' },
         steps: 'acesse o portal, registre as evidências de conclusão e marque a ação como concluída antes do prazo.',
         cta,
       };
@@ -247,7 +256,7 @@ export function renderNotificationEmail(
       b = {
         banner: 'Ação do plano em atraso',
         paragraphs: [`A ação **"${ctx.what ?? ''}"**${ctx.provider_name ? ` do plano de **${ctx.provider_name}**` : ' do seu plano de ação'} venceu e não foi concluída.`],
-        highlight: { label: 'Venceu em', value: fmtDate(ctx.due_date) || '—' },
+        highlight: { label: 'Venceu em', value: fmtDate(ctx.due_date) || '—', icon: '📅' },
         steps: 'acesse o portal e regularize a ação o quanto antes registrando as evidências de conclusão.',
         cta,
       };
@@ -257,14 +266,14 @@ export function renderNotificationEmail(
         ? {
             banner: `Roteiros pendentes — ciclo ${ctx.cycle_label ?? ''}`.replace(/\s+/g, ' ').trim(),
             paragraphs: ['Há prestadores que ainda não enviaram o roteiro de qualificação e o ciclo está próximo do encerramento.'],
-            highlight: { label: 'Roteiros pendentes', value: `${ctx.count ?? 0} — ciclo encerra em ${fmtDate(ctx.end_date)}` },
+            highlight: { label: 'Roteiros pendentes', value: `${ctx.count ?? 0} — ciclo encerra em ${fmtDate(ctx.end_date)}`, icon: '📅' },
             steps: 'acesse o painel do ciclo para acompanhar os pendentes e orientar os prestadores.',
             cta,
           }
         : {
             banner: 'Roteiro de qualificação pendente',
             paragraphs: ['Você ainda não enviou o seu roteiro de qualificação e o prazo termina junto com o encerramento do ciclo.'],
-            highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—' },
+            highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—', icon: '📅' },
             steps: 'acesse o portal, conclua o preenchimento do roteiro com as evidências e envie para análise antes do encerramento.',
             cta,
           };
@@ -273,7 +282,7 @@ export function renderNotificationEmail(
       b = {
         banner: 'Certificado próximo do vencimento',
         paragraphs: ['O seu Certificado de Qualificação da Rede de Prestadores está próximo do vencimento.'],
-        highlight: { label: 'Válido até', value: fmtDate(ctx.valid_until) || '—' },
+        highlight: { label: 'Válido até', value: fmtDate(ctx.valid_until) || '—', icon: '📅' },
         steps: 'fique atento à abertura do próximo ciclo de qualificação para renovar o seu certificado.',
         cta,
       };

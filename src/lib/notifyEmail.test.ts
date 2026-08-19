@@ -47,6 +47,18 @@ test('renderEmailHtml genérico (retry) leva faixa, corpo e CTA', () => {
   assert.ok(html.includes(`${APP}/qualificacao`));
 });
 
+test('ícones do card de destaque por tipo', () => {
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Ouro' }, APP).html.includes('🥇'));
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Prata' }, APP).html.includes('🥈'));
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Bronze' }, APP).html.includes('🥉'));
+  for (const t of ['certificado_emitido', 'certificado_vencendo', 'acao_vencendo', 'acao_atrasada', 'roteiro_pendente'] as const) {
+    assert.ok(renderNotificationEmail(t, CTX, APP).html.includes('📅'), t);
+  }
+  assert.ok(renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP).html.includes('📅'));
+  assert.ok(renderNotificationEmail('plano_gerado', CTX, APP).html.includes('📋'));
+  assert.ok(renderNotificationEmail('reanalise_solicitada', CTX, APP).html.includes('✉️')); // default preservado
+});
+
 test('saudação ausente sem nome do destinatário', () => {
   const e = renderNotificationEmail('ciclo_aberto', CTX, APP);
   assert.ok(e.html.includes('Olá.'));

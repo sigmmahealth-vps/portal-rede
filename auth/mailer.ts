@@ -78,12 +78,29 @@ export class ConsoleMailer implements Mailer {
   }
 }
 
+// Allowlist de teste: com a lista não vazia, só endereços exatos ou domínios
+// ("@sigmma.health") listados recebem e-mail real — o resto é suprimido e logado.
+// Garante que nenhum prestador recebe e-mail na fase de testes.
+export function parseAllowlist(raw: string | undefined): string[] {
+  return (raw ?? '').split(/[,;\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+export function emailAllowed(to: string, allowlist: string[]): boolean {
+  if (allowlist.length === 0) return true;
+  const t = to.trim().toLowerCase();
+  return allowlist.some((e) => (e.startsWith('@') ? t.endsWith(e) : t === e));
+}
+
 export class ResendMailer implements Mailer {
   private readonly client: Resend;
-  constructor(apiKey: string, private readonly from: string) {
+  constructor(apiKey: string, private readonly from: string, private readonly allowlist: string[] = []) {
     this.client = new Resend(apiKey);
   }
   private async send(to: string, subject: string, text: string, html?: string): Promise<void> {
+    if (!emailAllowed(to, this.allowlist)) {
+      console.log(`[mailer] SUPRIMIDO (fora da EMAIL_ALLOWLIST): ${to} | ${subject}`);
+      return;
+    }
     const { error } = await this.client.emails.send({ from: this.from, to, subject, text, ...(html ? { html } : {}) });
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
   }
@@ -104,10 +121,16 @@ export class ResendMailer implements Mailer {
 export function createMailer(): Mailer {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.MAIL_FROM;
-  // ponytail: homolog não envia e-mail real — evita bounce→502 no login e não spamma testadores.
-  // O código do OTP sai no log (ConsoleMailer) e há código mestre fixo no verify-otp (ver auth/otp.ts).
-  if (process.env.APP_ENV === 'homolog') return new ConsoleMailer();
-  if (apiKey && from) return new ResendMailer(apiKey, from);
+  const allowlist = parseAllowlist(process.env.EMAIL_ALLOWLIST);
+  // Homolog só envia e-mail real com EMAIL_ALLOWLIST definida (e apenas para
+  // quem está nela) — sem a lista, mantém o ConsoleMailer de sempre. Evita
+  // qualquer disparo a prestador real na fase de testes; OTP tem código mestre
+  // no verify-otp (ver auth/otp.ts).
+  if (process.env.APP_ENV === 'homolog' && allowlist.length === 0) return new ConsoleMailer();
+  if (apiKey && from) {
+    if (allowlist.length > 0) console.log(`[mailer] EMAIL_ALLOWLIST ativa (${allowlist.length} entrada(s)) — demais destinatários serão suprimidos.`);
+    return new ResendMailer(apiKey, from, allowlist);
+  }
   if (process.env.NODE_ENV === 'production') {
     console.error('FATAL: RESEND_API_KEY/MAIL_FROM ausentes em produção. Abortando boot.');
     process.exit(1);

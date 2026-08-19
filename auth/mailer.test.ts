@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ConsoleMailer, otpEmailHtml, inviteEmailHtml, resetEmailHtml } from './mailer.js';
+import { ConsoleMailer, otpEmailHtml, inviteEmailHtml, resetEmailHtml, parseAllowlist, emailAllowed } from './mailer.js';
 
 test('ConsoleMailer entrega o código pelo logger injetado', async () => {
   const linhas: string[] = [];
@@ -46,4 +46,14 @@ test('e-mails de auth em HTML no padrão da marca', () => {
   const reset = resetEmailHtml('https://x/definir-senha?token=r');
   assert.ok(reset.includes('REDEFINIÇÃO DE SENHA'));
   assert.ok(reset.includes('Cooperativa de Trabalho Médico'));
+});
+
+test('allowlist: exatos e domínios; vazia libera tudo', () => {
+  const list = parseAllowlist(' adm-homolog@hotmail.com, @sigmma.health ;auditoria-homolog@hotmail.com ');
+  assert.deepEqual(list, ['adm-homolog@hotmail.com', '@sigmma.health', 'auditoria-homolog@hotmail.com']);
+  assert.equal(emailAllowed('ADM-Homolog@hotmail.com', list), true);
+  assert.equal(emailAllowed('katy.garcia@sigmma.health', list), true);
+  assert.equal(emailAllowed('clinica-real@terra.com.br', list), false);
+  assert.equal(emailAllowed('qualquer@um.com', []), true);
+  assert.equal(emailAllowed('x@sigmma.health.evil.com', list), false);
 });

@@ -20,7 +20,7 @@ test('todos os tipos com canal e-mail renderizam subject e html no padrão', () 
     assert.ok(e.html.includes('Olá, <strong>Fulano</strong>'), t);   // saudação
     assert.ok(e.html.includes(`${APP}/qualificacao`), t);            // CTA
     assert.ok(e.html.includes('Cooperativa de Trabalho Médico'), t); // rodapé
-    assert.ok(e.html.includes(`${APP}/logo-unimed-criciuma.png`), t); // chip do rodapé
+    assert.ok(e.html.includes(`${APP}/logo-unimed-chip.png`), t);    // chip do rodapé
   }
 });
 

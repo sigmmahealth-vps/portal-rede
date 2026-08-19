@@ -35,18 +35,20 @@ export interface EmailBlocks {
   banner: string;                                  // faixa verde (vira MAIÚSCULAS)
   recipientName?: string;                          // "Olá, Fulano."
   paragraphs: string[];                            // corpo; aceita **negrito**
-  highlight?: { label: string; value: string; icon?: string };  // card estilo "protocolo"
+  // card estilo "protocolo": icon = emoji no quadrado verde; iconImg = imagem
+  // solta (ex.: medalha do selo), tem precedência sobre icon.
+  highlight?: { label: string; value: string; icon?: string; iconImg?: string };
   steps?: string;                                  // callout "Próximos passos:"
   cta?: { label: string; url: string };            // botão verde
 }
 
-// Medalha na cor do selo (aprovação): Ouro/Prata/Bronze.
-export function sealIcon(seal: unknown): string {
+// Arte da medalha na cor do selo (aprovação): public/selos/{ouro,prata,bronze}.png.
+export function sealImageUrl(seal: unknown, appUrl: string): string | undefined {
   const s = String(seal ?? '').toLowerCase();
-  if (s.includes('ouro')) return '🥇';
-  if (s.includes('prata')) return '🥈';
-  if (s.includes('bronze')) return '🥉';
-  return '🏅';
+  for (const slug of ['ouro', 'prata', 'bronze']) {
+    if (s.includes(slug)) return `${appUrl}/selos/${slug}.png`;
+  }
+  return undefined;
 }
 
 export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
@@ -59,10 +61,12 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
   const highlight = b.highlight ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;background:${C.lightGreen};border-radius:10px;">
       <tr>
-        <td width="64" style="padding:18px 0 18px 18px;">
-          <table cellpadding="0" cellspacing="0"><tr>
+        <td width="72" style="padding:14px 0 14px 16px;">
+          ${b.highlight.iconImg
+            ? `<img src="${escapeHtml(b.highlight.iconImg)}" alt="" width="52" style="display:block;width:52px;height:auto;">`
+            : `<table cellpadding="0" cellspacing="0"><tr>
             <td width="44" height="44" align="center" style="background:${C.green};border-radius:10px;${FONT}font-size:20px;color:#ffffff;">${escapeHtml(b.highlight.icon ?? '✉️')}</td>
-          </tr></table>
+          </tr></table>`}
         </td>
         <td style="padding:18px;${FONT}">
           <div style="font-size:11px;letter-spacing:1px;color:${C.green};font-weight:bold;">${escapeHtml(b.highlight.label).toUpperCase()}</div>
@@ -200,7 +204,7 @@ export function renderNotificationEmail(
       b = {
         banner: 'Avaliação de qualificação aprovada',
         paragraphs: ['Sua avaliação de qualificação foi concluída pelo auditor com **aprovação**. Parabéns!'],
-        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${Math.round(Number(ctx.percentual ?? 0))}% de atingimento`, icon: sealIcon(ctx.seal) },
+        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${Math.round(Number(ctx.percentual ?? 0))}% de atingimento`, icon: '🏅', iconImg: sealImageUrl(ctx.seal, appUrl) },
         steps: 'acesse o portal para consultar o parecer completo e o seu certificado de qualificação.',
         cta,
       };

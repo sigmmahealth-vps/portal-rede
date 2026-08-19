@@ -48,9 +48,10 @@ test('renderEmailHtml genérico (retry) leva faixa, corpo e CTA', () => {
 });
 
 test('ícones do card de destaque por tipo', () => {
-  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Ouro' }, APP).html.includes('🥇'));
-  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Prata' }, APP).html.includes('🥈'));
-  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Bronze' }, APP).html.includes('🥉'));
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Ouro' }, APP).html.includes(`${APP}/selos/ouro.png`));
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Prata' }, APP).html.includes(`${APP}/selos/prata.png`));
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Bronze' }, APP).html.includes(`${APP}/selos/bronze.png`));
+  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Diamante' }, APP).html.includes('🏅')); // selo sem arte → emoji
   for (const t of ['certificado_emitido', 'certificado_vencendo', 'acao_vencendo', 'acao_atrasada', 'roteiro_pendente'] as const) {
     assert.ok(renderNotificationEmail(t, CTX, APP).html.includes('📅'), t);
   }

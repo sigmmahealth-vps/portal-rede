@@ -10,7 +10,18 @@ const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
 fs.mkdirSync(dest, { recursive: true });
 
 const logo = fs.readFileSync(path.resolve(process.cwd(), 'public/logo-unimed-criciuma.png')).toString('base64');
-const embed = (h: string) => h.replace(/src="[^"]*\/logo-unimed-criciuma\.png"/g, `src="data:image/png;base64,${logo}"`);
+const embed = (h: string) => {
+  let out = h.replace(/src="[^"]*\/logo-unimed-criciuma\.png"/g, `src="data:image/png;base64,${logo}"`);
+  // Medalhas dos selos (se as artes já estiverem em public/selos/).
+  for (const slug of ['ouro', 'prata', 'bronze']) {
+    const p = path.resolve(process.cwd(), `public/selos/${slug}.png`);
+    if (fs.existsSync(p)) {
+      const b64 = fs.readFileSync(p).toString('base64');
+      out = out.replace(new RegExp(`src="[^"]*/selos/${slug}\\.png"`, 'g'), `src="data:image/png;base64,${b64}"`);
+    }
+  }
+  return out;
+};
 
 const CTX = {
   cycle_label: '2026', provider_name: 'Clínica de Fisioterapia Reabilitar Ltda',

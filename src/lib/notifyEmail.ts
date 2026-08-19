@@ -90,10 +90,10 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
   <tr>
     <td style="background:${C.darkGreen};padding:22px 28px;">
       <table cellpadding="0" cellspacing="0"><tr>
-        <td style="background:#ffffff;border-radius:8px;padding:8px 14px;">
-          <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="36" style="display:block;height:36px;">
+        <td>
+          <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="52" style="display:block;height:52px;border-radius:8px;">
         </td>
-        <td style="padding-left:18px;border-left:1px solid rgba(255,255,255,0.25);${FONT}">
+        <td style="padding-left:18px;${FONT}">
           <div style="font-size:16px;font-weight:bold;color:#ffffff;">Rede de Prestadores</div>
           <div style="font-size:11px;letter-spacing:2px;color:#8FD3B6;font-weight:bold;">PROGRAMA DE QUALIFICAÇÃO</div>
         </td>

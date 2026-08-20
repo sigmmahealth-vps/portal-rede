@@ -1789,51 +1789,55 @@ async function startServer() {
   app.post('/api/providers/:id/access/group', authenticate, async (req: any, res) => {
     if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
     const providerId = req.params.id;
-    const { target_user_id, location_ids } = req.body ?? {};
-    if (!target_user_id || !Array.isArray(location_ids) || !location_ids.length) {
+    const { target_user_id } = req.body ?? {};
+    // Dedupe: location_ids repetido colidiria na PK (user_id, location_id) → 500.
+    const location_ids = [...new Set((Array.isArray(req.body?.location_ids) ? req.body.location_ids : [])
+      .map(Number).filter(Number.isFinite))];
+    if (!target_user_id || !location_ids.length) {
       return res.status(400).json({ error: 'target_user_id e location_ids são obrigatórios.' });
     }
+    let deactivated: number[] = [];
     try {
-      const { rows: t } = await query(
-        'SELECT id, email FROM users WHERE id = $1 AND provider_id = $2',
-        [target_user_id, Number(providerId)],
-      );
-      if (!t.length) return res.status(404).json({ error: 'Acesso destino não encontrado neste prestador.' });
-      // Endurecimento: não centralizar sob "Sem e-mail" — o destino precisa de e-mail real.
-      if (!t[0].email) return res.status(409).json({ error: 'Defina um e-mail no acesso destino antes de agrupar.' });
-
       await withTransaction(async (c) => {
-        // 1) DESTACAR: remove os vínculos dessas unidades de quem quer que os tenha (libera a UNIQUE).
-        await c.query(
-          `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[])`,
-          [Number(providerId), location_ids],
-        );
+        // Target + check de e-mail DENTRO da transação (evita TOCTOU).
+        const { rows: t } = await c.query(
+          'SELECT id, email FROM users WHERE id = $1 AND provider_id = $2', [target_user_id, Number(providerId)]);
+        if (!t.length) throw { http: 404, msg: 'Acesso destino não encontrado neste prestador.' };
+        // Endurecimento: não centralizar sob "Sem e-mail" — o destino precisa de e-mail real.
+        if (!t[0].email) throw { http: 409, msg: 'Defina um e-mail no acesso destino antes de agrupar.' };
+        // 1) DESTACAR: solta os vínculos dessas unidades e captura QUEM os tinha.
+        const { rows: freed } = await c.query(
+          `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[]) RETURNING user_id`,
+          [Number(providerId), location_ids]);
         // 2) REATAR ao destino (FK composta rejeita location de outro provider).
         for (const lid of location_ids) {
           await c.query(
             `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3)`,
-            [target_user_id, lid, Number(providerId)],
-          );
+            [target_user_id, lid, Number(providerId)]);
         }
         await c.query(`UPDATE users SET agrupado = true WHERE id = $1`, [target_user_id]);
-        // 3) Logins do prestador que ficaram sem unidade: DESATIVAR (não apagar).
-        await c.query(
-          `UPDATE users SET is_active = false, email = NULL
-             WHERE provider_id = $1 AND id <> $2
-               AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = users.id)`,
-          [Number(providerId), target_user_id],
-        );
+        // 3) SÓ os logins afetados por ESTA operação que ficaram sem unidade → desativar
+        //    (não varre órfãos pré-existentes do prestador). Registra quais.
+        const affected = [...new Set(freed.map((r: any) => Number(r.user_id)))].filter((uid) => uid !== Number(target_user_id));
+        if (affected.length) {
+          const { rows: d } = await c.query(
+            `UPDATE users SET is_active = false, email = NULL
+               WHERE id = ANY($1::bigint[])
+                 AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = users.id)
+             RETURNING id`, [affected]);
+          deactivated = d.map((r: any) => Number(r.id));
+        }
       });
       await auditLog({
         query, userId: req.user.id, action: 'provider_access_grouped',
-        meta: { provider_id: Number(providerId), target_user_id, location_ids },
+        meta: { provider_id: Number(providerId), target_user_id, location_ids, deactivated },
         ip: hashClientIp(req),
       });
       res.json({ units: await providerUnits(providerId) });
     } catch (err: any) {
-      if (err?.code === '23503') {
-        return res.status(409).json({ error: 'Unidade de outro prestador não pode ser agrupada.' });
-      }
+      if (err?.http) return res.status(err.http).json({ error: err.msg });
+      if (err?.code === '23503') return res.status(409).json({ error: 'Unidade de outro prestador não pode ser agrupada.' });
+      if (err?.code === '23505') return res.status(409).json({ error: 'Conflito ao agrupar essas unidades.' });
       console.error('POST /providers/:id/access/group:', err);
       res.status(500).json({ error: err.message });
     }
@@ -1841,56 +1845,56 @@ async function startServer() {
 
   // Desagrupa: destaca as unidades informadas de quem quer que as cubra e
   // recria 1 login por unidade (Sem e-mail), espelhando provision-users.
-  // Logins que ficarem sem nenhuma unidade após o destaque perdem o flag
-  // `agrupado` (não são desativados — diferente do /group).
   app.post('/api/providers/:id/access/ungroup', authenticate, async (req: any, res) => {
     if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
     const providerId = req.params.id;
-    const { location_ids } = req.body ?? {};
-    if (!Array.isArray(location_ids) || !location_ids.length) {
-      return res.status(400).json({ error: 'location_ids é obrigatório.' });
-    }
+    const location_ids = [...new Set((Array.isArray(req.body?.location_ids) ? req.body.location_ids : [])
+      .map(Number).filter(Number.isFinite))];
+    if (!location_ids.length) return res.status(400).json({ error: 'location_ids é obrigatório.' });
+    let deactivated: number[] = [];
     try {
-      const { rows: p } = await query('SELECT name, person_type FROM providers WHERE id = $1', [providerId]);
-      if (!p.length) return res.status(404).json({ error: 'Prestador não encontrado' });
-      const role = p[0].person_type === 'PF' ? 'cooperado' : 'prestador';
-
       await withTransaction(async (c) => {
-        // 1) DESTACAR: libera a UNIQUE de cada unidade de quem quer que a tenha.
-        await c.query(
-          `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[])`,
-          [Number(providerId), location_ids],
-        );
-        // 2) RECRIAR: 1 login por unidade liberada, sem e-mail (dual-write igual provision-users).
+        const { rows: p } = await c.query('SELECT name, person_type FROM providers WHERE id = $1', [providerId]);
+        if (!p.length) throw { http: 404, msg: 'Prestador não encontrado' };
+        const role = p[0].person_type === 'PF' ? 'cooperado' : 'prestador';
+        // 1) DESTACAR e capturar quem cobria essas unidades.
+        const { rows: freed } = await c.query(
+          `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[]) RETURNING user_id`,
+          [Number(providerId), location_ids]);
+        // 2) RECRIAR: 1 login por unidade liberada, sem e-mail. location_id fica NULL
+        // de propósito: o vínculo real vive em user_locations; o escalar users.location_id
+        // é vestigial (dropado na Fatia 7) e setá-lo aqui colidiria com o login esvaziado
+        // que ainda carrega o mesmo location_id na UNIQUE parcial da 0035.
         for (const lid of location_ids) {
           const { rows: created } = await c.query(
             `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
-             VALUES ($1, NULL, NULL, $2, $3, $4, true, 'pending') RETURNING id`,
-            [p[0].name, role, Number(providerId), lid],
-          );
+             VALUES ($1, NULL, NULL, $2, $3, NULL, true, 'pending') RETURNING id`,
+            [p[0].name, role, Number(providerId)]);
           await c.query(
             `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-            [created[0].id, lid, Number(providerId)],
-          );
+            [created[0].id, lid, Number(providerId)]);
         }
-        // 3) Logins do prestador que ficaram sem nenhuma unidade: só limpa o flag.
-        await c.query(
-          `UPDATE users SET agrupado = false
-             WHERE provider_id = $1
-               AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = users.id)`,
-          [Number(providerId)],
-        );
+        // 3) SÓ os logins afetados que ficaram sem unidade → desativar (libera o e-mail,
+        //    não vira zumbi; simétrico ao /group; não varre órfãos pré-existentes).
+        const affected = [...new Set(freed.map((r: any) => Number(r.user_id)))];
+        if (affected.length) {
+          const { rows: d } = await c.query(
+            `UPDATE users SET is_active = false, email = NULL, agrupado = false
+               WHERE id = ANY($1::bigint[])
+                 AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = users.id)
+             RETURNING id`, [affected]);
+          deactivated = d.map((r: any) => Number(r.id));
+        }
       });
       await auditLog({
         query, userId: req.user.id, action: 'provider_access_ungrouped',
-        meta: { provider_id: Number(providerId), location_ids },
+        meta: { provider_id: Number(providerId), location_ids, deactivated },
         ip: hashClientIp(req),
       });
       res.json({ units: await providerUnits(providerId) });
     } catch (err: any) {
-      if (err?.code === '23505' || err?.code === '23503') {
-        return res.status(409).json({ error: 'Não foi possível desagrupar essas unidades.' });
-      }
+      if (err?.http) return res.status(err.http).json({ error: err.msg });
+      if (err?.code === '23505' || err?.code === '23503') return res.status(409).json({ error: 'Não foi possível desagrupar essas unidades.' });
       console.error('POST /providers/:id/access/ungroup:', err);
       res.status(500).json({ error: err.message });
     }

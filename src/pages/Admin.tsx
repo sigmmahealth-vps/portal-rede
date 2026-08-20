@@ -59,6 +59,10 @@ const normCity = (c: unknown) =>
   cleanCity(c).normalize('NFD').replace(/\p{M}/gu, '').toUpperCase();
 const titleCase = (s: string) =>
   s.toLowerCase().replace(/\b[\p{L}]/gu, (m) => m.toUpperCase());
+// Arte do selo por nível (mesma de PainelDoCiclo/GestorDashboard): public/selos/*.png.
+const SEAL_IMG: Record<string, string> = {
+  Ouro: '/selos/ouro.png', Prata: '/selos/prata.png', Bronze: '/selos/bronze.png',
+};
 // Máscara CNPJ (14 díg.) ou CPF (11 díg.); devolve o valor cru se não bater.
 const formatDoc = (v: unknown): string => {
   const d = String(v ?? '').replace(/\D/g, '');
@@ -94,7 +98,7 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [grupoFilter, setGrupoFilter] = useState('all');
-  const [unidadeFilter, setUnidadeFilter] = useState('all');
+  const [municipioFilter, setMunicipioFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [user, setUser] = useState<any>(null);
@@ -330,19 +334,19 @@ export default function Admin() {
   // Cada linha da tabela = (prestador × unidade). "Unidade" = logradouro do local
   // (mesma definição da página de Qualificação), com fallback p/ a cidade.
   // Fallback p/ o local primário se o backend antigo não devolver 'locais'.
-  const locaisDe = (p: any): { unidade: string | null; cidade: string; uf: string | null }[] => {
+  const locaisDe = (p: any): { unidade: string | null; cidade: string; uf: string | null; seal?: string | null }[] => {
     if (Array.isArray(p.locais) && p.locais.length) return p.locais;
-    return [{ unidade: null, cidade: p.cidade ?? '', uf: p.uf ?? null }];
+    return [{ unidade: null, cidade: p.cidade ?? '', uf: p.uf ?? null, seal: null }];
   };
   // Rótulo da unidade exibido/usado como chave = logradouro, ou a cidade se vazio.
   const unidadeDe = (l: { unidade: string | null; cidade: string }) => cleanCity(l.unidade || l.cidade);
 
-  // Lista de unidades (TODAS as localizações), fundindo duplicatas de caixa/acento.
-  const unidades = useMemo(() => {
+  // Lista de municípios (TODAS as localizações), fundindo duplicatas de caixa/acento.
+  const municipios = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of providers) {
       for (const l of locaisDe(p)) {
-        const nome = unidadeDe(l);
+        const nome = cleanCity(l.cidade);
         if (!nome) continue;
         const key = normCity(nome);
         if (!map.has(key)) map.set(key, titleCase(nome));
@@ -351,43 +355,43 @@ export default function Admin() {
     return Array.from(map, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [providers]);
 
-  // Expande em 1 linha por (prestador, unidade). Filtro de unidade é aplicado
-  // ao NÍVEL do local: um prestador com 4 unidades vira 4 linhas quando "Todas"
-  // está selecionado, e 1 linha quando o filtro casa uma unidade específica.
+  // Expande em 1 linha por (prestador, unidade). O filtro de município é aplicado
+  // ao NÍVEL do local: um prestador com unidades em 4 cidades vira 4 linhas quando
+  // "Todos" está selecionado, e só as unidades da cidade escolhida quando filtrado.
   const filteredRows = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    const out: { p: any; unidade: string | null; cidade: string; uf: string | null }[] = [];
+    const out: { p: any; unidade: string | null; cidade: string; uf: string | null; seal?: string | null }[] = [];
     for (const p of providers) {
       if (q && !`${p.name || ''} ${p.cnpj || ''} ${p.cpf || ''} ${p.code || ''}`.toLowerCase().includes(q)) continue;
       if (statusFilter !== 'all' && String(p.status).toLowerCase() !== statusFilter) continue;
       if (grupoFilter !== 'all' && String(p.provider_group ?? '') !== grupoFilter) continue;
       for (const l of locaisDe(p)) {
-        if (unidadeFilter !== 'all' && normCity(unidadeDe(l)) !== unidadeFilter) continue;
-        out.push({ p, unidade: l.unidade, cidade: l.cidade, uf: l.uf });
+        if (municipioFilter !== 'all' && normCity(l.cidade) !== municipioFilter) continue;
+        out.push({ p, unidade: l.unidade, cidade: l.cidade, uf: l.uf, seal: l.seal });
       }
     }
     return out;
-  }, [providers, searchTerm, statusFilter, grupoFilter, unidadeFilter]);
+  }, [providers, searchTerm, statusFilter, grupoFilter, municipioFilter]);
 
-  const filtrosAtivos = statusFilter !== 'all' || grupoFilter !== 'all' || unidadeFilter !== 'all' || searchTerm.trim() !== '';
+  const filtrosAtivos = statusFilter !== 'all' || grupoFilter !== 'all' || municipioFilter !== 'all' || searchTerm.trim() !== '';
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const pageRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, grupoFilter, unidadeFilter, pageSize]);
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, grupoFilter, municipioFilter, pageSize]);
 
   const limparFiltros = () => {
     setSearchTerm('');
     setStatusFilter('all');
     setGrupoFilter('all');
-    setUnidadeFilter('all');
+    setMunicipioFilter('all');
   };
 
   const exportarCSV = () => {
     const header = ['Nome', 'CNPJ/CPF', 'Código', 'Grupo de prestador', 'Unidade', 'Município', 'UF', 'Nível Qualificação', 'Status'];
     const linhas = filteredRows.map((r) => [
       r.p.name, formatDoc(r.p.cnpj || r.p.cpf), r.p.code, r.p.provider_group,
-      unidadeDe(r), titleCase(cleanCity(r.cidade)), r.uf, r.p.qualification_level, r.p.status,
+      unidadeDe(r), titleCase(cleanCity(r.cidade)), r.uf, r.seal ?? '', r.p.status,
     ]);
     const esc = (v: any) => {
       const s = String(v ?? '');
@@ -495,8 +499,8 @@ export default function Admin() {
                 <FilterSelect className="w-full min-[480px]:w-56" label="Grupo de prestador" value={grupoFilter} onChange={setGrupoFilter}
                   options={[{ value: 'all', label: 'Todos' }, ...uniqueGroups.map((g) => ({ value: g, label: g }))]} />
 
-                <FilterSelect className="w-full min-[480px]:w-52" label="Unidade" value={unidadeFilter} onChange={setUnidadeFilter}
-                  options={[{ value: 'all', label: 'Todas' }, ...unidades.map((u) => ({ value: u.key, label: u.label }))]} />
+                <FilterSelect className="w-full min-[480px]:w-52" label="Município" value={municipioFilter} onChange={setMunicipioFilter}
+                  options={[{ value: 'all', label: 'Todos' }, ...municipios.map((m) => ({ value: m.key, label: m.label }))]} />
 
                 <div className="flex w-full items-center gap-2 min-[480px]:ml-auto min-[480px]:w-auto">
                   {filtrosAtivos && (
@@ -523,19 +527,15 @@ export default function Admin() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] table-fixed text-left border-collapse [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_td]:align-top [&_th]:align-bottom">
                 <colgroup>
-                  <col className="w-[19%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[11%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[30%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-gray-100 text-sm text-gray-500">
                     <th className="pb-3 font-medium">Nome</th>
-                    <th className="pb-3 font-medium">CNPJ/CPF</th>
-                    <th className="pb-3 font-medium">Código</th>
                     <th className="pb-3 font-medium">Grupo de prestador</th>
                     <th className="pb-3 font-medium">Unidade</th>
                     <th className="pb-3 font-medium">Nível Qualificação</th>
@@ -552,12 +552,17 @@ export default function Admin() {
                         onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
                         className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors cursor-pointer"
                       >
-                        <td className="py-3 font-medium text-gray-800 break-words">{prestador.name}</td>
-                        <td className="py-3 text-gray-500 whitespace-nowrap tabular-nums">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
-                        <td className="py-3 text-gray-500 tabular-nums">{prestador.code || '-'}</td>
+                        <td
+                          className="py-3 font-medium text-gray-800 break-words cursor-help"
+                          title={`CNPJ/CPF: ${formatDoc(prestador.cnpj || prestador.cpf) || '—'}\nCódigo: ${prestador.code || '—'}`}
+                        >{prestador.name}</td>
                         <td className="py-3 text-gray-600 break-words">{prestador.provider_group || '-'}</td>
                         <td className="py-3 text-gray-700 break-words">{unidadeLabel || '-'}</td>
-                        <td className="py-3 text-gray-600">{prestador.qualification_level || '-'}</td>
+                        <td className="py-3">
+                          {row.seal && SEAL_IMG[row.seal]
+                            ? <img src={SEAL_IMG[row.seal]} alt={row.seal} title={`Selo ${row.seal}`} className="h-7 w-7 object-contain" />
+                            : <span className="text-gray-400">-</span>}
+                        </td>
                         <td className="py-3">
                           <span className={`inline-block whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${
                             String(prestador.status).toLowerCase() === 'ativo'
@@ -572,7 +577,7 @@ export default function Admin() {
                   })}
                   {filteredRows.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-gray-500">
+                      <td colSpan={5} className="py-8 text-center text-gray-500">
                         {providers.length === 0 ? 'Nenhum prestador encontrado.' : 'Nenhum prestador corresponde aos filtros.'}
                       </td>
                     </tr>

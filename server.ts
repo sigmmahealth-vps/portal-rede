@@ -1470,7 +1470,13 @@ async function startServer() {
                  loc.cidade, loc.uf,
                  COALESCE(
                    (SELECT jsonb_agg(
-                             jsonb_build_object('unidade', NULLIF(pl.logradouro, ''), 'cidade', pl.cidade, 'uf', pl.uf)
+                             jsonb_build_object(
+                               'unidade', NULLIF(pl.logradouro, ''), 'cidade', pl.cidade, 'uf', pl.uf,
+                               -- Selo do certificado vigente (valid_until >= hoje) desta unidade; o mais recente vence.
+                               'seal', (SELECT ei.seal FROM eval_certificates ec
+                                          JOIN eval_instances ei ON ei.id = ec.instance_id
+                                         WHERE ei.location_id = pl.id AND ec.valid_until >= CURRENT_DATE
+                                         ORDER BY ec.valid_until DESC, ec.issued_at DESC LIMIT 1))
                              ORDER BY pl.is_primary DESC NULLS LAST, pl.id)
                       FROM provider_locations pl WHERE pl.provider_id = p.id),
                    '[]'::jsonb

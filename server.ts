@@ -1839,6 +1839,63 @@ async function startServer() {
     }
   });
 
+  // Desagrupa: destaca as unidades informadas de quem quer que as cubra e
+  // recria 1 login por unidade (Sem e-mail), espelhando provision-users.
+  // Logins que ficarem sem nenhuma unidade após o destaque perdem o flag
+  // `agrupado` (não são desativados — diferente do /group).
+  app.post('/api/providers/:id/access/ungroup', authenticate, async (req: any, res) => {
+    if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+    const providerId = req.params.id;
+    const { location_ids } = req.body ?? {};
+    if (!Array.isArray(location_ids) || !location_ids.length) {
+      return res.status(400).json({ error: 'location_ids é obrigatório.' });
+    }
+    try {
+      const { rows: p } = await query('SELECT name, person_type FROM providers WHERE id = $1', [providerId]);
+      if (!p.length) return res.status(404).json({ error: 'Prestador não encontrado' });
+      const role = p[0].person_type === 'PF' ? 'cooperado' : 'prestador';
+
+      await withTransaction(async (c) => {
+        // 1) DESTACAR: libera a UNIQUE de cada unidade de quem quer que a tenha.
+        await c.query(
+          `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[])`,
+          [Number(providerId), location_ids],
+        );
+        // 2) RECRIAR: 1 login por unidade liberada, sem e-mail (dual-write igual provision-users).
+        for (const lid of location_ids) {
+          const { rows: created } = await c.query(
+            `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
+             VALUES ($1, NULL, NULL, $2, $3, $4, true, 'pending') RETURNING id`,
+            [p[0].name, role, Number(providerId), lid],
+          );
+          await c.query(
+            `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+            [created[0].id, lid, Number(providerId)],
+          );
+        }
+        // 3) Logins do prestador que ficaram sem nenhuma unidade: só limpa o flag.
+        await c.query(
+          `UPDATE users SET agrupado = false
+             WHERE provider_id = $1
+               AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = users.id)`,
+          [Number(providerId)],
+        );
+      });
+      await auditLog({
+        query, userId: req.user.id, action: 'provider_access_ungrouped',
+        meta: { provider_id: Number(providerId), location_ids },
+        ip: hashClientIp(req),
+      });
+      res.json({ units: await providerUnits(providerId) });
+    } catch (err: any) {
+      if (err?.code === '23505' || err?.code === '23503') {
+        return res.status(409).json({ error: 'Não foi possível desagrupar essas unidades.' });
+      }
+      console.error('POST /providers/:id/access/ungroup:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Dispara e-mail de redefinição de senha para o acesso de uma unidade. Só admin.
   app.post('/api/providers/:id/access/send-reset', authenticate, requireAdmin, async (req: any, res) => {
     try {

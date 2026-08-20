@@ -1031,11 +1031,14 @@ async function startServer() {
       const { rows } = await query(
         `SELECT u.id, u.name, u.email, u.role, u.is_active, u.invite_status, u.last_login_at, u.created_at,
                 u.provider_id, p.sgu_code AS provider_code,
-                u.location_id, pl.sgu_location_code,
+                ul.location_id, pl.sgu_location_code,
                 COALESCE(NULLIF(pl.label, ''), pl.cidade) AS location_label, pl.cidade AS location_cidade
          FROM users u
          LEFT JOIN providers p ON p.id = u.provider_id
-         LEFT JOIN provider_locations pl ON pl.id = u.location_id
+         LEFT JOIN LATERAL (
+           SELECT location_id FROM user_locations WHERE user_id = u.id ORDER BY location_id LIMIT 1
+         ) ul ON true
+         LEFT JOIN provider_locations pl ON pl.id = ul.location_id
          ORDER BY u.created_at DESC`
       );
       res.json(rows);
@@ -1666,8 +1669,9 @@ async function startServer() {
       // sumir da tela — aparecem à parte para o admin re-vincular.
       const { rows: orphans } = await query(
         `SELECT id, name, email, role, is_active, last_login_at, last_login_ip, invite_status
-           FROM users
-          WHERE provider_id = $1 AND location_id IS NULL AND role = ANY($2)
+           FROM users u
+          WHERE provider_id = $1 AND role = ANY($2)
+            AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = u.id)
           ORDER BY id`,
         [req.params.id, PROVIDER_ACCESS_ROLES]);
       res.json({ provider_name: provRows[0].name, units, orphans });
@@ -1724,12 +1728,10 @@ async function startServer() {
           // Caminho com senha manual (solicitação do cliente): comportamento atual.
           const pwHash = await bcrypt.hash(password, 10);
           const { rows: created } = await query(
-            `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
-             VALUES ($1, $2, $3, $4, $5, $6, true, 'accepted') RETURNING id`,
-            [provRows[0].name, email, pwHash, role, providerId, unit.location_id],
+            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
+             VALUES ($1, $2, $3, $4, $5, true, 'accepted') RETURNING id`,
+            [provRows[0].name, email, pwHash, role, providerId],
           );
-          // Dual-write durante a transição p/ Fatia 7: users.location_id continua
-          // sendo escrito acima, mas o escopo real do portal já vem de user_locations.
           await query(
             `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
             [created[0].id, unit.location_id, Number(providerId)]);
@@ -1741,11 +1743,10 @@ async function startServer() {
         } else {
           // Convite: cria sem senha; prestador define a própria via link (setup token).
           const { rows: created } = await query(
-            `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
-             VALUES ($1, $2, NULL, $3, $4, $5, true, 'pending') RETURNING id`,
-            [provRows[0].name, email, role, providerId, unit.location_id],
+            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
+             VALUES ($1, $2, NULL, $3, $4, true, 'pending') RETURNING id`,
+            [provRows[0].name, email, role, providerId],
           );
-          // Dual-write durante a transição p/ Fatia 7 (ver comentário no caminho com senha acima).
           await query(
             `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
             [created[0].id, unit.location_id, Number(providerId)]);
@@ -1861,14 +1862,12 @@ async function startServer() {
         const { rows: freed } = await c.query(
           `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[]) RETURNING user_id`,
           [Number(providerId), location_ids]);
-        // 2) RECRIAR: 1 login por unidade liberada, sem e-mail. location_id fica NULL
-        // de propósito: o vínculo real vive em user_locations; o escalar users.location_id
-        // é vestigial (dropado na Fatia 7) e setá-lo aqui colidiria com o login esvaziado
-        // que ainda carrega o mesmo location_id na UNIQUE parcial da 0035.
+        // 2) RECRIAR: 1 login por unidade liberada, sem e-mail. O vínculo real vive em
+        // user_locations — o escalar users.location_id foi dropado na 0037 (Fatia 7).
         for (const lid of location_ids) {
           const { rows: created } = await c.query(
-            `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
-             VALUES ($1, NULL, NULL, $2, $3, NULL, true, 'pending') RETURNING id`,
+            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
+             VALUES ($1, NULL, NULL, $2, $3, true, 'pending') RETURNING id`,
             [p[0].name, role, Number(providerId)]);
           await c.query(
             `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,

@@ -80,28 +80,31 @@ async function main() {
     console.log(adminCreated ? `[reset-users] ${ADMIN_EMAIL} criado.` : `[reset-users] ${ADMIN_EMAIL} já existia.`);
 
     // O acesso de teste do prestador passa a apontar para um endereço concreto.
+    // Relinka direto em user_locations — o escalar users.location_id foi dropado na 0037.
     const { rows: relinked } = await client.query(`
-      UPDATE users u SET location_id = (
-        SELECT pl.id FROM provider_locations pl
-         WHERE pl.provider_id = u.provider_id
-           AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
-           AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'
-         ORDER BY pl.is_primary DESC NULLS LAST, pl.id LIMIT 1)
-       WHERE u.provider_id IS NOT NULL AND u.location_id IS NULL
-       RETURNING u.id, u.email, u.location_id`);
-    // A partir da migration 0036 o escopo do portal vem de user_locations, não de
-    // users.location_id — então o relink precisa criar também o vínculo, senão o
-    // usuário fica sem escopo (fail-closed) e "sem responsável" na tela.
-    await client.query(
-      `INSERT INTO user_locations (user_id, location_id, provider_id)
-       SELECT id, location_id, provider_id FROM users
-        WHERE id = ANY($1::bigint[]) AND location_id IS NOT NULL
-       ON CONFLICT DO NOTHING`,
-      [relinked.map((r: any) => Number(r.id))]);
-    for (const r of relinked) console.log(`[reset-users] ${r.email ?? r.id} vinculado ao endereço ${r.location_id}.`);
+      INSERT INTO user_locations (user_id, location_id, provider_id)
+      SELECT u.id,
+             (SELECT pl.id FROM provider_locations pl
+               WHERE pl.provider_id = u.provider_id
+                 AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
+                 AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'
+               ORDER BY pl.is_primary DESC NULLS LAST, pl.id LIMIT 1) AS loc,
+             u.provider_id
+        FROM users u
+       WHERE u.provider_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = u.id)
+         AND (SELECT pl.id FROM provider_locations pl
+               WHERE pl.provider_id = u.provider_id
+                 AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
+                 AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'
+               ORDER BY pl.is_primary DESC NULLS LAST, pl.id LIMIT 1) IS NOT NULL
+      ON CONFLICT DO NOTHING
+      RETURNING user_id, location_id`);
+    for (const r of relinked) console.log(`[reset-users] usuário ${r.user_id} vinculado ao endereço ${r.location_id}.`);
   });
 
-  const { rows: [fim] } = await query(`SELECT COUNT(*) AS users, COUNT(location_id) AS com_endereco FROM users`, []);
+  const { rows: [fim] } = await query(
+    `SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM user_locations) AS com_endereco`, []);
   console.log(`[reset-users] restam ${fim.users} usuários (${fim.com_endereco} com endereço). Rode db:provision-users --commit para completar.`);
 }
 

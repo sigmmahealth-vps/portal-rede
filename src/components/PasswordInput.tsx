@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, type InputHTMLAttributes } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 // Input de senha com alternador de visibilidade (olhinho). Aceita as mesmas
 // props de um <input>; o type é controlado internamente.
-export default function PasswordInput({ className = '', ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+export default function PasswordInput({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">

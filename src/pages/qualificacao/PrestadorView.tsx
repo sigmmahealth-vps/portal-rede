@@ -299,7 +299,7 @@ export default function PrestadorView({ user }: { user: any }) {
                 {loc && (
                   <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                     <MapPin className="h-3.5 w-3.5" />
-                    {loc.label || 'Unidade'}{cityUf ? ` — ${cityUf}` : ''}
+                    {loc.logradouro || loc.label || 'Unidade'}{cityUf ? ` — ${cityUf}` : ''}
                   </p>
                 )}
                 {!loc && <p className="mt-1 text-sm text-gray-500">{s.description}</p>}

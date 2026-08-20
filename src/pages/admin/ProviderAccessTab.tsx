@@ -14,6 +14,7 @@ function currentRole(): string | null {
 interface Unit {
   location_id: number;
   label: string | null;
+  logradouro: string | null;
   cidade: string | null;
   uf: string | null;
   sgu_location_code: string | null;
@@ -21,8 +22,10 @@ interface Unit {
   user: any | null;
 }
 
+// Nome da unidade = logradouro (mesma definição da Qualificação/tabela Rede),
+// com fallback p/ o label ("COMERCIAL X") e a cidade.
 const unitTitle = (u: Unit) =>
-  [u.label, u.cidade && u.uf ? `${u.cidade}/${u.uf}` : u.cidade].filter(Boolean).join(' — ') || `Unidade ${u.location_id}`;
+  [u.logradouro || u.label, u.cidade && u.uf ? `${u.cidade}/${u.uf}` : u.cidade].filter(Boolean).join(' — ') || `Unidade ${u.location_id}`;
 
 export default function ProviderAccessTab({ providerId }: { providerId: number | string }) {
   const canEdit = currentRole() === 'admin';

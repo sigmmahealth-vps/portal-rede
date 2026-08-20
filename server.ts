@@ -1032,7 +1032,7 @@ async function startServer() {
         `SELECT u.id, u.name, u.email, u.role, u.is_active, u.invite_status, u.last_login_at, u.created_at,
                 u.provider_id, p.sgu_code AS provider_code,
                 ul.location_id, pl.sgu_location_code,
-                COALESCE(NULLIF(pl.label, ''), pl.cidade) AS location_label, pl.cidade AS location_cidade
+                COALESCE(NULLIF(pl.logradouro, ''), NULLIF(pl.label, ''), pl.cidade) AS location_label, pl.cidade AS location_cidade
          FROM users u
          LEFT JOIN providers p ON p.id = u.provider_id
          LEFT JOIN LATERAL (
@@ -1625,7 +1625,7 @@ async function startServer() {
   // Unidades comerciais do prestador, cada uma com o seu acesso (ou null).
   async function providerUnits(providerId: string) {
     const { rows } = await query(
-      `SELECT pl.id AS location_id, pl.label, pl.cidade, pl.uf, pl.sgu_location_code,
+      `SELECT pl.id AS location_id, pl.label, pl.logradouro, pl.cidade, pl.uf, pl.sgu_location_code,
               LOWER(TRIM(pl.email)) AS cadastro_email,
               u.id, u.name, u.email, u.role, u.is_active, u.last_login_at, u.last_login_ip, u.invite_status
          FROM provider_locations pl
@@ -1638,7 +1638,7 @@ async function startServer() {
       [providerId, PROVIDER_ACCESS_ROLES]);
     return rows.map((r: any) => ({
       location_id: Number(r.location_id),
-      label: r.label, cidade: r.cidade, uf: r.uf, sgu_location_code: r.sgu_location_code,
+      label: r.label, logradouro: r.logradouro, cidade: r.cidade, uf: r.uf, sgu_location_code: r.sgu_location_code,
       suggested_email: !r.id && EMAIL_RE.test(r.cadastro_email ?? '') ? r.cadastro_email : null,
       user: r.id ? {
         id: Number(r.id), name: r.name, email: r.email, role: r.role, is_active: r.is_active,

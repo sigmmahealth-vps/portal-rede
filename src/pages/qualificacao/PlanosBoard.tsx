@@ -121,7 +121,7 @@ export default function PlanosBoard() {
   const locLabel = (l: any) => {
     const uf = l.uf ? '/' + String(l.uf).toUpperCase() : '';
     const city = l.cidade ? `${l.cidade}${uf}` : '';
-    const main = l.label || 'Unidade';
+    const main = l.location_label || l.label || 'Unidade';
     return city ? `${main} — ${city}` : main;
   };
 

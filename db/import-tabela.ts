@@ -1,6 +1,7 @@
 /**
  * Recarga de prestadores a partir da aba `tabela` de Prestadores Portal.xlsx.
- * Wipe total (DELETE FROM providers — preserva users via SET NULL) + reinserção, numa transação.
+ * Upsert idempotente (ON CONFLICT por sgu_code / sgu_location_code) numa transação —
+ * preserva providers.id e provider_locations.id entre execuções, evitando orfanar vínculos.
  * SOMENTE DEV (trava de host).
  *   tsx db/import-tabela.ts            # dry-run: relatório, não grava
  *   tsx db/import-tabela.ts --commit   # grava no Postgres de dev
@@ -13,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import XLSX from 'xlsx';
 import { parseTabela, type TabelaRow } from './tabela-parser.js';
 import { pickDatabaseUrl } from './resolveDbUrl.js';
+import { query } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -46,6 +48,37 @@ function readRows(): TabelaRow[] {
   return XLSX.utils.sheet_to_json<TabelaRow>(sheet, { defval: null });
 }
 
+// Upsert idempotente das unidades de um prestador, por (provider_id, sgu_location_code):
+// preserva provider_locations.id entre execuções (essencial p/ vínculos como user_locations).
+// Unidades que sumiram do arquivo são desativadas, não apagadas — id sobrevive se voltarem.
+export async function upsertProviderLocations(providerSguCode: string, locations: any[], client = { query }) {
+  const { rows: pr } = await client.query(
+    `SELECT id FROM providers WHERE sgu_code = $1`, [providerSguCode]);
+  if (!pr.length) return;
+  const providerId = pr[0].id;
+  const keptCodes: string[] = [];
+  for (const l of locations) {
+    keptCodes.push(l.sgu_location_code);
+    await client.query(
+      `INSERT INTO provider_locations
+         (provider_id, sgu_location_code, label, cep, logradouro, numero, complemento,
+          bairro, cidade, uf, phone, email, is_primary, in_medical_guide, active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true)
+       ON CONFLICT (provider_id, sgu_location_code) DO UPDATE SET
+         label=EXCLUDED.label, cep=EXCLUDED.cep, logradouro=EXCLUDED.logradouro,
+         numero=EXCLUDED.numero, complemento=EXCLUDED.complemento, bairro=EXCLUDED.bairro,
+         cidade=EXCLUDED.cidade, uf=EXCLUDED.uf, phone=EXCLUDED.phone, email=EXCLUDED.email,
+         is_primary=EXCLUDED.is_primary, in_medical_guide=EXCLUDED.in_medical_guide, active=true`,
+      [providerId, l.sgu_location_code, l.label, l.cep, l.logradouro, l.numero, l.complemento,
+       l.bairro, l.cidade, l.uf, l.phone, l.email, l.is_primary, l.in_medical_guide]);
+  }
+  // Unidades que sumiram do arquivo: desativa (não apaga — id sobrevive se voltar).
+  await client.query(
+    `UPDATE provider_locations SET active=false
+      WHERE provider_id=$1 AND NOT (sgu_location_code = ANY($2::text[]))`,
+    [providerId, keptCodes]);
+}
+
 async function main() {
   const doCommit = process.argv.slice(2).includes('--commit');
   if (!fs.existsSync(FILE)) {
@@ -76,7 +109,7 @@ async function main() {
   }
 
   assertReloadHost();
-  const { query, withTransaction, pool } = await import('./db.js');
+  const { withTransaction, pool } = await import('./db.js');
   const scriptByCod = await resolveScriptIds();
   const naoResolvidos = new Set<string>();
   const { rows: runRows } = await query<{ id: number }>(
@@ -86,41 +119,34 @@ async function main() {
   let nLoc = 0;
   try {
     await withTransaction(async (client) => {
-      // NÃO usar TRUNCATE ... CASCADE: ele trunca por completo TODA tabela com FK
-      // para providers, ignorando o ON DELETE (chegou a apagar a tabela users inteira
-      // no homolog). DELETE dispara as ações por linha: users/announcements/trainings
-      // (SET NULL) são preservados; o resto (locations, eval_*, qualifications...) cascateia.
-      await client.query('DELETE FROM providers');
+      // Upsert por sgu_code/sgu_location_code (não DELETE+INSERT): preserva
+      // providers.id e provider_locations.id entre execuções, para não orfanar
+      // vínculos (users, eval_*, qualifications...) a cada recarga.
       for (const p of providers) {
         const evalScriptId = p.roteiro_cod ? scriptByCod.get(p.roteiro_cod) ?? null : null;
         if (p.roteiro_cod && evalScriptId == null) naoResolvidos.add(p.roteiro_cod);
-        const { rows } = await client.query<{ id: number }>(
+        await client.query<{ id: number }>(
           `INSERT INTO providers
              (sgu_code, name, trade_name, person_type, cnpj, cpf, council_registry,
               specialties, provider_type, provider_group, area_atuacao, status,
               responsavel_tecnico, eval_script_id, roteiro_cod, roteiro_confianca, source, sgu_synced_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,'sgu',now())
-           RETURNING id`,
+           ON CONFLICT (sgu_code) DO UPDATE SET
+             name=EXCLUDED.name, trade_name=EXCLUDED.trade_name, person_type=EXCLUDED.person_type,
+             cnpj=EXCLUDED.cnpj, cpf=EXCLUDED.cpf, council_registry=EXCLUDED.council_registry,
+             specialties=EXCLUDED.specialties, provider_type=EXCLUDED.provider_type,
+             provider_group=EXCLUDED.provider_group, status=EXCLUDED.status,
+             responsavel_tecnico=EXCLUDED.responsavel_tecnico, eval_script_id=EXCLUDED.eval_script_id,
+             roteiro_cod=EXCLUDED.roteiro_cod, roteiro_confianca=EXCLUDED.roteiro_confianca,
+             source='sgu', sgu_synced_at=now()`,
           [
             p.sgu_code, p.name, p.trade_name, p.person_type, p.cnpj, p.cpf, p.council_registry,
             JSON.stringify(p.specialties), p.provider_type, p.provider_group, null, p.status,
             p.responsavel_tecnico, evalScriptId, p.roteiro_cod, p.roteiro_confianca,
           ],
         );
-        const providerId = rows[0].id;
-        for (const l of p.locations) {
-          await client.query(
-            `INSERT INTO provider_locations
-               (provider_id, sgu_location_code, label, cep, logradouro, numero, complemento,
-                bairro, cidade, uf, phone, email, is_primary, in_medical_guide, active)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true)`,
-            [
-              providerId, l.sgu_location_code, l.label, l.cep, l.logradouro, l.numero, l.complemento,
-              l.bairro, l.cidade, l.uf, l.phone, l.email, l.is_primary, l.in_medical_guide,
-            ],
-          );
-          nLoc++;
-        }
+        await upsertProviderLocations(p.sgu_code, p.locations, client);
+        nLoc += p.locations.length;
       }
     });
     await query(

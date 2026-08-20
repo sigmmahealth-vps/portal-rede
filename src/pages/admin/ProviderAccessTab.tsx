@@ -191,7 +191,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
 }
 
 function UnitAccess({ providerId, unit, canEdit, onChanged, selected, onToggleSelect, groupLocationIds }: {
-  key?: number; // mesma convenção do AlertGroupCard: os tipos de JSX daqui exigem key no shape
+  key?: string | number; // mesma convenção do AlertGroupCard: os tipos de JSX daqui exigem key no shape
   providerId: number | string; unit: Unit; canEdit: boolean; onChanged: () => void;
   selected: boolean; onToggleSelect: () => void; groupLocationIds: number[];
 }) {

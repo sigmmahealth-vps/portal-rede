@@ -14,6 +14,9 @@ interface User {
   last_login_at: string | null;
   provider_id: number | null;
   provider_code: string | null;
+  location_id: number | null;
+  location_label: string | null;
+  sgu_location_code: string | null;
 }
 
 // Fronteira de conceito: Equipe interna (operadores) × Acessos de prestadores.
@@ -90,7 +93,9 @@ export default function UsuariosTab() {
       q &&
       !u.name.toLowerCase().includes(q) &&
       !(u.email ?? '').toLowerCase().includes(q) &&
-      !(u.provider_code ?? '').toLowerCase().includes(q)
+      !(u.provider_code ?? '').toLowerCase().includes(q) &&
+      !(u.location_label ?? '').toLowerCase().includes(q) &&
+      !(u.sgu_location_code ?? '').toLowerCase().includes(q)
     ) return false;
     if (roleFilter && u.role !== roleFilter) return false;
     if (statusFilter && STATUS_BADGE(u).label !== statusFilter) return false;
@@ -201,8 +206,10 @@ export default function UsuariosTab() {
                     ) : (
                       <div className="max-w-[240px] truncate" title={u.name}>{u.name}</div>
                     )}
-                    {segment === 'prestadores' && u.provider_code && (
-                      <span className="text-xs text-gray-400">{u.provider_code}</span>
+                    {segment === 'prestadores' && (u.provider_code || u.location_label) && (
+                      <span className="block max-w-[240px] truncate text-xs text-gray-400">
+                        {[u.sgu_location_code || u.provider_code, u.location_label].filter(Boolean).join(' · ')}
+                      </span>
                     )}
                   </td>
                   <td className="p-3 text-gray-700">

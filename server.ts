@@ -254,11 +254,15 @@ async function startServer() {
 
   const notifyAppUrl = () => process.env.APP_URL ?? `http://localhost:${PORT}`;
 
-  async function prestadorRecipients(providerId: number): Promise<NotifyRecipient[]> {
+  // locationId preenchido = evento de uma unidade só: notifica o acesso daquela
+  // unidade (migration 0035). Acesso sem vínculo (location_id NULL) continua
+  // recebendo tudo do prestador — é o fallback do reimport de cadastro.
+  async function prestadorRecipients(providerId: number, locationId: number | null = null): Promise<NotifyRecipient[]> {
     const { rows } = await query(
       `SELECT id AS user_id, email, name FROM users
-        WHERE provider_id = $1 AND is_active = true AND role IN ('prestador','cooperado')`,
-      [providerId]);
+        WHERE provider_id = $1 AND is_active = true AND role IN ('prestador','cooperado')
+          AND ($2::bigint IS NULL OR location_id IS NULL OR location_id = $2)`,
+      [providerId, locationId]);
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
   }
 
@@ -374,6 +378,12 @@ async function startServer() {
   // Consolida IP_HASH_SECRET num único call-site — todos os auditLog usam este helper.
   const hashClientIp = (req: any): string | null => hashIp(req.ip, IP_HASH_SECRET as string);
 
+  // Escopo por unidade (migration 0035): cada acesso de prestador pertence a um
+  // endereço e só enxerga o que é dele. NULL = staff, ou vínculo perdido no
+  // reimport de cadastro — nesse caso cai no escopo antigo (prestador inteiro).
+  const userLocationId = (req: any): number | null =>
+    req.user?.location_id == null ? null : Number(req.user.location_id);
+
   // Metadados do cliente para a trilha de acesso (RN 630 — §5.2.2).
   const clientMeta = (req: any) => ({
     ipHash: hashClientIp(req),
@@ -405,7 +415,8 @@ async function startServer() {
     // no provider_group porque o provider_type "MÉDICO" cobre também psicólogos/nutris/etc.
     const isCooperado = /^MEDICOS COOPERADOS(\s+ARARANGUA)?$/i.test(String(providerGroup ?? '').trim());
     const token = jwt.sign(
-      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id },
+      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id,
+        location_id: user.location_id ?? null },
       JWT_SECRET as string,
       { expiresIn: '24h' },
     );
@@ -415,7 +426,8 @@ async function startServer() {
     return {
       user: {
         id: user.id, name: user.name, email: user.email, role: user.role,
-        provider_id: user.provider_id, provider_person_type: providerPersonType,
+        provider_id: user.provider_id, location_id: user.location_id ?? null,
+        provider_person_type: providerPersonType,
         provider_group: providerGroup, is_cooperado: isCooperado,
         last_login_at: previousLoginAt,
       },
@@ -845,7 +857,7 @@ async function startServer() {
   // Dados do usuário autenticado (substitui leitura do localStorage no frontend).
   app.get('/api/auth/me', authenticate, async (req: any, res) => {
     const { rows } = await query(
-      'SELECT id, name, email, role, provider_id, last_login_at FROM users WHERE id = $1',
+      'SELECT id, name, email, role, provider_id, location_id, last_login_at FROM users WHERE id = $1',
       [req.user.id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -1018,9 +1030,12 @@ async function startServer() {
     try {
       const { rows } = await query(
         `SELECT u.id, u.name, u.email, u.role, u.is_active, u.invite_status, u.last_login_at, u.created_at,
-                u.provider_id, p.sgu_code AS provider_code
+                u.provider_id, p.sgu_code AS provider_code,
+                u.location_id, pl.sgu_location_code,
+                COALESCE(NULLIF(pl.label, ''), pl.cidade) AS location_label, pl.cidade AS location_cidade
          FROM users u
          LEFT JOIN providers p ON p.id = u.provider_id
+         LEFT JOIN provider_locations pl ON pl.id = u.location_id
          ORDER BY u.created_at DESC`
       );
       res.json(rows);
@@ -1592,18 +1607,43 @@ async function startServer() {
     }
   });
 
-  // === Gestão de Acessos do prestador (Tela 4 da spec) — acesso único, foco LGPD ===
+  // === Gestão de Acessos do prestador (Tela 4 da spec) — 1 acesso por UNIDADE ===
+  // Desde a migration 0035 o acesso é do par (prestador, endereço): cada unidade
+  // comercial tem seu próprio login, e o portal do prestador só mostra a dela.
   const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado'];
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-  async function findProviderUser(providerId: string) {
+  // Unidades comerciais do prestador, cada uma com o seu acesso (ou null).
+  async function providerUnits(providerId: string) {
     const { rows } = await query(
-      `SELECT id, name, email, role, is_active, last_login_at, last_login_ip, invite_status
-         FROM users
-        WHERE provider_id = $1 AND role = ANY($2)
-        ORDER BY id ASC LIMIT 1`,
-      [providerId, PROVIDER_ACCESS_ROLES],
-    );
-    return rows[0] ?? null;
+      `SELECT pl.id AS location_id, pl.label, pl.cidade, pl.uf, pl.sgu_location_code,
+              LOWER(TRIM(pl.email)) AS cadastro_email,
+              u.id, u.name, u.email, u.role, u.is_active, u.last_login_at, u.last_login_ip, u.invite_status
+         FROM provider_locations pl
+         LEFT JOIN users u ON u.location_id = pl.id AND u.role = ANY($2)
+        WHERE pl.provider_id = $1
+          AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
+          AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'
+        ORDER BY pl.is_primary DESC NULLS LAST, pl.id`,
+      [providerId, PROVIDER_ACCESS_ROLES]);
+    return rows.map((r: any) => ({
+      location_id: Number(r.location_id),
+      label: r.label, cidade: r.cidade, uf: r.uf, sgu_location_code: r.sgu_location_code,
+      suggested_email: !r.id && EMAIL_RE.test(r.cadastro_email ?? '') ? r.cadastro_email : null,
+      user: r.id ? {
+        id: Number(r.id), name: r.name, email: r.email, role: r.role, is_active: r.is_active,
+        last_login_at: r.last_login_at, last_login_ip: r.last_login_ip, invite_status: r.invite_status,
+      } : null,
+    }));
+  }
+
+  // Resolve a unidade alvo de uma ação: explícita no corpo, ou a única do prestador.
+  async function resolveUnit(providerId: string, rawLocationId: any) {
+    const units = await providerUnits(providerId);
+    if (rawLocationId == null || rawLocationId === '') {
+      return units.length === 1 ? units[0] : null;
+    }
+    return units.find((u) => u.location_id === Number(rawLocationId)) ?? null;
   }
 
   app.get('/api/providers/:id/access', authenticate, async (req: any, res) => {
@@ -1614,38 +1654,41 @@ async function startServer() {
       }
       const { rows: provRows } = await query('SELECT id, name FROM providers WHERE id = $1', [req.params.id]);
       if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
-      const user = await findProviderUser(req.params.id);
-      let suggestedEmail: string | null = null;
-      if (!user) {
-        const { rows: sug } = await query(
-          `SELECT email FROM provider_locations
-            WHERE provider_id = $1 AND email ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'
-            ORDER BY id LIMIT 1`, [req.params.id]);
-        suggestedEmail = sug[0]?.email?.trim().toLowerCase() ?? null;
-      }
-      res.json({ exists: !!user, provider_name: provRows[0].name, user, suggested_email: suggestedEmail });
+      const units = await providerUnits(req.params.id);
+      // Acessos sem unidade (vínculo perdido num reimport de cadastro) não podem
+      // sumir da tela — aparecem à parte para o admin re-vincular.
+      const { rows: orphans } = await query(
+        `SELECT id, name, email, role, is_active, last_login_at, last_login_ip, invite_status
+           FROM users
+          WHERE provider_id = $1 AND location_id IS NULL AND role = ANY($2)
+          ORDER BY id`,
+        [req.params.id, PROVIDER_ACCESS_ROLES]);
+      res.json({ provider_name: provRows[0].name, units, orphans });
     } catch (err: any) {
       console.error('GET /providers/:id/access:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Cria (se não existe) ou atualiza o acesso único do prestador. Só admin.
+  // Cria (se não existe) ou atualiza o acesso de UMA unidade. Só admin.
   app.post('/api/providers/:id/access', authenticate, requireAdmin, async (req: any, res) => {
     try {
       const providerId = req.params.id;
       const email = String(req.body?.email ?? '').trim().toLowerCase();
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      if (!EMAIL_RE.test(email)) {
         return res.status(400).json({ error: 'E-mail inválido.' });
       }
       if (password && password.length < 8) {
         return res.status(400).json({ error: 'A senha deve ter ao menos 8 caracteres.' });
       }
-      const { rows: provRows } = await query('SELECT id, name FROM providers WHERE id = $1', [providerId]);
+      const { rows: provRows } = await query('SELECT id, name, person_type FROM providers WHERE id = $1', [providerId]);
       if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
+      const unit = await resolveUnit(providerId, req.body?.location_id);
+      if (!unit) return res.status(400).json({ error: 'Informe a unidade (location_id) do acesso.' });
 
-      const existing = await findProviderUser(providerId);
+      const existing = unit.user;
+      const role = provRows[0].person_type === 'PF' ? 'cooperado' : 'prestador';
       try {
         if (existing) {
           if (password) {
@@ -1667,28 +1710,28 @@ async function startServer() {
           }
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_updated',
-            meta: { provider_id: Number(providerId), user_id: existing.id, password_changed: !!password },
+            meta: { provider_id: Number(providerId), location_id: unit.location_id, user_id: existing.id, password_changed: !!password },
             ip: hashClientIp(req),
           });
         } else if (password) {
           // Caminho com senha manual (solicitação do cliente): comportamento atual.
           const pwHash = await bcrypt.hash(password, 10);
           const { rows: created } = await query(
-            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
-             VALUES ($1, $2, $3, 'prestador', $4, true, 'accepted') RETURNING id`,
-            [provRows[0].name, email, pwHash, providerId],
+            `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
+             VALUES ($1, $2, $3, $4, $5, $6, true, 'accepted') RETURNING id`,
+            [provRows[0].name, email, pwHash, role, providerId, unit.location_id],
           );
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_created',
-            meta: { provider_id: Number(providerId), user_id: created[0].id, invited: false },
+            meta: { provider_id: Number(providerId), location_id: unit.location_id, user_id: created[0].id, invited: false },
             ip: hashClientIp(req),
           });
         } else {
           // Convite: cria sem senha; prestador define a própria via link (setup token).
           const { rows: created } = await query(
-            `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
-             VALUES ($1, $2, NULL, 'prestador', $3, true, 'pending') RETURNING id`,
-            [provRows[0].name, email, providerId],
+            `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
+             VALUES ($1, $2, NULL, $3, $4, $5, true, 'pending') RETURNING id`,
+            [provRows[0].name, email, role, providerId, unit.location_id],
           );
           const token = generateToken();
           const tokenHash = await hashToken(token);
@@ -1701,34 +1744,36 @@ async function startServer() {
           await mailer.sendInvite(email, provRows[0].name, `${appUrl}/definir-senha?token=${token}`);
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_created',
-            meta: { provider_id: Number(providerId), user_id: created[0].id, invited: true },
+            meta: { provider_id: Number(providerId), location_id: unit.location_id, user_id: created[0].id, invited: true },
             ip: hashClientIp(req),
           });
         }
       } catch (e: any) {
         if (e?.code === '23505') {
           return res.status(409).json({
-            error: e?.constraint === 'users_provider_id_unique'
-              ? 'Este prestador já possui um acesso cadastrado.'
+            error: e?.constraint === 'users_location_id_unique'
+              ? 'Esta unidade já possui um acesso cadastrado.'
               : 'Este e-mail já está em uso por outro usuário.',
           });
         }
         throw e;
       }
-      const user = await findProviderUser(providerId);
-      res.json({ exists: !!user, user });
+      const units = await providerUnits(providerId);
+      res.json({ units, user: units.find((u) => u.location_id === unit.location_id)?.user ?? null });
     } catch (err: any) {
       console.error('POST /providers/:id/access:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Dispara e-mail de redefinição de senha para o acesso do prestador. Só admin.
+  // Dispara e-mail de redefinição de senha para o acesso de uma unidade. Só admin.
   app.post('/api/providers/:id/access/send-reset', authenticate, requireAdmin, async (req: any, res) => {
     try {
-      const user = await findProviderUser(req.params.id);
-      if (!user) return res.status(404).json({ error: 'Este prestador ainda não tem acesso cadastrado.' });
+      const unit = await resolveUnit(req.params.id, req.body?.location_id);
+      const user = unit?.user;
+      if (!user) return res.status(404).json({ error: 'Esta unidade ainda não tem acesso cadastrado.' });
       if (!user.is_active) return res.status(400).json({ error: 'Usuário inativo.' });
+      if (!user.email) return res.status(400).json({ error: 'Este acesso ainda não tem e-mail definido.' });
 
       await query(`UPDATE password_setup_tokens SET used_at = now() WHERE user_id = $1 AND kind = 'reset' AND used_at IS NULL`, [user.id]);
       const token = generateToken();
@@ -1739,7 +1784,7 @@ async function startServer() {
       await mailer.sendPasswordReset(user.email, `${appUrl}/definir-senha?token=${token}`);
       await auditLog({
         query, userId: req.user.id, action: 'password_reset_requested',
-        meta: { provider_id: Number(req.params.id), user_id: user.id, by_admin: true },
+        meta: { provider_id: Number(req.params.id), location_id: unit!.location_id, user_id: user.id, by_admin: true },
         ip: hashClientIp(req),
       });
       res.json({ ok: true });
@@ -3194,10 +3239,11 @@ async function startServer() {
         `SELECT id, label, cidade, uf, logradouro, numero, bairro
            FROM provider_locations
           WHERE provider_id = $1
+            AND ($2::bigint IS NULL OR id = $2)
             AND COALESCE(label,'') NOT ILIKE 'residencial%'
             AND COALESCE(sgu_location_code,'') !~ '-RES$'
           ORDER BY is_primary DESC NULLS LAST, id ASC`,
-        [provider_id],
+        [provider_id, userLocationId(req)],
       );
       res.json({ ...provider, locations });
     } catch (err: any) {
@@ -3228,7 +3274,9 @@ async function startServer() {
         const result = await query(baseQuery + ' ORDER BY ei.started_at DESC');
         instances = result.rows;
       } else {
-        const result = await query(baseQuery + ' WHERE ei.provider_id = $1 ORDER BY ei.started_at DESC', [provider_id]);
+        const result = await query(
+          baseQuery + ' WHERE ei.provider_id = $1 AND ($2::bigint IS NULL OR ei.location_id = $2) ORDER BY ei.started_at DESC',
+          [provider_id, userLocationId(req)]);
         instances = result.rows;
       }
       res.json(instances);
@@ -3257,8 +3305,10 @@ async function startServer() {
       // Anti-IDOR (mesma regra do loadInstanceForWrite): prestador/cooperado só lê a
       // própria avaliação; admin/auditoria leem qualquer uma.
       const { role: viewerRole, provider_id: viewerProviderId } = req.user;
+      const viewerLocationId = userLocationId(req);
       if (viewerRole !== 'admin' && viewerRole !== 'auditoria'
-          && String(instance.provider_id) !== String(viewerProviderId)) {
+          && (String(instance.provider_id) !== String(viewerProviderId)
+              || (viewerLocationId !== null && Number(instance.location_id) !== viewerLocationId))) {
         return res.status(403).json({ error: 'Você não tem permissão para ver esta avaliação' });
       }
 
@@ -3296,8 +3346,10 @@ async function startServer() {
       return null;
     }
     const { role, provider_id } = req.user;
+    const locationId = userLocationId(req);
     const isStaff = role === 'admin' || role === 'auditoria';
-    if (!isStaff && String(instance.provider_id) !== String(provider_id)) {
+    if (!isStaff && (String(instance.provider_id) !== String(provider_id)
+        || (locationId !== null && Number(instance.location_id) !== locationId))) {
       res.status(403).json({ error: 'Você não tem permissão para alterar esta avaliação' });
       return null;
     }
@@ -3553,7 +3605,8 @@ async function startServer() {
 
       void (async () => {
         await notifyEvent('reanalise_solicitada', { integral: true },
-          await prestadorRecipients(Number(reopened.provider_id)), { providerId: Number(reopened.provider_id) });
+          await prestadorRecipients(Number(reopened.provider_id), reopened.location_id ?? null),
+          { providerId: Number(reopened.provider_id) });
       })().catch((e) => console.error('[notify] site reanalise_solicitada (reopen):', e));
 
       res.json({ success: true, new_status: reopened.status });
@@ -4643,7 +4696,8 @@ async function startServer() {
         void (async () => {
           const { rows: [q] } = await query('SELECT code FROM eval_questions WHERE id = $1', [ans.question_id]);
           await notifyEvent('reanalise_solicitada', { question_code: q?.code ?? '' },
-            await prestadorRecipients(Number(ans.provider_id)), { providerId: Number(ans.provider_id) });
+            await prestadorRecipients(Number(ans.provider_id), ans.location_id ?? null),
+            { providerId: Number(ans.provider_id) });
         })().catch((e) => console.error('[notify] site reanalise_solicitada (auditorAction):', e));
       }
 
@@ -4896,7 +4950,7 @@ async function startServer() {
       }
 
       void (async () => {
-        const provRecipients = await prestadorRecipients(Number(inst.provider_id));
+        const provRecipients = await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null);
         const { rows: [pvName] } = await query('SELECT name FROM providers WHERE id = $1', [inst.provider_id]);
         // Decisão da rodada de aprovação dos modelos (2026-08-19): reprovado e
         // certificado emitido não vão por e-mail — só notificação no portal.
@@ -5133,7 +5187,7 @@ async function startServer() {
       void (async () => {
         const { rows: [pvManual] } = await query('SELECT name FROM providers WHERE id = $1', [provider_id]);
         await notifyEvent('plano_gerado', { provider_name: pvManual?.name ?? '' },
-          [...await prestadorRecipients(Number(provider_id)), ...await auditoriaRecipients()],
+          [...await prestadorRecipients(Number(provider_id), locationId ?? null), ...await auditoriaRecipients()],
           { providerId: Number(provider_id) });
       })().catch((e) => console.error('[notify] site plano_gerado (manual):', e));
       res.status(201).json(plan);
@@ -5154,7 +5208,9 @@ async function startServer() {
          WHERE p.id = $1
       `, [id]);
       if (!plan) return res.status(404).json({ error: 'not found' });
-      if (!isStaff(req.user.role) && Number(plan.provider_id) !== Number(req.user.provider_id)) {
+      const planLocationId = userLocationId(req);
+      if (!isStaff(req.user.role) && (Number(plan.provider_id) !== Number(req.user.provider_id)
+          || (planLocationId !== null && Number(plan.location_id) !== planLocationId))) {
         return res.status(403).json({ error: 'Unauthorized' });
       }
       const { rows: items } = await query(`
@@ -5287,13 +5343,14 @@ async function startServer() {
   // -----------------------------------------------------------------------
 
   // Carrega item + plano garantindo que pertence ao prestador logado
-  const loadItemForProvider = async (itemId: number, providerId: number) => {
+  const loadItemForProvider = async (itemId: number, providerId: number, locationId: number | null = null) => {
     const { rows: [row] } = await query(`
-      SELECT i.*, p.provider_id, p.closed_without_completion
+      SELECT i.*, p.provider_id, p.location_id, p.closed_without_completion
         FROM eval_action_items i JOIN eval_action_plans p ON p.id = i.plan_id
        WHERE i.id = $1
     `, [itemId]);
     if (!row || Number(row.provider_id) !== Number(providerId)) return null;
+    if (locationId !== null && Number(row.location_id) !== locationId) return null;
     return row;
   };
 
@@ -5317,8 +5374,9 @@ async function startServer() {
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
          WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
+           AND ($2::bigint IS NULL OR ei.location_id = $2)
          ORDER BY ei.submitted_at DESC
-      `, [providerId]);
+      `, [providerId, userLocationId(req)]);
       const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
       const surveys = rows.map((r: any) => {
         const base = {
@@ -5356,8 +5414,9 @@ async function startServer() {
         SELECT ei.id, ei.submitted_at
           FROM eval_instances ei
          WHERE ei.id = $1 AND ei.provider_id = $2 AND ei.submitted_at IS NOT NULL
+           AND ($3::bigint IS NULL OR ei.location_id = $3)
            AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
-      `, [instanceId, providerId]);
+      `, [instanceId, providerId, userLocationId(req)]);
       if (!inst) return res.status(409).json({ error: 'nenhuma pesquisa pendente para este endereço' });
 
       const b = req.body || {};
@@ -5422,10 +5481,10 @@ async function startServer() {
           LEFT JOIN eval_cycles c ON c.id = p.cycle_id
           LEFT JOIN provider_locations pl ON pl.id = p.location_id
           LEFT JOIN eval_action_items i ON i.plan_id = p.id
-         WHERE p.provider_id = $1
+         WHERE p.provider_id = $1 AND ($2::bigint IS NULL OR p.location_id = $2)
          GROUP BY p.id, c.label, pl.logradouro, pl.label, pl.cidade, pl.uf
          ORDER BY p.created_at DESC
-      `, [providerId]);
+      `, [providerId, userLocationId(req)]);
       const { computePlanStatus, planColor } = await import('./src/lib/actionPlan.js');
       const now = new Date();
       res.json(rows.map((r: any) => {
@@ -5529,7 +5588,8 @@ async function startServer() {
     try {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
-      res.json(await loadCertificates('ei.provider_id = $1', [providerId]));
+      res.json(await loadCertificates('ei.provider_id = $1 AND ($2::bigint IS NULL OR ei.location_id = $2)',
+        [providerId, userLocationId(req)]));
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
@@ -5546,8 +5606,9 @@ async function startServer() {
          WHERE ec.id = $1
            AND ei.id = ec.instance_id
            AND ei.provider_id = $2
+           AND ($3::bigint IS NULL OR ei.location_id = $3)
            AND ec.first_viewed_at IS NULL
-      `, [Number(req.params.id), providerId]);
+      `, [Number(req.params.id), providerId, userLocationId(req)]);
       res.json({ ok: true, updated: rowCount });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
@@ -5635,7 +5696,7 @@ async function startServer() {
   // "Iniciar ação" (mockup 5.4.4.6)
   app.post('/api/eval/action-items/:id/iniciar', authenticate, async (req: any, res) => {
     try {
-      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id);
+      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id, userLocationId(req));
       if (!item) return res.status(403).json({ error: 'Unauthorized' });
       if (item.status !== 'nao_iniciada') return res.status(409).json({ error: 'ação já iniciada' });
       if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
@@ -5658,7 +5719,7 @@ async function startServer() {
   // Estados válidos: em_andamento | solicitada_revisao | reprovada (re-tentativa) | nao_iniciada (auto-inicia)
   app.post('/api/eval/action-items/:id/responder', authenticate, upload.single('file'), async (req: any, res) => {
     try {
-      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id);
+      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id, userLocationId(req));
       if (!item) return res.status(403).json({ error: 'Unauthorized' });
       if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
       if (['aguardando_revisao','concluida'].includes(item.status)) {
@@ -5973,7 +6034,7 @@ async function startServer() {
       //    Exclui 'aguardando_revisao': item já concluído pelo prestador e à espera
       //    de validação do auditor não pode receber aviso de vencimento/atraso.
       const { rows: vencendo } = await query(`
-        SELECT it.id, it.what, it.due_date, ap.provider_id
+        SELECT it.id, it.what, it.due_date, ap.provider_id, ap.location_id
           FROM eval_action_items it
           JOIN eval_action_plans ap ON ap.id = it.plan_id
          WHERE it.status NOT IN ('concluida','aguardando_revisao')
@@ -5981,14 +6042,14 @@ async function startServer() {
            AND it.due_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 15`);
       for (const it of vencendo) {
         await notifyEvent('acao_vencendo', { what: it.what, due_date: it.due_date },
-          await prestadorRecipients(Number(it.provider_id)),
+          await prestadorRecipients(Number(it.provider_id), it.location_id ?? null),
           { providerId: Number(it.provider_id), dedupeRef: `item:${it.id}` });
       }
 
       // 2) Ação em atraso — prestador + auditoria.
       //    Exclui 'aguardando_revisao' pelo mesmo motivo do item (1) acima.
       const { rows: atrasadas } = await query(`
-        SELECT it.id, it.what, it.due_date, ap.provider_id, p.name AS provider_name
+        SELECT it.id, it.what, it.due_date, ap.provider_id, ap.location_id, p.name AS provider_name
           FROM eval_action_items it
           JOIN eval_action_plans ap ON ap.id = it.plan_id
           JOIN providers p ON p.id = ap.provider_id
@@ -5998,14 +6059,14 @@ async function startServer() {
       for (const it of atrasadas) {
         await notifyEvent('acao_atrasada',
           { what: it.what, due_date: it.due_date, provider_name: it.provider_name },
-          [...await prestadorRecipients(Number(it.provider_id)), ...await auditoriaRecipients()],
+          [...await prestadorRecipients(Number(it.provider_id), it.location_id ?? null), ...await auditoriaRecipients()],
           { providerId: Number(it.provider_id), dedupeRef: `item:${it.id}` });
       }
 
       // 3) Roteiro pendente a 30 dias do fim do ciclo — SÓ E-MAIL (spec).
       //    Prestador: individual por instância. Auditoria: resumo por ciclo.
       const { rows: pendentes } = await query(`
-        SELECT ei.id, ei.provider_id, c.id AS cycle_id, c.label, c.end_date
+        SELECT ei.id, ei.provider_id, ei.location_id, c.id AS cycle_id, c.label, c.end_date
           FROM eval_instances ei
           JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.status IN ('pendente', 'em_andamento')
@@ -6013,7 +6074,7 @@ async function startServer() {
            AND c.end_date - 30 <= CURRENT_DATE AND c.end_date >= CURRENT_DATE`);
       for (const inst of pendentes) {
         await notifyEvent('roteiro_pendente', { end_date: inst.end_date },
-          await prestadorRecipients(Number(inst.provider_id)),
+          await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
           { providerId: Number(inst.provider_id), dedupeRef: `inst:${inst.id}`, portal: false });
       }
       const byCycle = new Map<number, { label: string; end_date: string; count: number }>();
@@ -6029,13 +6090,13 @@ async function startServer() {
 
       // 4) Certificado a vencer em até 30 dias — prestador.
       const { rows: certs } = await query(`
-        SELECT ec.id, ec.valid_until, ei.provider_id
+        SELECT ec.id, ec.valid_until, ei.provider_id, ei.location_id
           FROM eval_certificates ec
           JOIN eval_instances ei ON ei.id = ec.instance_id
          WHERE ec.valid_until - 30 <= CURRENT_DATE AND ec.valid_until >= CURRENT_DATE`);
       for (const ct of certs) {
         await notifyEvent('certificado_vencendo', { valid_until: ct.valid_until },
-          await prestadorRecipients(Number(ct.provider_id)),
+          await prestadorRecipients(Number(ct.provider_id), ct.location_id ?? null),
           { providerId: Number(ct.provider_id), dedupeRef: `cert:${ct.id}` });
       }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import PasswordInput from '../../components/PasswordInput';
-import { ShieldCheck, Mail, Lock, Clock, Save, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, Clock, Save, Send, AlertCircle, CheckCircle2, MapPin } from 'lucide-react';
 
 function currentRole(): string | null {
   try {
@@ -11,83 +11,39 @@ function currentRole(): string | null {
   }
 }
 
+interface Unit {
+  location_id: number;
+  label: string | null;
+  cidade: string | null;
+  uf: string | null;
+  sgu_location_code: string | null;
+  suggested_email: string | null;
+  user: any | null;
+}
+
+const unitTitle = (u: Unit) =>
+  [u.label, u.cidade && u.uf ? `${u.cidade}/${u.uf}` : u.cidade].filter(Boolean).join(' — ') || `Unidade ${u.location_id}`;
+
 export default function ProviderAccessTab({ providerId }: { providerId: number | string }) {
   const canEdit = currentRole() === 'admin';
   const [loading, setLoading] = useState(true);
-  const [access, setAccess] = useState<any>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [sendingReset, setSendingReset] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [orphans, setOrphans] = useState<any[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
     fetchApi(`/providers/${providerId}/access`)
       .then((d) => {
-        setAccess(d);
-        setEmail(d.user?.email || d.suggested_email || '');
+        setUnits(d.units ?? []);
+        setOrphans(d.orphans ?? []);
+        setLoadError(null);
       })
-      .catch((e) => setFeedback({ type: 'err', msg: e.message }))
+      .catch((e) => setLoadError(e.message))
       .finally(() => setLoading(false));
-  }, [providerId]);
-
-  const exists = !!access?.exists;
-  const user = access?.user;
-
-  const submitAccess = async (withPassword: boolean) => {
-    if (!email.trim()) {
-      setFeedback({ type: 'err', msg: 'Informe o e-mail de acesso.' });
-      return;
-    }
-    setSaving(true);
-    setFeedback(null);
-    try {
-      const d = await fetchApi(`/providers/${providerId}/access`, {
-        method: 'POST',
-        body: JSON.stringify({ email, password: withPassword && password ? password : undefined }),
-      });
-      setAccess(d);
-      setPassword('');
-      setFeedback({
-        type: 'ok',
-        msg: exists ? 'Credenciais atualizadas.'
-          : withPassword ? 'Acesso criado com sucesso.'
-          : 'Acesso criado — convite enviado ao prestador.',
-      });
-    } catch (err: any) {
-      setFeedback({ type: 'err', msg: err.message });
-    } finally {
-      setSaving(false);
-    }
   };
 
-  const resendInvite = async () => {
-    if (!user?.id) return;
-    setSendingReset(true);
-    setFeedback(null);
-    try {
-      await fetchApi(`/users/${user.id}/resend-invite`, { method: 'POST' });
-      setFeedback({ type: 'ok', msg: 'Convite reenviado ao prestador.' });
-    } catch (err: any) {
-      setFeedback({ type: 'err', msg: err.message });
-    } finally {
-      setSendingReset(false);
-    }
-  };
-
-  const sendReset = async () => {
-    setSendingReset(true);
-    setFeedback(null);
-    try {
-      await fetchApi(`/providers/${providerId}/access/send-reset`, { method: 'POST' });
-      setFeedback({ type: 'ok', msg: 'E-mail de redefinição de senha enviado ao prestador.' });
-    } catch (err: any) {
-      setFeedback({ type: 'err', msg: err.message });
-    } finally {
-      setSendingReset(false);
-    }
-  };
+  useEffect(load, [providerId]);
 
   if (loading) {
     return (
@@ -102,15 +58,130 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
       <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
         <ShieldCheck className="h-5 w-5 shrink-0 text-blue-600" />
         <p className="text-sm leading-relaxed text-blue-900">
-          <span className="font-semibold">Acesso único:</span> cada prestador possui um único acesso ao portal, com
-          visão restrita aos próprios dados, garantindo privacidade e aderência à LGPD. O perfil padrão é{' '}
-          <span className="font-semibold">Prestador / Cooperado</span>.
+          <span className="font-semibold">Um acesso por unidade:</span> cada endereço comercial tem o seu próprio login,
+          com visão restrita às avaliações, planos e certificados daquela unidade — privacidade e aderência à LGPD.
+          O perfil padrão é <span className="font-semibold">Prestador / Cooperado</span>.
         </p>
+      </div>
+
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4" /> {loadError}
+        </div>
+      )}
+
+      {units.length === 0 && !loadError && (
+        <p className="text-sm text-gray-500">Este prestador não tem endereço comercial no cadastro.</p>
+      )}
+
+      {units.map((unit) => (
+        <UnitAccess key={unit.location_id} providerId={providerId} unit={unit} canEdit={canEdit} onChanged={load} />
+      ))}
+
+      {orphans.length > 0 && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+          <p className="text-sm font-semibold text-amber-900">Acessos sem unidade</p>
+          <p className="mt-1 text-xs text-amber-800">
+            Vínculo perdido numa recarga de cadastro. Enquanto não forem re-vinculados, enxergam todas as unidades do prestador.
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-amber-900">
+            {orphans.map((o) => (
+              <li key={o.id}>{o.email || 'sem e-mail'} <span className="text-xs text-amber-700">({o.role})</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UnitAccess({ providerId, unit, canEdit, onChanged }: {
+  key?: number; // mesma convenção do AlertGroupCard: os tipos de JSX daqui exigem key no shape
+  providerId: number | string; unit: Unit; canEdit: boolean; onChanged: () => void;
+}) {
+  const user = unit.user;
+  const exists = !!user;
+  const [email, setEmail] = useState(user?.email || unit.suggested_email || '');
+  const [password, setPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+
+  const submitAccess = async (withPassword: boolean) => {
+    if (!email.trim()) {
+      setFeedback({ type: 'err', msg: 'Informe o e-mail de acesso.' });
+      return;
+    }
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await fetchApi(`/providers/${providerId}/access`, {
+        method: 'POST',
+        body: JSON.stringify({
+          location_id: unit.location_id,
+          email,
+          password: withPassword && password ? password : undefined,
+        }),
+      });
+      setPassword('');
+      setFeedback({
+        type: 'ok',
+        msg: exists ? 'Credenciais atualizadas.'
+          : withPassword ? 'Acesso criado com sucesso.'
+          : 'Acesso criado — convite enviado ao prestador.',
+      });
+      onChanged();
+    } catch (err: any) {
+      setFeedback({ type: 'err', msg: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resendInvite = async () => {
+    if (!user?.id) return;
+    setSending(true);
+    setFeedback(null);
+    try {
+      await fetchApi(`/users/${user.id}/resend-invite`, { method: 'POST' });
+      setFeedback({ type: 'ok', msg: 'Convite reenviado ao prestador.' });
+    } catch (err: any) {
+      setFeedback({ type: 'err', msg: err.message });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const sendReset = async () => {
+    setSending(true);
+    setFeedback(null);
+    try {
+      await fetchApi(`/providers/${providerId}/access/send-reset`, {
+        method: 'POST',
+        body: JSON.stringify({ location_id: unit.location_id }),
+      });
+      setFeedback({ type: 'ok', msg: 'E-mail de redefinição de senha enviado ao prestador.' });
+    } catch (err: any) {
+      setFeedback({ type: 'err', msg: err.message });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-100 p-4">
+      <div className="mb-4 flex items-center gap-2">
+        <MapPin className="h-4 w-4 text-gray-400" />
+        <span className="text-sm font-semibold text-gray-800">{unitTitle(unit)}</span>
+        {unit.sgu_location_code && <span className="text-xs text-gray-400">{unit.sgu_location_code}</span>}
+        {!exists && (
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Sem acesso</span>
+        )}
       </div>
 
       {feedback && (
         <div
-          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+          className={`mb-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
             feedback.type === 'ok'
               ? 'border-green-100 bg-green-50 text-green-800'
               : 'border-red-100 bg-red-50 text-red-700'
@@ -182,18 +253,18 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
                 <button
                   type="button"
                   onClick={resendInvite}
-                  disabled={sendingReset}
+                  disabled={sending}
                   className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" />
-                  {sendingReset ? 'Enviando...' : 'Reenviar convite'}
+                  {sending ? 'Enviando...' : 'Reenviar convite'}
                 </button>
               )}
               {exists && user?.invite_status !== 'pending' && (
-                <button type="button" onClick={sendReset} disabled={sendingReset}
+                <button type="button" onClick={sendReset} disabled={sending}
                   className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50">
                   <Send className="h-4 w-4" />
-                  {sendingReset ? 'Enviando...' : 'Enviar redefinição por e-mail'}
+                  {sending ? 'Enviando...' : 'Enviar redefinição por e-mail'}
                 </button>
               )}
             </div>
@@ -220,7 +291,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
             </dl>
           ) : (
             <p className="mt-2 text-sm text-gray-500">
-              {exists ? 'Nenhum acesso registrado ainda.' : 'Acesso ainda não cadastrado para este prestador.'}
+              {exists ? 'Nenhum acesso registrado ainda.' : 'Acesso ainda não cadastrado para esta unidade.'}
             </p>
           )}
           {exists && (
@@ -235,6 +306,11 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
               {user?.invite_status === 'pending' && (
                 <span className="ml-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                   Convite pendente
+                </span>
+              )}
+              {!user?.email && (
+                <span className="ml-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  Sem e-mail
                 </span>
               )}
             </div>

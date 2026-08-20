@@ -70,6 +70,10 @@ test('providerUnits casa o login via user_locations (não via users.location_id)
       'A com vínculo em user_locations => user preenchido');
     assert.equal(units.find((u) => u.location_id === locB)?.user, null, 'B continua sem vínculo => null');
   } finally {
+    // users.provider_id é ON DELETE SET NULL (não cascateia), então o usuário de
+    // teste sobrevive ao DELETE do provider — apaga por e-mail para o teste ser
+    // re-executável (senão o próximo run colide na UNIQUE(email)).
+    await query(`DELETE FROM users WHERE email = $1`, ['_test_ula_legado@example.com']);
     await query(`DELETE FROM providers WHERE sgu_code = $1`, [TEST_SGU]);
     await pool.end();
   }

@@ -210,9 +210,6 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
       {orphans.length > 0 && (
         <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
           <p className="text-sm font-semibold text-amber-900">Acessos sem unidade</p>
-          <p className="mt-1 text-xs text-amber-800">
-            Vínculo perdido numa recarga de cadastro. Enquanto não forem re-vinculados, enxergam todas as unidades do prestador.
-          </p>
           <ul className="mt-2 space-y-1 text-sm text-amber-900">
             {orphans.map((o) => (
               <li key={o.id}>{o.email || 'sem e-mail'} <span className="text-xs text-amber-700">({o.role})</span></li>

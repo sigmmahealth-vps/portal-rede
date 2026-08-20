@@ -119,12 +119,12 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
         </p>
       </div>
 
-      {canEdit && units.length > 0 && (
+      {canEdit && units.length > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-gray-500">
             {groupMode
               ? 'Marque 2 ou mais unidades e escolha o acesso que as centraliza.'
-              : `${units.length} unidade${units.length > 1 ? 's' : ''} de atendimento`}
+              : `${units.length} unidades de atendimento`}
           </p>
           {!groupMode ? (
             <button

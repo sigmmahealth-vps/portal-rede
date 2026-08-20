@@ -31,7 +31,6 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   const canEdit = currentRole() === 'admin';
   const [loading, setLoading] = useState(true);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [orphans, setOrphans] = useState<any[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [groupTarget, setGroupTarget] = useState<number | ''>('');
@@ -44,7 +43,6 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
     fetchApi(`/providers/${providerId}/access`)
       .then((d) => {
         setUnits(d.units ?? []);
-        setOrphans(d.orphans ?? []);
         setLoadError(null);
       })
       .catch((e) => setLoadError(e.message))
@@ -207,16 +205,6 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
         />
       ))}
 
-      {orphans.length > 0 && (
-        <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
-          <p className="text-sm font-semibold text-amber-900">Acessos sem unidade</p>
-          <ul className="mt-2 space-y-1 text-sm text-amber-900">
-            {orphans.map((o) => (
-              <li key={o.id}>{o.email || 'sem e-mail'} <span className="text-xs text-amber-700">({o.role})</span></li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

@@ -1017,9 +1017,11 @@ async function startServer() {
   app.get('/api/users', authenticate, requireAdmin, async (_req: any, res) => {
     try {
       const { rows } = await query(
-        `SELECT id, name, email, role, is_active, invite_status, last_login_at, created_at
-         FROM users
-         ORDER BY created_at DESC`
+        `SELECT u.id, u.name, u.email, u.role, u.is_active, u.invite_status, u.last_login_at, u.created_at,
+                u.provider_id, p.sgu_code AS provider_code
+         FROM users u
+         LEFT JOIN providers p ON p.id = u.provider_id
+         ORDER BY u.created_at DESC`
       );
       res.json(rows);
     } catch (err: any) {
@@ -1050,6 +1052,12 @@ async function startServer() {
         }
         if (targetId === req.user.id && target.role === 'admin' && newRole !== 'admin') {
           return res.status(400).json({ error: 'Você não pode rebaixar a própria conta.' });
+        }
+        // Fronteira de conceito: usuário operacional (admin/auditoria) e acesso de
+        // prestador (prestador/cooperado) nunca se convertem um no outro.
+        const OPERATOR_ROLES = ['admin', 'auditoria'];
+        if (OPERATOR_ROLES.includes(newRole) !== OPERATOR_ROLES.includes(target.role)) {
+          return res.status(400).json({ error: 'Não é possível converter entre usuário operacional e acesso de prestador.' });
         }
       }
 
@@ -1698,7 +1706,13 @@ async function startServer() {
           });
         }
       } catch (e: any) {
-        if (e?.code === '23505') return res.status(409).json({ error: 'Este e-mail já está em uso por outro usuário.' });
+        if (e?.code === '23505') {
+          return res.status(409).json({
+            error: e?.constraint === 'users_provider_id_unique'
+              ? 'Este prestador já possui um acesso cadastrado.'
+              : 'Este e-mail já está em uso por outro usuário.',
+          });
+        }
         throw e;
       }
       const user = await findProviderUser(providerId);

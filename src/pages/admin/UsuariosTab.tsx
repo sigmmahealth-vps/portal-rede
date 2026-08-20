@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Search, MoreVertical } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
 import NovoUsuarioModal from './NovoUsuarioModal';
@@ -11,7 +12,18 @@ interface User {
   is_active: boolean;
   invite_status: 'pending' | 'accepted' | 'expired';
   last_login_at: string | null;
+  provider_id: number | null;
+  provider_code: string | null;
 }
+
+// Fronteira de conceito: Equipe interna (operadores) × Acessos de prestadores.
+const OPERATOR_ROLES = ['admin', 'auditoria'];
+type Segment = 'equipe' | 'prestadores';
+
+const SEGMENTS: { id: Segment; label: string }[] = [
+  { id: 'equipe', label: 'Equipe interna' },
+  { id: 'prestadores', label: 'Acessos de prestadores' },
+];
 
 const STATUS_BADGE = (u: User) => {
   if (!u.is_active) return { label: 'Inativo', color: 'bg-red-100 text-red-700' };
@@ -22,8 +34,24 @@ const STATUS_BADGE = (u: User) => {
   return { label: 'Ativo', color: 'bg-emerald-100 text-emerald-700' };
 };
 
+const STATUS_OPTIONS: Record<Segment, string[]> = {
+  equipe: ['Ativo', 'Pendente', 'Expirado', 'Inativo'],
+  prestadores: ['Ativo', 'Pendente', 'Sem e-mail', 'Expirado', 'Inativo'],
+};
+const ROLE_OPTIONS: Record<Segment, { value: string; label: string }[]> = {
+  equipe: [
+    { value: 'auditoria', label: 'Auditoria' },
+    { value: 'admin', label: 'Admin' },
+  ],
+  prestadores: [
+    { value: 'prestador', label: 'Prestador' },
+    { value: 'cooperado', label: 'Cooperado' },
+  ],
+};
+
 export default function UsuariosTab() {
   const [users, setUsers] = useState<User[]>([]);
+  const [segment, setSegment] = useState<Segment>('equipe');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,6 +60,10 @@ export default function UsuariosTab() {
   const [emailModalUser, setEmailModalUser] = useState<User | null>(null);
   const [emailDraft, setEmailDraft] = useState('');
   const [savingEmail, setSavingEmail] = useState(false);
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const load = () => {
     setLoading(true);
@@ -40,16 +72,35 @@ export default function UsuariosTab() {
 
   useEffect(load, []);
 
-  const [roleFilter, setRoleFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const switchSegment = (s: Segment) => {
+    setSegment(s);
+    setRoleFilter('');
+    setStatusFilter('');
+    setMenuOpenFor(null);
+  };
 
-  const filtered = users.filter((u) => {
+  const inSegment = (u: User) =>
+    segment === 'equipe' ? OPERATOR_ROLES.includes(u.role) : !OPERATOR_ROLES.includes(u.role);
+
+  const segmentUsers = users.filter(inSegment);
+
+  const filtered = segmentUsers.filter((u) => {
     const q = search.toLowerCase();
-    if (q && !u.name.toLowerCase().includes(q) && !(u.email ?? '').toLowerCase().includes(q)) return false;
+    if (
+      q &&
+      !u.name.toLowerCase().includes(q) &&
+      !(u.email ?? '').toLowerCase().includes(q) &&
+      !(u.provider_code ?? '').toLowerCase().includes(q)
+    ) return false;
     if (roleFilter && u.role !== roleFilter) return false;
     if (statusFilter && STATUS_BADGE(u).label !== statusFilter) return false;
     return true;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  useEffect(() => { setPage(1); }, [search, roleFilter, statusFilter, segment, pageSize]);
 
   const patch = async (id: number, body: Partial<{ role: User['role']; is_active: boolean }>) => {
     setMenuOpenFor(null);
@@ -80,33 +131,43 @@ export default function UsuariosTab() {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+        {SEGMENTS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => switchSegment(s.id)}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              segment === s.id ? 'bg-white shadow-sm text-[#00995D]' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nome ou e-mail..."
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder={segment === 'prestadores' ? 'Buscar nome, e-mail ou código...' : 'Buscar nome ou e-mail...'}
             className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500" />
         </div>
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
           className="border border-gray-300 rounded-md py-2 px-2 text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500">
           <option value="">Função: todas</option>
-          <option value="prestador">Prestador</option>
-          <option value="cooperado">Cooperado</option>
-          <option value="auditoria">Auditoria</option>
-          <option value="admin">Admin</option>
+          {ROLE_OPTIONS[segment].map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="border border-gray-300 rounded-md py-2 px-2 text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500">
           <option value="">Status: todos</option>
-          <option value="Ativo">Ativo</option>
-          <option value="Pendente">Pendente</option>
-          <option value="Sem e-mail">Sem e-mail</option>
-          <option value="Expirado">Expirado</option>
-          <option value="Inativo">Inativo</option>
+          {STATUS_OPTIONS[segment].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <span className="text-sm text-gray-400 whitespace-nowrap">{filtered.length} de {users.length}</span>
-        <button onClick={() => setOpenModal(true)} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-md font-medium hover:bg-emerald-700 whitespace-nowrap">
-          <Plus className="h-4 w-4" /> Novo usuário
-        </button>
+        <span className="text-sm text-gray-400 whitespace-nowrap">{filtered.length} de {segmentUsers.length}</span>
+        {segment === 'equipe' && (
+          <button onClick={() => setOpenModal(true)} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-md font-medium hover:bg-emerald-700 whitespace-nowrap">
+            <Plus className="h-4 w-4" /> Novo usuário
+          </button>
+        )}
       </div>
 
       {error && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{error}</div>}
@@ -127,12 +188,22 @@ export default function UsuariosTab() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((u) => {
+            {pageRows.map((u) => {
               const s = STATUS_BADGE(u);
               return (
                 <tr key={u.id} className="border-t border-gray-100">
                   <td className="p-3 font-medium text-gray-900">
-                    <div className="max-w-[240px] truncate" title={u.name}>{u.name}</div>
+                    {segment === 'prestadores' && u.provider_id ? (
+                      <Link to={`/admin/prestadores/${u.provider_id}`} title={u.name}
+                        className="block max-w-[240px] truncate text-[#00995D] hover:underline">
+                        {u.name}
+                      </Link>
+                    ) : (
+                      <div className="max-w-[240px] truncate" title={u.name}>{u.name}</div>
+                    )}
+                    {segment === 'prestadores' && u.provider_code && (
+                      <span className="text-xs text-gray-400">{u.provider_code}</span>
+                    )}
                   </td>
                   <td className="p-3 text-gray-700">
                     {u.email
@@ -177,6 +248,40 @@ export default function UsuariosTab() {
             )}
           </tbody>
         </table>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500">
+          <p>
+            Mostrando <span className="font-medium text-gray-700">
+              {((safePage - 1) * pageSize + 1).toLocaleString('pt-BR')}–{Math.min(safePage * pageSize, filtered.length).toLocaleString('pt-BR')}
+            </span>{' de '}<span className="font-medium text-gray-700">{filtered.length.toLocaleString('pt-BR')}</span>
+          </p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2">
+              <span>Por página</span>
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}
+                className="rounded-lg border border-gray-200 py-1 pl-2 pr-6 text-sm text-gray-700 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20">
+                <option value={10}>10</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40">
+                  Anterior
+                </button>
+                <span className="tabular-nums">Página {safePage} de {totalPages}</span>
+                <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40">
+                  Próxima
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {openModal && <NovoUsuarioModal onClose={() => setOpenModal(false)} onCreated={load} />}

@@ -1782,6 +1782,63 @@ async function startServer() {
     }
   });
 
+  // Agrupa um subconjunto de unidades sob um único acesso (login), marcando-o
+  // `agrupado=true`. Transação "destacar-antes-de-reatar": libera a UNIQUE de
+  // cada unidade antes de reatar no destino; logins que ficarem sem nenhuma
+  // unidade são desativados (nunca apagados — access_logs/auditoria LGPD).
+  app.post('/api/providers/:id/access/group', authenticate, async (req: any, res) => {
+    if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+    const providerId = req.params.id;
+    const { target_user_id, location_ids } = req.body ?? {};
+    if (!target_user_id || !Array.isArray(location_ids) || !location_ids.length) {
+      return res.status(400).json({ error: 'target_user_id e location_ids são obrigatórios.' });
+    }
+    try {
+      const { rows: t } = await query(
+        'SELECT id, email FROM users WHERE id = $1 AND provider_id = $2',
+        [target_user_id, Number(providerId)],
+      );
+      if (!t.length) return res.status(404).json({ error: 'Acesso destino não encontrado neste prestador.' });
+      // Endurecimento: não centralizar sob "Sem e-mail" — o destino precisa de e-mail real.
+      if (!t[0].email) return res.status(409).json({ error: 'Defina um e-mail no acesso destino antes de agrupar.' });
+
+      await withTransaction(async (c) => {
+        // 1) DESTACAR: remove os vínculos dessas unidades de quem quer que os tenha (libera a UNIQUE).
+        await c.query(
+          `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[])`,
+          [Number(providerId), location_ids],
+        );
+        // 2) REATAR ao destino (FK composta rejeita location de outro provider).
+        for (const lid of location_ids) {
+          await c.query(
+            `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3)`,
+            [target_user_id, lid, Number(providerId)],
+          );
+        }
+        await c.query(`UPDATE users SET agrupado = true WHERE id = $1`, [target_user_id]);
+        // 3) Logins do prestador que ficaram sem unidade: DESATIVAR (não apagar).
+        await c.query(
+          `UPDATE users SET is_active = false, email = NULL
+             WHERE provider_id = $1 AND id <> $2
+               AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = users.id)`,
+          [Number(providerId), target_user_id],
+        );
+      });
+      await auditLog({
+        query, userId: req.user.id, action: 'provider_access_grouped',
+        meta: { provider_id: Number(providerId), target_user_id, location_ids },
+        ip: hashClientIp(req),
+      });
+      res.json({ units: await providerUnits(providerId) });
+    } catch (err: any) {
+      if (err?.code === '23503') {
+        return res.status(409).json({ error: 'Unidade de outro prestador não pode ser agrupada.' });
+      }
+      console.error('POST /providers/:id/access/group:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Dispara e-mail de redefinição de senha para o acesso de uma unidade. Só admin.
   app.post('/api/providers/:id/access/send-reset', authenticate, requireAdmin, async (req: any, res) => {
     try {

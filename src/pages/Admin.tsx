@@ -523,12 +523,12 @@ export default function Admin() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] table-fixed text-left border-collapse [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_td]:align-top [&_th]:align-bottom">
                 <colgroup>
-                  <col className="w-[20%]" />
+                  <col className="w-[19%]" />
                   <col className="w-[15%]" />
                   <col className="w-[9%]" />
-                  <col className="w-[14%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[9%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[13%]" />
                   <col className="w-[11%]" />
                 </colgroup>
                 <thead>

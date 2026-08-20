@@ -229,18 +229,9 @@ async function initData() {
     await query(insertItemSql, [cycleId, 'Optante pelo Simples Nacional', 'Comprovante de opção pelo Simples Nacional (se aplicável).', false]);
   }
 
-  // Ensure cooperado user exists (idempotent)
-  try {
-    const hash = bcrypt.hashSync('senha123', 10);
-    await query(
-      `INSERT INTO users (name, email, password, role, provider_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (email) DO NOTHING`,
-      ['Dra. Ana Souza', 'cooperado@unimed.com', hash, 'cooperado', null]
-    );
-  } catch (e) {
-    console.error('Error ensuring users:', e);
-  }
+  // (Removido) O seed idempotente de "Dra. Ana Souza" (cooperado@unimed.com)
+  // recriava o usuário a cada boot, ressuscitando a conta de demo mesmo depois
+  // de excluída. A base real vem do import de prestadores + provision-users.
 }
 
 async function startServer() {

@@ -125,7 +125,7 @@ async function main() {
       for (const p of providers) {
         const evalScriptId = p.roteiro_cod ? scriptByCod.get(p.roteiro_cod) ?? null : null;
         if (p.roteiro_cod && evalScriptId == null) naoResolvidos.add(p.roteiro_cod);
-        await client.query<{ id: number }>(
+        await client.query(
           `INSERT INTO providers
              (sgu_code, name, trade_name, person_type, cnpj, cpf, council_registry,
               specialties, provider_type, provider_group, area_atuacao, status,

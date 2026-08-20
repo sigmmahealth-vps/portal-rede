@@ -33,8 +33,12 @@ CREATE INDEX IF NOT EXISTS user_locations_user_idx ON user_locations (user_id);
 -- Backfill: 1 vínculo por login que hoje tem location_id não-nulo. Os location_id
 -- NULL de hoje (órfãos de reimport) NÃO viram vínculo — ficam sem linha e aparecem
 -- como "precisa responsável" para o admin (default DENY, nunca grant automático).
+-- O JOIN por provider_id blinda contra dado legado inconsistente (location de outro
+-- prestador): a linha mismatched cai no mesmo balde "sem vínculo" em vez de abortar
+-- a migration inteira via violação da FK composta.
 INSERT INTO user_locations (user_id, location_id, provider_id)
 SELECT u.id, u.location_id, u.provider_id
   FROM users u
+  JOIN provider_locations pl ON pl.id = u.location_id AND pl.provider_id = u.provider_id
  WHERE u.location_id IS NOT NULL AND u.provider_id IS NOT NULL
 ON CONFLICT DO NOTHING;

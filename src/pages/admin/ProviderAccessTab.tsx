@@ -129,6 +129,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
             {selected.size} unidade{selected.size > 1 ? 's' : ''} selecionada{selected.size > 1 ? 's' : ''}
           </span>
           <select
+            aria-label="Acesso destino"
             value={groupTarget}
             onChange={(e) => setGroupTarget(e.target.value ? Number(e.target.value) : '')}
             className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
@@ -161,7 +162,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
 
       {units.map((unit) => (
         <UnitAccess
-          key={unit.location_id}
+          key={`${unit.location_id}:${unit.user?.id ?? 'none'}`}
           providerId={providerId}
           unit={unit}
           canEdit={canEdit}

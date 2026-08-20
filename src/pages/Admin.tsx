@@ -523,12 +523,12 @@ export default function Admin() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] table-fixed text-left border-collapse [&_td]:pr-4 [&_th]:pr-4 [&_td:last-child]:pr-0 [&_th:last-child]:pr-0 [&_td]:align-top [&_th]:align-bottom">
                 <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[14%]" />
                   <col className="w-[22%]" />
-                  <col className="w-[18%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[13%]" />
-                  <col className="w-[13%]" />
+                  <col className="w-[9%]" />
                   <col className="w-[11%]" />
                 </colgroup>
                 <thead>
@@ -550,21 +550,21 @@ export default function Admin() {
                       <tr
                         key={`${prestador.id}-${normCity(unidadeLabel) || i}`}
                         onClick={() => navigate(`/admin/prestadores/${prestador.id}`)}
-                        className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                        className="border-b border-gray-100 hover:bg-gray-50/60 transition-colors cursor-pointer"
                       >
-                        <td className="py-4 font-medium text-gray-800 break-words">{prestador.name}</td>
-                        <td className="py-4 text-gray-600 whitespace-nowrap">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
-                        <td className="py-4 text-gray-600">{prestador.code || '-'}</td>
-                        <td className="py-4 text-gray-600 break-words">{prestador.provider_group || '-'}</td>
-                        <td className="py-4 text-gray-600 break-words">{unidadeLabel || '-'}</td>
-                        <td className="py-4 text-gray-600">{prestador.qualification_level || '-'}</td>
-                        <td className="py-4">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                        <td className="py-3 font-medium text-gray-800 break-words">{prestador.name}</td>
+                        <td className="py-3 text-gray-500 whitespace-nowrap tabular-nums">{formatDoc(prestador.cnpj || prestador.cpf) || '-'}</td>
+                        <td className="py-3 text-gray-500 tabular-nums">{prestador.code || '-'}</td>
+                        <td className="py-3 text-gray-600 break-words">{prestador.provider_group || '-'}</td>
+                        <td className="py-3 text-gray-700 break-words">{unidadeLabel || '-'}</td>
+                        <td className="py-3 text-gray-600">{prestador.qualification_level || '-'}</td>
+                        <td className="py-3">
+                          <span className={`inline-block whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium ${
                             String(prestador.status).toLowerCase() === 'ativo'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-red-50 text-red-700'
                           }`}>
-                            {prestador.status}
+                            {titleCase(String(prestador.status))}
                           </span>
                         </td>
                       </tr>

@@ -388,7 +388,7 @@ export default function Admin() {
   };
 
   const exportarCSV = () => {
-    const header = ['Nome', 'CNPJ/CPF', 'Código', 'Grupo de prestador', 'Unidade', 'Município', 'UF', 'Nível Qualificação', 'Status'];
+    const header = ['Nome', 'CNPJ/CPF', 'Código', 'Grupo de prestador', 'Unidade', 'Município', 'UF', 'Selo', 'Status'];
     const linhas = filteredRows.map((r) => [
       r.p.name, formatDoc(r.p.cnpj || r.p.cpf), r.p.code, r.p.provider_group,
       unidadeDe(r), titleCase(cleanCity(r.cidade)), r.uf, r.seal ?? '', r.p.status,
@@ -534,15 +534,15 @@ export default function Admin() {
                   <col className="w-[14%]" />
                 </colgroup>
                 <thead>
-                  <tr className="border-b border-gray-100 text-sm text-gray-500">
+                  <tr className="border-b border-gray-100 text-[13px] text-gray-500">
                     <th className="pb-3 font-medium">Nome</th>
                     <th className="pb-3 font-medium">Grupo de prestador</th>
                     <th className="pb-3 font-medium">Unidade</th>
-                    <th className="pb-3 font-medium">Nível Qualificação</th>
+                    <th className="pb-3 font-medium">Selo</th>
                     <th className="pb-3 font-medium">Status</th>
                   </tr>
                 </thead>
-                <tbody className="text-sm">
+                <tbody className="text-[13px]">
                   {pageRows.map((row, i) => {
                     const prestador = row.p;
                     const unidadeLabel = unidadeDe(row);

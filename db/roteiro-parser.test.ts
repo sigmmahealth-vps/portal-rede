@@ -86,6 +86,8 @@ function buildBuffer2(): Buffer {
     ['2.1.2 Critério eliminatório do processo', '', '10', '10'],
     // normal: isEliminatory should be false
     ['2.1.3 Critério comum', '', '5', '5'],
+    // DL: Documento Legal é eliminatório (reprovação rebaixa a Bronze)
+    ['2.1.4 Possui alvará sanitário? "DL"', '', '10', '10'],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
@@ -108,6 +110,14 @@ test('parseWorkbook: isEliminatory detecta "eliminatório" e normal = false', ()
   assert.ok(elim && normal, 'ambas as questões devem existir');
   assert.equal(elim.isEliminatory, true);
   assert.equal(normal.isEliminatory, false);
+});
+
+test('parseWorkbook: critério DL (Documento Legal) é eliminatório', () => {
+  const parsed = parseWorkbook(buildBuffer2(), 'OPS-RED-FOR-099 - Extra.xlsx');
+  const dl = parsed.questions.find((q) => q.code === '2.1.4');
+  assert.ok(dl, 'questão 2.1.4 deve existir');
+  assert.equal(dl.dimension, 'Documento Legal');
+  assert.equal(dl.isEliminatory, true);
 });
 
 test('parseWorkbook extrai a data da revisão quando presente', () => {

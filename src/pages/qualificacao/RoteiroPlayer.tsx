@@ -192,7 +192,7 @@ export default function RoteiroPlayer({
   scriptId: number;
   instanceId?: number;
   locationId?: number;
-  onClose: (opts?: { submitted?: boolean }) => void;
+  onClose: (opts?: { submitted?: boolean; survey?: boolean }) => void;
   providerId: number;
   readOnly?: boolean;
 }) {
@@ -440,9 +440,15 @@ export default function RoteiroPlayer({
 
   const finishEvaluation = async (instId: number) => {
     try {
-      await fetchApi(`/eval/instances/${instId}/submit`, { method: 'POST' });
-      alert('Avaliação enviada para análise!\n\nAgora responda à Pesquisa de Satisfação (leva ~2 min) e ganhe +10 pontos na sua qualificação — prazo de 7 dias.');
-      onClose({ submitted: true });
+      const r = await fetchApi(`/eval/instances/${instId}/submit`, { method: 'POST' });
+      // Pesquisa de Satisfação só existe no primeiro envio; reenvio pós-reanálise
+      // não gera pesquisa nova.
+      if (r?.first_submission) {
+        alert('Avaliação enviada para análise!\n\nAgora responda à Pesquisa de Satisfação (leva ~2 min) e ganhe +10 pontos na sua qualificação — prazo de 7 dias.');
+      } else {
+        alert('Avaliação reenviada para análise!');
+      }
+      onClose({ submitted: true, survey: !!r?.first_submission });
     } catch (err: any) {
       alert(err?.message || 'Erro ao enviar avaliação');
     }

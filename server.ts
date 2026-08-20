@@ -3275,7 +3275,7 @@ async function startServer() {
   // Carrega a instância garantindo posse (anti-IDOR). Prestador só acessa a própria;
   // admin/auditoria acessam qualquer uma. Responde 404/403 e retorna null se negado.
   const loadInstanceForWrite = async (req: any, res: any): Promise<any | null> => {
-    const { rows } = await query('SELECT id, provider_id, location_id, status, script_id FROM eval_instances WHERE id = $1', [req.params.id]);
+    const { rows } = await query('SELECT id, provider_id, location_id, status, script_id, submitted_at FROM eval_instances WHERE id = $1', [req.params.id]);
     const instance = rows[0] as any;
     if (!instance) {
       res.status(404).json({ error: 'Avaliação não encontrada' });
@@ -3423,6 +3423,9 @@ async function startServer() {
         return res.status(409).json({ error: 'critérios aguardando reanálise', pending_answer_ids: pending.map((r: any) => Number(r.id)) });
       }
 
+      // Pesquisa de Satisfação nasce só no PRIMEIRO envio; reenvios (reanálise/
+      // devolução) preservam submitted_at e não geram nova pesquisa.
+      const firstSubmission = !instance.submitted_at;
       await query(
         `UPDATE eval_instances SET status = 'em_analise', submitted_at = COALESCE(submitted_at, now()) WHERE id = $1`,
         [req.params.id],
@@ -3444,7 +3447,7 @@ async function startServer() {
           await auditoriaRecipients(), { providerId: Number(instance.provider_id), email: false });
       })().catch((e) => console.error('[notify] site roteiro_enviado:', e));
 
-      res.json({ success: true });
+      res.json({ success: true, first_submission: firstSubmission });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

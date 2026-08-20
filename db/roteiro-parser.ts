@@ -236,7 +236,9 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
       weight,
       maxScore,
       evidenceRequired: !!guidance,
-      isEliminatory: /mandat[óo]ri|eliminat[óo]ri/i.test(a),
+      // Critérios DL (Documento Legal) são eliminatórios: reprovação rebaixa a Bronze
+      // independentemente da pontuação (ver computeSeal).
+      isEliminatory: dimension === 'Documento Legal' || /mandat[óo]ri|eliminat[óo]ri/i.test(a),
       order: nextOrder(orderBySection, sectionTmp),
     });
   };

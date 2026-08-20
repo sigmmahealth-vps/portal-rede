@@ -169,7 +169,8 @@ export default function PrestadorView({ user }: { user: any }) {
           setActivePlayer(null);
           loadData();
           loadSurvey();
-          if (opts?.submitted) setActiveTab('pesquisa');
+          // Só leva à pesquisa no primeiro envio — reenvio não gera pesquisa nova.
+          if (opts?.submitted && opts?.survey) setActiveTab('pesquisa');
         }}
       />
     );

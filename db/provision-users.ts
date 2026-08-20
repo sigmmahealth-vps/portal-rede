@@ -62,10 +62,16 @@ async function main() {
   let created = 0;
   const insert = async (c: any, email: string | null) => {
     try {
-      await query(
+      const { rows } = await query(
         `INSERT INTO users (name, email, password, role, provider_id, location_id, is_active, invite_status)
-         VALUES ($1, $2, NULL, $3, $4, $5, true, 'pending')`,
+         VALUES ($1, $2, NULL, $3, $4, $5, true, 'pending') RETURNING id`,
         [c.name, email, c.person_type === 'PF' ? 'cooperado' : 'prestador', c.provider_id, c.location_id]
+      );
+      // Dual-write durante a transição p/ Fatia 7: user_locations já é a fonte
+      // de verdade do escopo (Fatia 4), users.location_id fica até a 0037.
+      await query(
+        `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+        [rows[0].id, c.location_id, c.provider_id]
       );
       created++;
     } catch (e: any) {

@@ -1626,7 +1626,8 @@ async function startServer() {
               LOWER(TRIM(pl.email)) AS cadastro_email,
               u.id, u.name, u.email, u.role, u.is_active, u.last_login_at, u.last_login_ip, u.invite_status
          FROM provider_locations pl
-         LEFT JOIN users u ON u.location_id = pl.id AND u.role = ANY($2)
+         LEFT JOIN user_locations ul ON ul.location_id = pl.id
+         LEFT JOIN users u ON u.id = ul.user_id AND u.role = ANY($2)
         WHERE pl.provider_id = $1
           AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
           AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'
@@ -1727,6 +1728,11 @@ async function startServer() {
              VALUES ($1, $2, $3, $4, $5, $6, true, 'accepted') RETURNING id`,
             [provRows[0].name, email, pwHash, role, providerId, unit.location_id],
           );
+          // Dual-write durante a transição p/ Fatia 7: users.location_id continua
+          // sendo escrito acima, mas o escopo real do portal já vem de user_locations.
+          await query(
+            `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+            [created[0].id, unit.location_id, Number(providerId)]);
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_created',
             meta: { provider_id: Number(providerId), location_id: unit.location_id, user_id: created[0].id, invited: false },
@@ -1739,6 +1745,10 @@ async function startServer() {
              VALUES ($1, $2, NULL, $3, $4, $5, true, 'pending') RETURNING id`,
             [provRows[0].name, email, role, providerId, unit.location_id],
           );
+          // Dual-write durante a transição p/ Fatia 7 (ver comentário no caminho com senha acima).
+          await query(
+            `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+            [created[0].id, unit.location_id, Number(providerId)]);
           const token = generateToken();
           const tokenHash = await hashToken(token);
           const expiresAt = expirationFor('invite');

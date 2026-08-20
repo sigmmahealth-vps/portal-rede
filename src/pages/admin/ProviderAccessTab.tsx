@@ -34,6 +34,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   const [groupTarget, setGroupTarget] = useState<number | ''>('');
   const [grouping, setGrouping] = useState(false);
   const [groupError, setGroupError] = useState<string | null>(null);
+  const [groupMode, setGroupMode] = useState(false); // liga a seleção múltipla p/ agrupar
 
   const load = () => {
     setLoading(true);
@@ -107,11 +108,40 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
       <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
         <ShieldCheck className="h-5 w-5 shrink-0 text-blue-600" />
         <p className="text-sm leading-relaxed text-blue-900">
-          <span className="font-semibold">Um acesso por unidade:</span> cada endereço comercial tem o seu próprio login,
+          <span className="font-semibold">Um acesso por unidade (padrão):</span> cada endereço comercial tem seu próprio login,
           com visão restrita às avaliações, planos e certificados daquela unidade — privacidade e aderência à LGPD.
-          O perfil padrão é <span className="font-semibold">Prestador / Cooperado</span>.
+          Perfil padrão: <span className="font-semibold">Prestador / Cooperado</span>.{' '}
+          <span className="font-semibold">Precisa centralizar?</span> Quando o mesmo responsável cuida de várias unidades,
+          você pode <span className="font-semibold">agrupar</span> unidades sob um único acesso (um e-mail só).
         </p>
       </div>
+
+      {canEdit && units.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-gray-500">
+            {groupMode
+              ? 'Marque 2 ou mais unidades e escolha o acesso que as centraliza.'
+              : `${units.length} unidade${units.length > 1 ? 's' : ''} de atendimento`}
+          </p>
+          {!groupMode ? (
+            <button
+              type="button"
+              onClick={() => setGroupMode(true)}
+              className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+            >
+              <Users className="h-4 w-4" /> Agrupar unidades
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setGroupMode(false); clearSelection(); }}
+              className="text-sm font-medium text-gray-500 hover:text-gray-700"
+            >
+              Sair do modo agrupar
+            </button>
+          )}
+        </div>
+      )}
 
       {loadError && (
         <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -123,7 +153,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
         <p className="text-sm text-gray-500">Este prestador não tem endereço comercial no cadastro.</p>
       )}
 
-      {canEdit && selected.size > 0 && (
+      {canEdit && groupMode && selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
           <span className="text-sm font-medium text-emerald-900">
             {selected.size} unidade{selected.size > 1 ? 's' : ''} selecionada{selected.size > 1 ? 's' : ''}
@@ -168,6 +198,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
           canEdit={canEdit}
           onChanged={load}
           selected={selected.has(unit.location_id)}
+          groupMode={groupMode}
           onToggleSelect={() => toggleSelect(unit.location_id)}
           groupLocationIds={unit.user?.id ? (groupLocationIds.get(unit.user.id) ?? [unit.location_id]) : [unit.location_id]}
         />
@@ -190,10 +221,10 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   );
 }
 
-function UnitAccess({ providerId, unit, canEdit, onChanged, selected, onToggleSelect, groupLocationIds }: {
+function UnitAccess({ providerId, unit, canEdit, onChanged, selected, groupMode, onToggleSelect, groupLocationIds }: {
   key?: string | number; // mesma convenção do AlertGroupCard: os tipos de JSX daqui exigem key no shape
   providerId: number | string; unit: Unit; canEdit: boolean; onChanged: () => void;
-  selected: boolean; onToggleSelect: () => void; groupLocationIds: number[];
+  selected: boolean; groupMode: boolean; onToggleSelect: () => void; groupLocationIds: number[];
 }) {
   const user = unit.user;
   const exists = !!user;
@@ -286,7 +317,7 @@ function UnitAccess({ providerId, unit, canEdit, onChanged, selected, onToggleSe
   return (
     <div className="rounded-xl border border-gray-100 p-4">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {canEdit && (
+        {canEdit && groupMode && (
           <input
             type="checkbox"
             checked={selected}

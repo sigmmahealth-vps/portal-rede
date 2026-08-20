@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import PasswordInput from '../../components/PasswordInput';
-import { ShieldCheck, Mail, Lock, Clock, Save, Send, AlertCircle, CheckCircle2, MapPin } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, Clock, Save, Send, AlertCircle, CheckCircle2, MapPin, Users, Split } from 'lucide-react';
 
 function currentRole(): string | null {
   try {
@@ -30,6 +30,10 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   const [units, setUnits] = useState<Unit[]>([]);
   const [orphans, setOrphans] = useState<any[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [groupTarget, setGroupTarget] = useState<number | ''>('');
+  const [grouping, setGrouping] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -44,6 +48,51 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   };
 
   useEffect(load, [providerId]);
+
+  // Unidades agrupadas: mesmo user.id em >=2 cards significa 1 login cobrindo várias unidades.
+  const groupLocationIds = new Map<number, number[]>();
+  units.forEach((u) => {
+    if (!u.user?.id) return;
+    groupLocationIds.set(u.user.id, [...(groupLocationIds.get(u.user.id) ?? []), u.location_id]);
+  });
+
+  const toggleSelect = (locationId: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(locationId) ? next.delete(locationId) : next.add(locationId);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelected(new Set());
+    setGroupTarget('');
+    setGroupError(null);
+  };
+
+  const selectedUnits = units.filter((u) => selected.has(u.location_id));
+  // Destino do agrupamento só pode ser um login que já tem e-mail definido.
+  const targetCandidates = Array.from(
+    new Map(selectedUnits.filter((u) => u.user?.email).map((u) => [u.user.id, u.user])).values(),
+  );
+
+  const groupSelected = async () => {
+    if (!groupTarget || selected.size < 2) return;
+    setGrouping(true);
+    setGroupError(null);
+    try {
+      await fetchApi(`/providers/${providerId}/access/group`, {
+        method: 'POST',
+        body: JSON.stringify({ target_user_id: groupTarget, location_ids: Array.from(selected) }),
+      });
+      clearSelection();
+      load();
+    } catch (err: any) {
+      setGroupError(err.message);
+    } finally {
+      setGrouping(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -74,8 +123,53 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
         <p className="text-sm text-gray-500">Este prestador não tem endereço comercial no cadastro.</p>
       )}
 
+      {canEdit && selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <span className="text-sm font-medium text-emerald-900">
+            {selected.size} unidade{selected.size > 1 ? 's' : ''} selecionada{selected.size > 1 ? 's' : ''}
+          </span>
+          <select
+            value={groupTarget}
+            onChange={(e) => setGroupTarget(e.target.value ? Number(e.target.value) : '')}
+            className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-sm text-gray-800 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
+          >
+            <option value="">Acesso destino…</option>
+            {targetCandidates.map((u: any) => (
+              <option key={u.id} value={u.id}>{u.name || u.email} ({u.email})</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={groupSelected}
+            disabled={!groupTarget || grouping || selected.size < 2}
+            className="flex items-center gap-2 rounded-lg bg-[#00995D] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#007A4A] disabled:opacity-50"
+          >
+            <Users className="h-4 w-4" />
+            {grouping ? 'Agrupando...' : 'Agrupar em um acesso'}
+          </button>
+          <button type="button" onClick={clearSelection} className="text-sm font-medium text-emerald-800 hover:underline">
+            Cancelar
+          </button>
+          {targetCandidates.length === 0 && (
+            <span className="text-xs text-amber-800">
+              Nenhuma unidade selecionada tem acesso com e-mail definido — defina um e-mail antes de agrupar.
+            </span>
+          )}
+          {groupError && <span className="text-xs text-red-700">{groupError}</span>}
+        </div>
+      )}
+
       {units.map((unit) => (
-        <UnitAccess key={unit.location_id} providerId={providerId} unit={unit} canEdit={canEdit} onChanged={load} />
+        <UnitAccess
+          key={unit.location_id}
+          providerId={providerId}
+          unit={unit}
+          canEdit={canEdit}
+          onChanged={load}
+          selected={selected.has(unit.location_id)}
+          onToggleSelect={() => toggleSelect(unit.location_id)}
+          groupLocationIds={unit.user?.id ? (groupLocationIds.get(unit.user.id) ?? [unit.location_id]) : [unit.location_id]}
+        />
       ))}
 
       {orphans.length > 0 && (
@@ -95,16 +189,19 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   );
 }
 
-function UnitAccess({ providerId, unit, canEdit, onChanged }: {
+function UnitAccess({ providerId, unit, canEdit, onChanged, selected, onToggleSelect, groupLocationIds }: {
   key?: number; // mesma convenção do AlertGroupCard: os tipos de JSX daqui exigem key no shape
   providerId: number | string; unit: Unit; canEdit: boolean; onChanged: () => void;
+  selected: boolean; onToggleSelect: () => void; groupLocationIds: number[];
 }) {
   const user = unit.user;
   const exists = !!user;
+  const isGrouped = groupLocationIds.length > 1;
   const [email, setEmail] = useState(user?.email || unit.suggested_email || '');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [ungrouping, setUngrouping] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
 
   const submitAccess = async (withPassword: boolean) => {
@@ -168,14 +265,45 @@ function UnitAccess({ providerId, unit, canEdit, onChanged }: {
     }
   };
 
+  const ungroup = async () => {
+    setUngrouping(true);
+    setFeedback(null);
+    try {
+      await fetchApi(`/providers/${providerId}/access/ungroup`, {
+        method: 'POST',
+        body: JSON.stringify({ location_ids: groupLocationIds }),
+      });
+      setFeedback({ type: 'ok', msg: 'Unidades desagrupadas — 1 acesso por unidade recriado.' });
+      onChanged();
+    } catch (err: any) {
+      setFeedback({ type: 'err', msg: err.message });
+    } finally {
+      setUngrouping(false);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-gray-100 p-4">
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {canEdit && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            aria-label={`Selecionar ${unitTitle(unit)}`}
+            className="h-4 w-4 rounded border-gray-300 text-[#00995D] focus:ring-2 focus:ring-[#00995D]/30"
+          />
+        )}
         <MapPin className="h-4 w-4 text-gray-400" />
         <span className="text-sm font-semibold text-gray-800">{unitTitle(unit)}</span>
         {unit.sgu_location_code && <span className="text-xs text-gray-400">{unit.sgu_location_code}</span>}
         {!exists && (
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Sem acesso</span>
+        )}
+        {isGrouped && (
+          <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+            <Users className="h-3 w-3" /> Agrupado — {groupLocationIds.length} unidades
+          </span>
         )}
       </div>
 
@@ -265,6 +393,13 @@ function UnitAccess({ providerId, unit, canEdit, onChanged }: {
                   className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50">
                   <Send className="h-4 w-4" />
                   {sending ? 'Enviando...' : 'Enviar redefinição por e-mail'}
+                </button>
+              )}
+              {isGrouped && (
+                <button type="button" onClick={ungroup} disabled={ungrouping}
+                  className="flex items-center gap-2 rounded-lg border border-amber-200 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50 disabled:opacity-50">
+                  <Split className="h-4 w-4" />
+                  {ungrouping ? 'Desagrupando...' : 'Desagrupar'}
                 </button>
               )}
             </div>

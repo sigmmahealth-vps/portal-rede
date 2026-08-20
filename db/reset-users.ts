@@ -89,6 +89,15 @@ async function main() {
          ORDER BY pl.is_primary DESC NULLS LAST, pl.id LIMIT 1)
        WHERE u.provider_id IS NOT NULL AND u.location_id IS NULL
        RETURNING u.id, u.email, u.location_id`);
+    // A partir da migration 0036 o escopo do portal vem de user_locations, não de
+    // users.location_id — então o relink precisa criar também o vínculo, senão o
+    // usuário fica sem escopo (fail-closed) e "sem responsável" na tela.
+    await client.query(
+      `INSERT INTO user_locations (user_id, location_id, provider_id)
+       SELECT id, location_id, provider_id FROM users
+        WHERE id = ANY($1::bigint[]) AND location_id IS NOT NULL
+       ON CONFLICT DO NOTHING`,
+      [relinked.map((r: any) => Number(r.id))]);
     for (const r of relinked) console.log(`[reset-users] ${r.email ?? r.id} vinculado ao endereço ${r.location_id}.`);
   });
 

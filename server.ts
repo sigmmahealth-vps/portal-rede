@@ -245,14 +245,16 @@ async function startServer() {
 
   const notifyAppUrl = () => process.env.APP_URL ?? `http://localhost:${PORT}`;
 
-  // locationId preenchido = evento de uma unidade só: notifica o acesso daquela
-  // unidade (migration 0035). Acesso sem vínculo (location_id NULL) continua
-  // recebendo tudo do prestador — é o fallback do reimport de cadastro.
+  // locationId preenchido = evento de uma unidade só: notifica o acesso que cobre
+  // aquela unidade (via user_locations — migration 0036). Vínculo perdido (unidade
+  // sem responsável) NÃO recebe mais nada por fallback — fail-closed; a lista
+  // "precisa responsável" do admin é responsabilidade da Fatia 4.
   async function prestadorRecipients(providerId: number, locationId: number | null = null): Promise<NotifyRecipient[]> {
     const { rows } = await query(
-      `SELECT id AS user_id, email, name FROM users
-        WHERE provider_id = $1 AND is_active = true AND role IN ('prestador','cooperado')
-          AND ($2::bigint IS NULL OR location_id IS NULL OR location_id = $2)`,
+      `SELECT DISTINCT u.id AS user_id, u.email, u.name
+         FROM user_locations ul JOIN users u ON u.id = ul.user_id
+        WHERE ul.provider_id = $1 AND u.is_active = true AND u.role IN ('prestador','cooperado')
+          AND ($2::bigint IS NULL OR ul.location_id = ANY(ARRAY[$2]::bigint[]))`,
       [providerId, locationId]);
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
   }
@@ -369,11 +371,17 @@ async function startServer() {
   // Consolida IP_HASH_SECRET num único call-site — todos os auditLog usam este helper.
   const hashClientIp = (req: any): string | null => hashIp(req.ip, IP_HASH_SECRET as string);
 
-  // Escopo por unidade (migration 0035): cada acesso de prestador pertence a um
-  // endereço e só enxerga o que é dele. NULL = staff, ou vínculo perdido no
-  // reimport de cadastro — nesse caso cai no escopo antigo (prestador inteiro).
-  const userLocationId = (req: any): number | null =>
-    req.user?.location_id == null ? null : Number(req.user.location_id);
+  // Escopo por unidade (migration 0036): o conjunto de unidades do acesso vem do
+  // banco (user_locations), resolvido por request e memoizado só nele — nunca do
+  // JWT. Fail-closed: sem vínculo => conjunto vazio => não enxerga nada (staff
+  // não é escopado por unidade; o helper nem é chamado nas rotas de staff).
+  const userLocationIds = async (req: any): Promise<number[]> => {
+    if (req._locIds) return req._locIds;
+    if (!req.user?.provider_id) return (req._locIds = []);
+    const { rows } = await query(
+      `SELECT location_id FROM user_locations WHERE user_id = $1`, [req.user.id]);
+    return (req._locIds = rows.map((r: any) => Number(r.location_id)));
+  };
 
   // Metadados do cliente para a trilha de acesso (RN 630 — §5.2.2).
   const clientMeta = (req: any) => ({
@@ -405,9 +413,10 @@ async function startServer() {
     // Cooperado = grupo "MEDICOS COOPERADOS" (com ou sem sufixo ARARANGUA). Regra ancorada
     // no provider_group porque o provider_type "MÉDICO" cobre também psicólogos/nutris/etc.
     const isCooperado = /^MEDICOS COOPERADOS(\s+ARARANGUA)?$/i.test(String(providerGroup ?? '').trim());
+    // Escopo por unidade não vai no JWT (migration 0036) — resolvido por request
+    // via userLocationIds(req), a partir de user_locations no banco.
     const token = jwt.sign(
-      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id,
-        location_id: user.location_id ?? null },
+      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id },
       JWT_SECRET as string,
       { expiresIn: '24h' },
     );
@@ -417,7 +426,7 @@ async function startServer() {
     return {
       user: {
         id: user.id, name: user.name, email: user.email, role: user.role,
-        provider_id: user.provider_id, location_id: user.location_id ?? null,
+        provider_id: user.provider_id,
         provider_person_type: providerPersonType,
         provider_group: providerGroup, is_cooperado: isCooperado,
         last_login_at: previousLoginAt,
@@ -848,7 +857,7 @@ async function startServer() {
   // Dados do usuário autenticado (substitui leitura do localStorage no frontend).
   app.get('/api/auth/me', authenticate, async (req: any, res) => {
     const { rows } = await query(
-      'SELECT id, name, email, role, provider_id, location_id, last_login_at FROM users WHERE id = $1',
+      'SELECT id, name, email, role, provider_id, last_login_at FROM users WHERE id = $1',
       [req.user.id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -3236,11 +3245,11 @@ async function startServer() {
         `SELECT id, label, cidade, uf, logradouro, numero, bairro
            FROM provider_locations
           WHERE provider_id = $1
-            AND ($2::bigint IS NULL OR id = $2)
+            AND id = ANY($2::bigint[])
             AND COALESCE(label,'') NOT ILIKE 'residencial%'
             AND COALESCE(sgu_location_code,'') !~ '-RES$'
           ORDER BY is_primary DESC NULLS LAST, id ASC`,
-        [provider_id, userLocationId(req)],
+        [provider_id, await userLocationIds(req)],
       );
       res.json({ ...provider, locations });
     } catch (err: any) {
@@ -3272,8 +3281,8 @@ async function startServer() {
         instances = result.rows;
       } else {
         const result = await query(
-          baseQuery + ' WHERE ei.provider_id = $1 AND ($2::bigint IS NULL OR ei.location_id = $2) ORDER BY ei.started_at DESC',
-          [provider_id, userLocationId(req)]);
+          baseQuery + ' WHERE ei.provider_id = $1 AND ei.location_id = ANY($2::bigint[]) ORDER BY ei.started_at DESC',
+          [provider_id, await userLocationIds(req)]);
         instances = result.rows;
       }
       res.json(instances);
@@ -3302,10 +3311,10 @@ async function startServer() {
       // Anti-IDOR (mesma regra do loadInstanceForWrite): prestador/cooperado só lê a
       // própria avaliação; admin/auditoria leem qualquer uma.
       const { role: viewerRole, provider_id: viewerProviderId } = req.user;
-      const viewerLocationId = userLocationId(req);
+      const viewerLocationIds = await userLocationIds(req);
       if (viewerRole !== 'admin' && viewerRole !== 'auditoria'
           && (String(instance.provider_id) !== String(viewerProviderId)
-              || (viewerLocationId !== null && Number(instance.location_id) !== viewerLocationId))) {
+              || !viewerLocationIds.includes(Number(instance.location_id)))) {
         return res.status(403).json({ error: 'Você não tem permissão para ver esta avaliação' });
       }
 
@@ -3343,10 +3352,10 @@ async function startServer() {
       return null;
     }
     const { role, provider_id } = req.user;
-    const locationId = userLocationId(req);
+    const locationIds = await userLocationIds(req);
     const isStaff = role === 'admin' || role === 'auditoria';
     if (!isStaff && (String(instance.provider_id) !== String(provider_id)
-        || (locationId !== null && Number(instance.location_id) !== locationId))) {
+        || !locationIds.includes(Number(instance.location_id)))) {
       res.status(403).json({ error: 'Você não tem permissão para alterar esta avaliação' });
       return null;
     }
@@ -5168,7 +5177,7 @@ async function startServer() {
          WHERE provider_id = $1
            AND status = ANY($2)
            AND ($3::bigint IS NULL OR cycle_id = $3)
-           AND ($4::bigint IS NULL OR location_id = $4 OR location_id IS NULL)
+           AND ($4::bigint IS NULL OR location_id = ANY(ARRAY[$4]::bigint[]))
          LIMIT 1
       `, [provider_id, CONCLUDED_STATUSES, cycle_id ?? null, locationId]);
       if (elig.length === 0) {
@@ -5205,9 +5214,9 @@ async function startServer() {
          WHERE p.id = $1
       `, [id]);
       if (!plan) return res.status(404).json({ error: 'not found' });
-      const planLocationId = userLocationId(req);
+      const planLocationIds = await userLocationIds(req);
       if (!isStaff(req.user.role) && (Number(plan.provider_id) !== Number(req.user.provider_id)
-          || (planLocationId !== null && Number(plan.location_id) !== planLocationId))) {
+          || !planLocationIds.includes(Number(plan.location_id)))) {
         return res.status(403).json({ error: 'Unauthorized' });
       }
       const { rows: items } = await query(`
@@ -5340,14 +5349,14 @@ async function startServer() {
   // -----------------------------------------------------------------------
 
   // Carrega item + plano garantindo que pertence ao prestador logado
-  const loadItemForProvider = async (itemId: number, providerId: number, locationId: number | null = null) => {
+  const loadItemForProvider = async (itemId: number, providerId: number, locationIds: number[] = []) => {
     const { rows: [row] } = await query(`
       SELECT i.*, p.provider_id, p.location_id, p.closed_without_completion
         FROM eval_action_items i JOIN eval_action_plans p ON p.id = i.plan_id
        WHERE i.id = $1
     `, [itemId]);
     if (!row || Number(row.provider_id) !== Number(providerId)) return null;
-    if (locationId !== null && Number(row.location_id) !== locationId) return null;
+    if (!locationIds.includes(Number(row.location_id))) return null;
     return row;
   };
 
@@ -5371,9 +5380,9 @@ async function startServer() {
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
          WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
-           AND ($2::bigint IS NULL OR ei.location_id = $2)
+           AND ei.location_id = ANY($2::bigint[])
          ORDER BY ei.submitted_at DESC
-      `, [providerId, userLocationId(req)]);
+      `, [providerId, await userLocationIds(req)]);
       const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
       const surveys = rows.map((r: any) => {
         const base = {
@@ -5411,9 +5420,9 @@ async function startServer() {
         SELECT ei.id, ei.submitted_at
           FROM eval_instances ei
          WHERE ei.id = $1 AND ei.provider_id = $2 AND ei.submitted_at IS NOT NULL
-           AND ($3::bigint IS NULL OR ei.location_id = $3)
+           AND ei.location_id = ANY($3::bigint[])
            AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
-      `, [instanceId, providerId, userLocationId(req)]);
+      `, [instanceId, providerId, await userLocationIds(req)]);
       if (!inst) return res.status(409).json({ error: 'nenhuma pesquisa pendente para este endereço' });
 
       const b = req.body || {};
@@ -5478,10 +5487,10 @@ async function startServer() {
           LEFT JOIN eval_cycles c ON c.id = p.cycle_id
           LEFT JOIN provider_locations pl ON pl.id = p.location_id
           LEFT JOIN eval_action_items i ON i.plan_id = p.id
-         WHERE p.provider_id = $1 AND ($2::bigint IS NULL OR p.location_id = $2)
+         WHERE p.provider_id = $1 AND p.location_id = ANY($2::bigint[])
          GROUP BY p.id, c.label, pl.logradouro, pl.label, pl.cidade, pl.uf
          ORDER BY p.created_at DESC
-      `, [providerId, userLocationId(req)]);
+      `, [providerId, await userLocationIds(req)]);
       const { computePlanStatus, planColor } = await import('./src/lib/actionPlan.js');
       const now = new Date();
       res.json(rows.map((r: any) => {
@@ -5585,8 +5594,8 @@ async function startServer() {
     try {
       const providerId = req.user.provider_id;
       if (!providerId) return res.status(403).json({ error: 'Unauthorized' });
-      res.json(await loadCertificates('ei.provider_id = $1 AND ($2::bigint IS NULL OR ei.location_id = $2)',
-        [providerId, userLocationId(req)]));
+      res.json(await loadCertificates('ei.provider_id = $1 AND ei.location_id = ANY($2::bigint[])',
+        [providerId, await userLocationIds(req)]));
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
@@ -5603,9 +5612,9 @@ async function startServer() {
          WHERE ec.id = $1
            AND ei.id = ec.instance_id
            AND ei.provider_id = $2
-           AND ($3::bigint IS NULL OR ei.location_id = $3)
+           AND ei.location_id = ANY($3::bigint[])
            AND ec.first_viewed_at IS NULL
-      `, [Number(req.params.id), providerId, userLocationId(req)]);
+      `, [Number(req.params.id), providerId, await userLocationIds(req)]);
       res.json({ ok: true, updated: rowCount });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
@@ -5693,7 +5702,7 @@ async function startServer() {
   // "Iniciar ação" (mockup 5.4.4.6)
   app.post('/api/eval/action-items/:id/iniciar', authenticate, async (req: any, res) => {
     try {
-      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id, userLocationId(req));
+      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id, await userLocationIds(req));
       if (!item) return res.status(403).json({ error: 'Unauthorized' });
       if (item.status !== 'nao_iniciada') return res.status(409).json({ error: 'ação já iniciada' });
       if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
@@ -5716,7 +5725,7 @@ async function startServer() {
   // Estados válidos: em_andamento | solicitada_revisao | reprovada (re-tentativa) | nao_iniciada (auto-inicia)
   app.post('/api/eval/action-items/:id/responder', authenticate, upload.single('file'), async (req: any, res) => {
     try {
-      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id, userLocationId(req));
+      const item = await loadItemForProvider(Number(req.params.id), req.user.provider_id, await userLocationIds(req));
       if (!item) return res.status(403).json({ error: 'Unauthorized' });
       if (item.closed_without_completion) return res.status(409).json({ error: 'plano encerrado' });
       if (['aguardando_revisao','concluida'].includes(item.status)) {

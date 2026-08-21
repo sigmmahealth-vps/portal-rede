@@ -218,7 +218,7 @@ export default function Chamados() {
         `"${(t.provider_name || '').replace(/"/g, '""')}"`,
         t.category,
         t.priority,
-        new Date(t.created_at).toLocaleDateString(),
+        new Date(t.created_at).toLocaleDateString('pt-BR'),
         t.status
       ].join(','))
     ].join('\n');
@@ -376,7 +376,7 @@ export default function Chamados() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(ticket.created_at).toLocaleDateString()}
+                        {new Date(ticket.created_at).toLocaleDateString('pt-BR')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getStatusBadge(ticket.status)}
@@ -533,7 +533,7 @@ export default function Chamados() {
                   {isAdmin && <span><strong>Prestador:</strong> {selectedTicket.provider_name}</span>}
                   <span><strong>Categoria:</strong> {selectedTicket.category}</span>
                   <span><strong>Prioridade:</strong> {selectedTicket.priority}</span>
-                  <span><strong>Data:</strong> {new Date(selectedTicket.created_at).toLocaleString()}</span>
+                  <span><strong>Data:</strong> {new Date(selectedTicket.created_at).toLocaleString('pt-BR')}</span>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 text-gray-700 whitespace-pre-wrap">
                   {selectedTicket.description}
@@ -553,7 +553,7 @@ export default function Chamados() {
                         {msg.is_status_change ? (
                           <div className="w-full text-center my-2">
                             <span className="inline-block bg-gray-200 text-gray-600 text-xs px-2 py-1 rounded-full">
-                              {msg.message} - {new Date(msg.created_at).toLocaleString()}
+                              {msg.message} - {new Date(msg.created_at).toLocaleString('pt-BR')}
                             </span>
                           </div>
                         ) : (

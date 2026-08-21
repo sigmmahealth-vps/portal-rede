@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import { Search, Plus, Filter, Calendar, ArrowUpCircle, MapPin } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import PlanoDetail from './PlanoDetail';
@@ -24,13 +25,7 @@ const TONE: Record<string, { dot: string; pill: string; border: string; body: st
   final:              { dot: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700', border: 'border-emerald-100', body: 'bg-emerald-50/50' },
 };
 
-// Datas `date` chegam como 'YYYY-MM-DD' (db.ts); formata sem passar por Date p/ não deslocar fuso.
-const fmtDate = (v?: string | null): string => {
-  if (!v) return '';
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
-  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  try { return new Date(v).toLocaleDateString('pt-BR'); } catch { return String(v); }
-};
+const fmtDate = (v?: string | null): string => fmtData(v);
 
 export default function PlanosBoard() {
   const [cycles, setCycles] = useState<any[]>([]);
@@ -385,7 +380,7 @@ function PlanoCard({ plan, colKey, onOpen }: any) {
   const pillText =
     colKey === 'aberto'             ? plural(open.length, 'ação aberta', 'ações abertas') :
     colKey === 'aguardando_revisao' ? plural(toValidate.length || open.length, 'ação para validar', 'ações para validar') :
-    colKey === 'a_vencer'           ? `${open.length} a vencer` :
+    colKey === 'a_vencer'           ? plural(open.length, 'ação a vencer', 'ações a vencer') :
     colKey === 'atrasado'           ? plural(open.length, 'ação atrasada', 'ações atrasadas') :
     plan.status === 'concluido'     ? 'Concluído' : 'Encerrado sem conclusão';
 

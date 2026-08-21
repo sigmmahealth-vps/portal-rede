@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import { computeSurveyStats, SurveyRow } from '../../lib/surveyStats';
 import { Loader2, MessageSquare, Search } from 'lucide-react';
 
@@ -16,7 +17,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 };
 
 function fmtDate(iso: string): string {
-  try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
+  return fmtData(iso) || iso;
 }
 
 function Card({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
@@ -218,12 +219,12 @@ export default function PesquisaDashboard({ user }: { user: any }) {
           <div>
             <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">Distribuição por questão</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Histogram title="Q6 — Recomendação (NPS 0–10)" labels={NPS_LABELS} counts={stats.dist.q6} barClass={npsBar} />
               <Histogram title="Q1 — Clareza das instruções" labels={RATING_LABELS} counts={stats.dist.q1} />
               <Histogram title="Q2 — Facilidade do portal" labels={RATING_LABELS} counts={stats.dist.q2} />
-              <Histogram title="Q5 — Processo (geral)" labels={RATING_LABELS} counts={stats.dist.q5} />
               <Histogram title="Q3 — Orientação de documentos" labels={Q3_SHORT} counts={Q3_ORDER.map(k => stats.q3[k] ?? 0)} />
               <Histogram title="Q4 — Dificuldade técnica" labels={['Sim', 'Não']} counts={[stats.q4Counts.sim, stats.q4Counts.nao]} barClass={i => (i === 0 ? 'bg-red-400' : 'bg-emerald-400')} />
+              <Histogram title="Q5 — Processo (geral)" labels={RATING_LABELS} counts={stats.dist.q5} />
+              <Histogram title="Q6 — Recomendação (NPS 0–10)" labels={NPS_LABELS} counts={stats.dist.q6} barClass={npsBar} />
             </div>
           </div>
           </>

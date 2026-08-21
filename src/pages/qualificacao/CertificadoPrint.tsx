@@ -7,19 +7,16 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import type { Certificate } from './CertificadosTab';
 
-const SEAL_SLUG: Record<string, string> = { Ouro: 'ouro', Prata: 'prata', Bronze: 'bronze' };
 // Cor do número por selo (nome e validade são sempre verdes na arte).
 const NUM_COLOR: Record<string, string> = { Ouro: '#b8860b', Prata: '#7a7f87', Bronze: '#a85a2a' };
 const GREEN = '#0f5c3f';
 
-const fmtDateOnly = (d: string) => {
-  const [y, m, day] = String(d).slice(0, 10).split('-');
-  return `${day}/${m}/${y}`;
-};
-// Percentual no formato da arte: vírgula, até 2 casas, sem zero à toa (94,44% / 100% / 96%).
-const fmtPct = (n: number) => `${(Math.round(Number(n) * 100) / 100).toString().replace('.', ',')}%`;
+const fmtDateOnly = (d: string) => fmtData(d);
+// Percentual no formato da arte: vírgula, 1 casa decimal, sem zero à toa (94,4% / 100% / 96%).
+const fmtPct = (n: number) => `${(Math.round(Number(n) * 10) / 10).toString().replace('.', ',')}%`;
 const esc = (s: string) =>
   String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
@@ -60,28 +57,34 @@ export default function CertificadoPrint() {
     );
   }
 
-  const slug = SEAL_SLUG[cert.seal] ?? 'prata';
   const numColor = NUM_COLOR[cert.seal] ?? '#7a7f87';
   const dim = (prefix: string) => cert.dimensions.find(d => d.dimension.startsWith(prefix));
   const seg = dim('Segurança');
   const conf = dim('Conforto');
   const exp = dim('Experiência');
   const name = cert.provider_name || '';
-  // Encolhe o nome se for longo, pra caber na faixa (~580 unidades).
-  const nameSize = Math.min(30, 580 / Math.max(1, name.length * 0.55));
+  // Encolhe o nome se for longo, pra caber na faixa (~400 unidades).
+  const nameSize = Math.min(22, 580 / Math.max(1, name.length * 0.55));
+  // Nome da arte = o próprio selo (Ouro/Prata/Bronze.svg); fallback Prata.
+  const art = (['Ouro', 'Prata', 'Bronze'] as const).includes(cert.seal) ? cert.seal : 'Prata';
+  // Local de atendimento (E-02): endereço avaliado, ou o logradouro como fallback.
+  const local = cert.location_address || cert.location_label || '';
 
+  // Coordenadas calibradas sobre a arte nova (viewBox 842.25 x 595.5): valores das
+  // 4 dimensões centralizados sob cada ícone; pin do local e validade à esquerda.
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 842.25 595.5" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
-      <image href="/certificados/${slug}.jpg" x="0" y="0" width="842.25" height="595.5" preserveAspectRatio="none"/>
-      <g font-family="Georgia, 'Times New Roman', serif" font-weight="bold">
-        <text x="421.12" y="262" text-anchor="middle" font-size="${nameSize.toFixed(1)}" fill="${GREEN}">${esc(name)}</text>
-        <text x="132" y="402" font-size="22" fill="${numColor}">${seg ? fmtPct(seg.pct) : '—'}</text>
-        <text x="322" y="402" font-size="22" fill="${numColor}">${conf ? fmtPct(conf.pct) : '—'}</text>
-        <text x="498" y="402" font-size="22" fill="${numColor}">${exp ? fmtPct(exp.pct) : '—'}</text>
-        <text x="680" y="402" font-size="22" fill="${numColor}">${fmtPct(cert.percentual)}</text>
-        <text x="113" y="532" font-size="17" fill="${GREEN}">${fmtDateOnly(cert.valid_until)}</text>
+      <image href="/certificados/${art}.svg" x="0" y="0" width="842.25" height="595.5" preserveAspectRatio="none"/>
+      <g font-family="'UnimedFont', 'Inter', sans-serif" font-weight="bold" text-anchor="middle">
+        <text x="421.1" y="253.5" font-size="${nameSize.toFixed(1)}" fill="${GREEN}">${esc(name)}</text>
+        <text x="158.3" y="390" font-size="18.5" fill="${numColor}">${seg ? fmtPct(seg.pct) : '—'}</text>
+        <text x="349.5" y="390" font-size="18.5" fill="${numColor}">${conf ? fmtPct(conf.pct) : '—'}</text>
+        <text x="530" y="390" font-size="18.5" fill="${numColor}">${exp ? fmtPct(exp.pct) : '—'}</text>
+        <text x="700" y="390" font-size="18.5" fill="${numColor}">${fmtPct(cert.percentual)}</text>
       </g>
-      ${qr ? `<image href="${qr}" x="742" y="430" width="70" height="70"/>` : ''}
+      <text x="165" y="488" font-family="'UnimedFont', 'Inter', sans-serif" font-weight="bold" font-size="12.6" fill="${GREEN}">${fmtDateOnly(cert.valid_until)}</text>
+      ${local ? `<text x="95" y="440" font-family="'UnimedFont', 'Inter', sans-serif" font-size="11" fill="#4b5563">${esc(local)}</text>` : ''}
+      ${qr ? `<image href="${qr}" x="735.3" y="392.5" width="60.6" height="60.6"/>` : ''}
     </svg>`;
 
   return (

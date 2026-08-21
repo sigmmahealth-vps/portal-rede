@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import { Award, Download } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 
 export interface Certificate {
   id: number;
@@ -27,12 +28,8 @@ export const SEAL_STYLES: Record<string, { grad: string; text: string }> = {
   Bronze: { grad: 'from-orange-100 to-orange-300', text: 'text-orange-900' },
 };
 
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('pt-BR');
-// valid_until é date-only ('YYYY-MM-DD...') — parse manual evita shift de timezone.
-export const fmtDateOnly = (d: string) => {
-  const [y, m, day] = String(d).slice(0, 10).split('-');
-  return `${day}/${m}/${y}`;
-};
+const fmtDate = (d: string) => fmtData(d);
+export const fmtDateOnly = (d: string) => fmtData(d);
 
 export default function CertificadosTab() {
   const [certs, setCerts] = useState<Certificate[]>([]);

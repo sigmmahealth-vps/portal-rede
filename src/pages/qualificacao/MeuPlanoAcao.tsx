@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData, fmtDataHora } from '../../lib/formatDate';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
 import { Loader2, Paperclip, UploadCloud, Trash2, MapPin, ArrowRight, ArrowLeft } from 'lucide-react';
 
 function fmtDate(d?: string | null): string {
-  if (!d) return '—';
-  try { return new Date(d).toLocaleDateString('pt-BR'); } catch { return d; }
+  return d ? (fmtData(d) || d) : '—';
 }
 
 // "Rua — Cidade/UF" para identificar o endereço do plano.
@@ -20,7 +20,7 @@ function locOf(p: any): string | null {
 
 function fmtDateTime(d?: string | null): string {
   if (!d) return '—';
-  try { return new Date(d).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); } catch { return d; }
+  return d ? (fmtDataHora(d) || d) : '—';
 }
 
 function lastEventByAction(events: any[], action: string) {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import { Star, Send, Loader2, Smile, CheckCircle, MapPin, ArrowLeft, Clock } from 'lucide-react';
 
 const Q3_OPTS = [
@@ -24,7 +25,7 @@ function Stars({ value, onChange }: { value: number; onChange: (n: number) => vo
 }
 
 function fmtDate(iso: string): string {
-  try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
+  return fmtData(iso) || iso;
 }
 
 // "Rua — Cidade/UF" para identificar o endereço da pesquisa.

@@ -199,8 +199,8 @@ export default function Documentos() {
       ...filteredDocuments.map(doc => [
         `"${doc.type}"`,
         `"${doc.provider_name || '-'}"`,
-        doc.issue_date ? new Date(doc.issue_date).toLocaleDateString() : '-',
-        doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString() : '-',
+        doc.issue_date ? new Date(doc.issue_date).toLocaleDateString('pt-BR') : '-',
+        doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString('pt-BR') : '-',
         getComputedStatus(doc)
       ].join(','))
     ].join('\n');
@@ -413,14 +413,14 @@ export default function Documentos() {
                     </td>
                   )}
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {doc.issue_date ? new Date(doc.issue_date).toLocaleDateString() : '-'}
+                    {doc.issue_date ? new Date(doc.issue_date).toLocaleDateString('pt-BR') : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString() : '-'}
+                    {doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString('pt-BR') : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex flex-col">
-                      <span>{doc.upload_date ? new Date(doc.upload_date).toLocaleDateString() : '-'}</span>
+                      <span>{doc.upload_date ? new Date(doc.upload_date).toLocaleDateString('pt-BR') : '-'}</span>
                       <span className="text-xs text-gray-400">{doc.uploaded_by_name || 'Sistema'}</span>
                     </div>
                   </td>

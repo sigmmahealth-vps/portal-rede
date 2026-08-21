@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
   AlertTriangle, ChevronDown, ChevronRight, CheckCircle2,
@@ -91,7 +92,7 @@ const AlertGroupCard = ({ type, items, onRun }: { key?: string; type: AlertType;
                   <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" /> {it.ref}
                 </p>
                 {it.detail && <p className="mt-0.5 text-xs font-medium text-gray-500">{it.detail}</p>}
-                {it.deadline && <p className="mt-0.5 text-xs font-medium text-gray-500">até {new Date(it.deadline).toLocaleDateString('pt-BR')}</p>}
+                {it.deadline && <p className="mt-0.5 text-xs font-medium text-gray-500">até {fmtData(it.deadline)}</p>}
               </div>
               <button
                 onClick={() => onRun(type, it)}
@@ -202,7 +203,7 @@ export default function PrestadorView({ user }: { user: any }) {
       ? { label: 'Iniciar avaliação', Icon: Play }
       : { label: 'Continuar avaliação', Icon: Clock };
   };
-  const fmtDate = (d: any) => (d ? new Date(d).toLocaleDateString('pt-BR') : null);
+  const fmtDate = (d: any) => (d ? fmtData(d) : null);
   // "Unidade — Cidade/UF" a partir do que a instância já traz.
   const instLocation = (i: any) =>
     i.location_label
@@ -409,7 +410,7 @@ export default function PrestadorView({ user }: { user: any }) {
               </p>
               <p className="text-sm text-amber-900">
                 Leva ~2 minutos por endereço. Disponível até{' '}
-                {(() => { try { return new Date(nextSurveyDeadline).toLocaleDateString('pt-BR'); } catch { return nextSurveyDeadline; } })()}
+                {fmtData(nextSurveyDeadline) || nextSurveyDeadline}
                 {' '}(7 dias após o envio do roteiro).
               </p>
             </div>

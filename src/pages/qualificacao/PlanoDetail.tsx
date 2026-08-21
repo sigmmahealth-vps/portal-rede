@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS, ITEM_STATUS_LABEL } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
 import { ArrowLeft, Loader2, Plus, Check, XCircle, RotateCcw, Paperclip, MessageSquare, MapPin } from 'lucide-react';
@@ -26,8 +27,7 @@ const COLUMN_BG: Record<string, string> = {
 const FIELD_KEYS = ['what', 'why', 'who_name', 'who_role', 'start_date', 'due_date', 'how', 'how_much'] as const;
 
 function fmtDate(d?: string | null): string {
-  if (!d) return '—';
-  try { return new Date(d).toLocaleDateString('pt-BR'); } catch { return d; }
+  return d ? (fmtData(d) || d) : '—';
 }
 
 function emptyForm() {

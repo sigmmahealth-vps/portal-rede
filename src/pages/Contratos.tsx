@@ -197,10 +197,10 @@ export default function Contratos() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {contrato.signed_at ? new Date(contrato.signed_at).toLocaleDateString() : '-'}
+                    {contrato.signed_at ? new Date(contrato.signed_at).toLocaleDateString('pt-BR') : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {contrato.expires_at ? new Date(contrato.expires_at).toLocaleDateString() : 'Indeterminado'}
+                    {contrato.expires_at ? new Date(contrato.expires_at).toLocaleDateString('pt-BR') : 'Indeterminado'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     {contrato.status === 'pendente' && !isAdmin && (

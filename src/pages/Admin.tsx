@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
+import { fmtData } from '../lib/formatDate';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
 import ConfirmDeleteRoteiroModal from './qualificacao/ConfirmDeleteRoteiroModal';
@@ -1604,9 +1605,7 @@ function FilterSelect({
 }
 
 function formatBRDate(iso?: string | null): string | null {
-  if (!iso) return null;
-  const [y, m, d] = String(iso).slice(0, 10).split('-');
-  return y && m && d ? `${d}/${m}/${y}` : null;
+  return fmtData(iso) || null;
 }
 
 function RevisaoBadge({ script }: { script: any }) {

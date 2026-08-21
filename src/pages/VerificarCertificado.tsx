@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { BadgeCheck, BadgeX, Clock } from 'lucide-react';
 import { fetchApi } from '../lib/api';
+import { fmtData } from '../lib/formatDate';
 
 interface VerifyResult {
   valido: boolean;
@@ -17,10 +18,7 @@ interface VerifyResult {
   valid_until?: string;
 }
 
-const fmtDateOnly = (d: string) => {
-  const [y, m, day] = String(d).slice(0, 10).split('-');
-  return `${day}/${m}/${y}`;
-};
+const fmtDateOnly = (d: string) => fmtData(d);
 
 export default function VerificarCertificado() {
   const { codigo } = useParams();
@@ -85,7 +83,7 @@ export default function VerificarCertificado() {
                   ['Selo', result.seal],
                   ['Pontuação', result.percentual != null ? `${result.percentual.toFixed(1)}%` : null],
                   ['Ciclo', result.cycle_label],
-                  ['Emitido em', result.issued_at ? new Date(result.issued_at).toLocaleDateString('pt-BR') : null],
+                  ['Emitido em', result.issued_at ? fmtData(result.issued_at) : null],
                   ['Válido até', result.valid_until ? fmtDateOnly(result.valid_until) : null],
                 ] as [string, string | null | undefined][]).map(([label, value]) => value ? (
                   <div key={label} className="flex justify-between gap-4">

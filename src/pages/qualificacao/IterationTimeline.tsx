@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Check, XCircle, RotateCcw, MessageSquare, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { fmtDataHora } from '../../lib/formatDate';
 
 export interface Iteration {
   id: number;
@@ -24,8 +25,7 @@ const ACTION_META: Record<string, { label: string; Icon: any; cls: string }> = {
 };
 
 function fmt(dt: string): string {
-  try { return new Date(dt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); }
-  catch { return dt; }
+  return fmtDataHora(dt) || dt;
 }
 
 export default function IterationTimeline({ items }: { items: Iteration[] }) {

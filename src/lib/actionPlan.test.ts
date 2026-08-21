@@ -16,6 +16,19 @@ test('computeWindows: 3 janelas a +90/+180/+270 dias da criação', () => {
   assert.equal(w[2].toISOString().slice(0, 10), '2027-07-12');
 });
 
+test('computeWindows: próximo ciclo além de 9 meses não altera as janelas', () => {
+  const w = computeWindows(D('2026-10-15'), D('2028-01-01'));
+  assert.equal(w[2].toISOString().slice(0, 10), '2027-07-12');
+});
+
+test('computeWindows: próximo ciclo mais perto que 9 meses distribui por igual até o início dele', () => {
+  const created = D('2026-10-15');
+  const next = D('2027-01-14'); // 91 dias depois
+  const w = computeWindows(created, next);
+  assert.ok(w[0] < w[1] && w[1] < w[2], '3 janelas distintas e crescentes');
+  assert.equal(w[2].toISOString().slice(0, 10), '2027-01-14'); // 3ª = início do próximo ciclo
+});
+
 test('computePlanStatus: plano sem interação e sem itens ativos = aberto', () => {
   const s = computePlanStatus({
     items: [{ status: 'nao_iniciada', due_date: '2027-06-01' }],

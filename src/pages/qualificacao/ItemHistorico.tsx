@@ -1,4 +1,5 @@
 import React from 'react';
+import { fmtDataHora } from '../../lib/formatDate';
 
 const ACTION_LABEL: Record<string, string> = {
   criou: 'criou a ação',
@@ -13,8 +14,7 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 function fmt(dt: string): string {
-  try { return new Date(dt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); }
-  catch { return dt; }
+  return fmtDataHora(dt) || dt;
 }
 
 export default function ItemHistorico({ events }: { events: any[] }) {

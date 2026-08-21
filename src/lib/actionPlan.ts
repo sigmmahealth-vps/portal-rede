@@ -6,9 +6,18 @@ export const ITEM_DEFAULT_TERM_DAYS = 90;
 
 const DAY_MS = 86_400_000;
 
-/** 3 janelas trimestrais a partir da criação do plano (+90/+180/+270 dias). */
-export function computeWindows(planCreatedAt: Date): Date[] {
-  return [1, 2, 3].map(n => new Date(planCreatedAt.getTime() + n * ITEM_DEFAULT_TERM_DAYS * DAY_MS));
+/**
+ * 3 janelas trimestrais a partir da criação do plano (+90/+180/+270 dias).
+ * O plano não pode ultrapassar o início do próximo ciclo (lá o prestador é
+ * reavaliado): se `nextCycleStart` chegar mais perto que 9 meses, as janelas se
+ * distribuem por igual entre a criação e esse limite (a 3ª termina nele). Sem
+ * próximo ciclo, mantém os 270 dias cheios.
+ */
+export function computeWindows(planCreatedAt: Date, nextCycleStart?: Date | null): Date[] {
+  const fullSpan = 3 * ITEM_DEFAULT_TERM_DAYS * DAY_MS; // 270 dias
+  const capSpan = nextCycleStart ? nextCycleStart.getTime() - planCreatedAt.getTime() : Infinity;
+  const span = Math.min(fullSpan, capSpan > 0 ? capSpan : fullSpan);
+  return [1, 2, 3].map(n => new Date(planCreatedAt.getTime() + (span * n) / 3));
 }
 
 export type ItemLike = { status: string; due_date: string | null };

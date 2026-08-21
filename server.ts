@@ -3337,9 +3337,12 @@ async function startServer() {
         );
         if (locs.length === 1) locationId = Number(locs[0].id);
       }
+      // Amarra a instância ao ciclo ativo (partial unique garante no máx. 1). Sem isso
+      // a validade do certificado (fim do ciclo + 1 ano) cairia no fallback. Se não
+      // houver ciclo ativo, fica NULL e o fallback (aprovação + 1 ano) cobre.
       const { rows } = await query(`
-        INSERT INTO eval_instances (script_id, provider_id, location_id, status, started_at)
-        VALUES ($1, $2, $3, 'em_andamento', $4) RETURNING id
+        INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id, started_at)
+        VALUES ($1, $2, $3, 'em_andamento', (SELECT id FROM eval_cycles WHERE active = true), $4) RETURNING id
       `, [script_id, providerId, locationId, new Date().toISOString()]);
       await auditLog({
         query, userId: req.user.id, action: 'evaluation_created',
@@ -5362,9 +5365,17 @@ async function startServer() {
         items, hasProviderInteraction: events.some((e: any) => e.actor_role === 'prestador'),
         closedWithoutCompletion: plan.closed_without_completion, now: new Date(),
       });
+      // Limite do plano = início do próximo ciclo (D-01): lá o prestador é reavaliado,
+      // então as janelas não podem ultrapassá-lo. Sem próximo ciclo, fica sem limite.
+      const { rows: [nextCycle] } = await query(`
+        SELECT start_date FROM eval_cycles
+         WHERE start_date > (SELECT start_date FROM eval_cycles WHERE id = $1)
+         ORDER BY start_date ASC, id ASC LIMIT 1
+      `, [plan.cycle_id]);
       res.json({
         ...plan, status, color: planColor(status),
-        windows: computeWindows(new Date(plan.created_at)),
+        windows: computeWindows(new Date(plan.created_at),
+          nextCycle?.start_date ? new Date(nextCycle.start_date) : null),
         items: items.map((i: any) => ({ ...i, events: events.filter((e: any) => Number(e.item_id) === Number(i.id)) })),
       });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }

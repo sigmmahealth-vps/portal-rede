@@ -5508,6 +5508,7 @@ async function startServer() {
       const { rows } = await query(`
         SELECT ei.id AS instance_id, ei.submitted_at,
                s.title AS script_title,
+               c.label AS cycle_label,
                COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
                pl.cidade AS location_cidade, pl.uf AS location_uf,
                sr.id AS response_id, sr.q1_clareza, sr.q2_portal, sr.q3_documentos,
@@ -5515,6 +5516,7 @@ async function startServer() {
                sr.within_deadline, sr.bonus_points, sr.submitted_at AS response_submitted_at
           FROM eval_instances ei
           JOIN eval_scripts s ON s.id = ei.script_id
+          LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
          WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
@@ -5526,6 +5528,7 @@ async function startServer() {
         const base = {
           instance_id: Number(r.instance_id),
           script_title: r.script_title,
+          cycle_label: r.cycle_label,
           location_label: r.location_label,
           location_cidade: r.location_cidade,
           location_uf: r.location_uf,

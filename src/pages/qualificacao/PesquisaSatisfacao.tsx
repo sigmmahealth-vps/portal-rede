@@ -195,7 +195,7 @@ export default function PesquisaSatisfacao() {
                 <p className="flex items-center gap-1.5 font-bold text-secondary-900">
                   <MapPin className="h-4 w-4 text-emerald-600" /> {locationOf(s)}
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500">{s.script_title} · roteiro enviado em {fmtDate(s.submitted_at)}</p>
+                <p className="mt-0.5 text-xs text-gray-500">{s.cycle_label ? `Ciclo ${s.cycle_label} · ` : ''}{s.script_title} · roteiro enviado em {fmtDate(s.submitted_at)}</p>
                 {respondida ? (
                   <p className="mt-1 text-sm font-semibold text-emerald-700">
                     Respondida em {fmtDate(s.response.submitted_at)}

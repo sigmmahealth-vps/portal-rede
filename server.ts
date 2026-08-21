@@ -3646,7 +3646,7 @@ async function startServer() {
       void (async () => {
         const { rows: [pv] } = await query('SELECT name FROM providers WHERE id = $1', [instance.provider_id]);
         await notifyEvent('roteiro_enviado', { provider_name: pv?.name ?? '' },
-          await auditoriaRecipients(), { providerId: Number(instance.provider_id), email: false });
+          await auditoriaRecipients(), { providerId: Number(instance.provider_id) });
       })().catch((e) => console.error('[notify] site roteiro_enviado:', e));
 
       res.json({ success: true, first_submission: firstSubmission });
@@ -5094,7 +5094,7 @@ async function startServer() {
           provRecipients, { providerId: Number(inst.provider_id), email: !!seal });
         if (certificateId) {
           await notifyEvent('certificado_emitido', { valid_until: validUntil },
-            provRecipients, { providerId: Number(inst.provider_id), email: false });
+            provRecipients, { providerId: Number(inst.provider_id) });
         }
         if (planId) {
           await notifyEvent('plano_gerado',
@@ -5925,7 +5925,7 @@ async function startServer() {
           await notifyEvent('acao_aguardando_validacao',
             { provider_name: pvResp?.name ?? '', what: item.what },
             await auditoriaRecipients(),
-            { providerId: Number(req.user.provider_id), email: false });
+            { providerId: Number(req.user.provider_id) });
         })().catch((e) => console.error('[notify] site acao_aguardando_validacao:', e));
       }
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { fmtData } from '../../lib/formatDate';
 import { computeSurveyStats, SurveyRow } from '../../lib/surveyStats';
-import { Loader2, MessageSquare, Search } from 'lucide-react';
+import { Loader2, MessageSquare, Search, Download } from 'lucide-react';
 
 const Q3_LABEL: Record<string, string> = {
   sim_totalmente: 'Sim, totalmente', sim_parcialmente: 'Sim, parcialmente',
@@ -150,6 +150,39 @@ export default function PesquisaDashboard({ user }: { user: any }) {
     });
   }, [rows, search, statusFilter]);
 
+  // Export CSV da lista filtrada (mesmo padrão dos demais: ';', BOM, aspas).
+  const exportCSV = () => {
+    const esc = (v: any) => {
+      const s = String(v ?? '');
+      return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['Ciclo', 'Prestador', 'Código', 'Status', 'No prazo', 'Bônus',
+      'Roteiro enviado em', 'Respondida em', 'Q1 Clareza', 'Q2 Portal', 'Q3 Documentos',
+      'Q4 Dificuldade', 'Q4 Detalhe', 'Q5 Processo', 'Q6 NPS', 'Comentários'];
+    const linhas = filtered.map((r: any) => [
+      r.cycle_label ?? '',
+      r.provider_name ?? '',
+      r.provider_code ?? '',
+      STATUS_META[r.status]?.label ?? r.status ?? '',
+      r.status === 'respondida' ? (r.within_deadline ? 'Sim' : 'Não') : '',
+      r.status === 'respondida' ? (r.bonus_points ?? 0) : '',
+      fmtData(r.submitted_at),
+      r.response_submitted_at ? fmtData(r.response_submitted_at) : '',
+      r.q1_clareza ?? '', r.q2_portal ?? '',
+      r.q3_documentos ? (Q3_LABEL[r.q3_documentos] ?? r.q3_documentos) : '',
+      r.q4_dificuldade == null ? '' : (r.q4_dificuldade ? 'Sim' : 'Não'),
+      r.q4_texto ?? '', r.q5_geral ?? '', r.q6_nps ?? '', r.comentarios ?? '',
+    ]);
+    const csv = [header, ...linhas].map(row => row.map(esc).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pesquisas_satisfacao_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -252,6 +285,13 @@ export default function PesquisaDashboard({ user }: { user: any }) {
               <option value="pendente">Pendentes</option>
               <option value="expirada">Expiradas</option>
             </select>
+            <button
+              onClick={exportCSV}
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              <Download className="h-4 w-4" /> Exportar CSV
+            </button>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-100 bg-white shadow-sm">

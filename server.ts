@@ -1862,13 +1862,25 @@ async function startServer() {
         const { rows: freed } = await c.query(
           `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[]) RETURNING user_id`,
           [Number(providerId), location_ids]);
-        // 2) RECRIAR: 1 login por unidade liberada, sem e-mail. O vínculo real vive em
-        // user_locations — o escalar users.location_id foi dropado na 0037 (Fatia 7).
+        // 2) RECRIAR: 1 login por unidade liberada. O e-mail volta para a ORIGEM
+        // (provider_locations.email) — não fica perdido ao desagrupar —, espelhando
+        // provision-users: restaura só se o formato for válido E ninguém mais o usa
+        // (UNIQUE users.email); senão NULL ("Sem e-mail"). O NOT EXISTS enxerga os
+        // logins recriados antes nesta mesma transação, então dois endereços com o
+        // mesmo e-mail de origem não colidem. O vínculo real vive em user_locations
+        // — o escalar users.location_id foi dropado na 0037 (Fatia 7).
         for (const lid of location_ids) {
           const { rows: created } = await c.query(
             `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
-             VALUES ($1, NULL, NULL, $2, $3, true, 'pending') RETURNING id`,
-            [p[0].name, role, Number(providerId)]);
+             SELECT $1,
+                    (SELECT LOWER(TRIM(pl.email))
+                       FROM provider_locations pl
+                      WHERE pl.id = $2
+                        AND LOWER(TRIM(pl.email)) ~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$'
+                        AND NOT EXISTS (SELECT 1 FROM users u WHERE u.email = LOWER(TRIM(pl.email)))),
+                    NULL, $3, $4, true, 'pending'
+             RETURNING id`,
+            [p[0].name, lid, role, Number(providerId)]);
           await c.query(
             `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
             [created[0].id, lid, Number(providerId)]);

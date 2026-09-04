@@ -1,20 +1,16 @@
-// src/lib/certValidity.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeValidUntil } from './certValidity.js';
+import { certValidUntilOk } from './certValidity.js';
 
-test('validade = fim do ciclo + 1 ano (string date-only sem shift de timezone)', () => {
-  assert.equal(computeValidUntil('2026-12-31', new Date(2026, 4, 25)), '2027-12-31');
+test('aceita data igual ao fim do ciclo', () => {
+  assert.equal(certValidUntilOk('2026-12-31', '2026-12-31'), true);
 });
-
-test('sem ciclo cai no fallback (completed_at) + 1 ano', () => {
-  assert.equal(computeValidUntil(null, new Date(2026, 4, 25)), '2027-05-25');
+test('aceita data posterior ao fim', () => {
+  assert.equal(certValidUntilOk('2027-12-31', '2026-12-31'), true);
 });
-
-test('aceita Date vindo do driver pg', () => {
-  assert.equal(computeValidUntil(new Date(2026, 11, 31), new Date(2026, 0, 1)), '2027-12-31');
+test('rejeita data anterior ao fim', () => {
+  assert.equal(certValidUntilOk('2026-11-30', '2026-12-31'), false);
 });
-
-test('29 de fevereiro vira 28 no ano seguinte', () => {
-  assert.equal(computeValidUntil('2028-02-29', new Date(2026, 0, 1)), '2029-02-28');
+test('ignora hora (compara só a data)', () => {
+  assert.equal(certValidUntilOk('2027-01-01T00:00:00Z', '2026-12-31'), true);
 });

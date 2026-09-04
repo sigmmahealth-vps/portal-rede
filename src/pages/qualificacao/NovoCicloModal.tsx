@@ -5,17 +5,23 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
   const [label, setLabel] = useState(initial?.label || '');
   const [start, setStart] = useState(initial?.start_date?.slice(0, 10) || '');
   const [end, setEnd] = useState(initial?.end_date?.slice(0, 10) || '');
+  const [certValidUntil, setCertValidUntil] = useState(initial?.cert_valid_until?.slice(0, 10) || '');
   const [active, setActive] = useState(!!initial?.active);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // A validade dos certificados trava assim que o ciclo é aberto (tem instâncias).
+  const opened = (initial?.instances_count ?? 0) > 0;
+
   const save = async () => {
     setErr(null); setSaving(true);
     try {
+      // Não reenvia cert_valid_until em ciclo já aberto (o back rejeita).
+      const cvu = opened ? undefined : certValidUntil;
       if (initial?.id) {
-        await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active }) });
+        await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active, cert_valid_until: cvu }) });
       } else {
-        await fetchApi('/eval/cycles', { method: 'POST', body: JSON.stringify({ label, start_date: start, end_date: end, active }) });
+        await fetchApi('/eval/cycles', { method: 'POST', body: JSON.stringify({ label, start_date: start, end_date: end, active, cert_valid_until: cvu }) });
       }
       onSaved(); onClose();
     } catch (e: any) { setErr(e.message || 'erro'); }
@@ -43,6 +49,22 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
               <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="mt-1 w-full border rounded px-3 py-2" />
             </label>
           </div>
+          <label className="block">
+            <span className="text-sm text-gray-600">Validade dos certificados</span>
+            <input
+              type="date"
+              value={certValidUntil}
+              min={end || undefined}
+              disabled={opened}
+              onChange={e => setCertValidUntil(e.target.value)}
+              className="mt-1 w-full border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500"
+            />
+            <span className="mt-1 block text-xs text-gray-500">
+              {opened
+                ? 'Ciclo já aberto — a validade não pode mais ser alterada.'
+                : 'Todos os certificados emitidos neste ciclo valerão até esta data. Trava ao abrir o ciclo.'}
+            </span>
+          </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
             <span>Ativar este ciclo (desativa o atual)</span>
@@ -51,7 +73,7 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
         </div>
         <div className="p-4 bg-gray-50 rounded-b-xl flex justify-end gap-2">
           <button onClick={onClose} className="btn btn-outline">Cancelar</button>
-          <button onClick={save} disabled={saving || !label || !start || !end} className="btn btn-primary">
+          <button onClick={save} disabled={saving || !label || !start || !end || (!opened && !certValidUntil)} className="btn btn-primary">
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>

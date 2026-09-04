@@ -21,6 +21,7 @@ import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/prov
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
+import { certValidUntilOk } from './src/lib/certValidity.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -4089,12 +4090,18 @@ async function startServer() {
   app.post('/api/eval/cycles', authenticate, async (req: any, res) => {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
-      const { label, start_date, end_date, active, auto_open, auto_close } = req.body || {};
+      const { label, start_date, end_date, active, auto_open, auto_close, cert_valid_until } = req.body || {};
       if (!label || !start_date || !end_date) {
         return res.status(400).json({ error: 'label, start_date, end_date obrigatórios' });
       }
+      if (!cert_valid_until) {
+        return res.status(400).json({ error: 'cert_valid_until (validade dos certificados) obrigatório' });
+      }
       if (new Date(end_date) < new Date(start_date)) {
         return res.status(400).json({ error: 'end_date < start_date' });
+      }
+      if (!certValidUntilOk(cert_valid_until, end_date)) {
+        return res.status(400).json({ error: 'cert_valid_until deve ser igual ou posterior a end_date' });
       }
       if (active) {
         const other = await findConflictingActiveCycle();
@@ -4103,9 +4110,9 @@ async function startServer() {
         }
       }
       const { rows } = await query(
-        `INSERT INTO eval_cycles (label, start_date, end_date, active, auto_open, auto_close)
-         VALUES ($1, $2, $3, COALESCE($4, false), COALESCE($5, false), COALESCE($6, false)) RETURNING *`,
-        [label, start_date, end_date, active || false, !!auto_open, !!auto_close]
+        `INSERT INTO eval_cycles (label, start_date, end_date, active, auto_open, auto_close, cert_valid_until)
+         VALUES ($1, $2, $3, COALESCE($4, false), COALESCE($5, false), COALESCE($6, false), $7) RETURNING *`,
+        [label, start_date, end_date, active || false, !!auto_open, !!auto_close, cert_valid_until]
       );
       res.json(rows[0]);
     } catch (err: any) {
@@ -4118,11 +4125,24 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
-      const { label, start_date, end_date, active, auto_open, auto_close } = req.body || {};
+      const { label, start_date, end_date, active, auto_open, auto_close, cert_valid_until } = req.body || {};
       if (active === true) {
         const other = await findConflictingActiveCycle(id);
         if (other != null) {
           return res.status(409).json({ error: 'Existe ciclo ativo — encerre-o antes de ativar este.', active_cycle_id: other });
+        }
+      }
+      if (cert_valid_until != null) {
+        // A validade dos certificados trava assim que o ciclo é aberto (tem instâncias).
+        const { rows: refs } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [id]);
+        if (refs.length) {
+          return res.status(409).json({ error: 'Ciclo já aberto — validade dos certificados não pode ser alterada.' });
+        }
+        const { rows: [cur] } = await query('SELECT end_date FROM eval_cycles WHERE id = $1', [id]);
+        if (!cur) return res.status(404).json({ error: 'not found' });
+        const effEnd = end_date ?? cur.end_date;
+        if (!certValidUntilOk(cert_valid_until, String(effEnd))) {
+          return res.status(400).json({ error: 'cert_valid_until deve ser igual ou posterior a end_date' });
         }
       }
       const { rows } = await query(
@@ -4132,11 +4152,12 @@ async function startServer() {
                 end_date   = COALESCE($3, end_date),
                 active     = COALESCE($4, active),
                 auto_open  = COALESCE($5, auto_open),
-                auto_close = COALESCE($6, auto_close)
+                auto_close = COALESCE($6, auto_close),
+                cert_valid_until = COALESCE($8, cert_valid_until)
           WHERE id = $7 RETURNING *`,
         [label ?? null, start_date ?? null, end_date ?? null, active ?? null,
          typeof auto_open === 'boolean' ? auto_open : null,
-         typeof auto_close === 'boolean' ? auto_close : null, id]
+         typeof auto_close === 'boolean' ? auto_close : null, id, cert_valid_until ?? null]
       );
       if (!rows[0]) return res.status(404).json({ error: 'not found' });
       // Ao desativar o ciclo por PATCH, garante o mesmo efeito do /encerrar:
@@ -4925,7 +4946,7 @@ async function startServer() {
 
       const { rows: [inst] } = await query(`
         SELECT ei.id, ei.status, ei.provider_id, ei.location_id,
-               c.end_date AS cycle_end_date
+               c.cert_valid_until
           FROM eval_instances ei
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.id = $1
@@ -5017,10 +5038,16 @@ async function startServer() {
       }
 
       // ---- Certificado (spec 5.4.5): emitido na mesma transação do parecer ----
+      // Validade = data definida na criação do ciclo (eval_cycles.cert_valid_until),
+      // congelada aqui na emissão. Não há mais regra automática.
       const { randomBytes } = await import('node:crypto');
-      const { computeValidUntil } = await import('./src/lib/certValidity.js');
+      const validUntil: string | null = inst.cert_valid_until
+        ? String(inst.cert_valid_until).slice(0, 10)
+        : null;
+      if (!validUntil) {
+        return res.status(409).json({ error: 'Ciclo sem data de validade de certificado definida.' });
+      }
       const verifyCode = randomBytes(16).toString('hex');
-      const validUntil = computeValidUntil(inst.cycle_end_date ?? null, new Date());
 
       // ---- UPDATE do parecer + geração do plano numa única transação ----
       let planId: number | null = null;

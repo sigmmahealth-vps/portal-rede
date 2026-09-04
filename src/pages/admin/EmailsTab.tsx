@@ -31,7 +31,7 @@ const TRANSACTIONAL_TYPES = new Set(['convite', 'reset_senha', 'otp']);
 const STATUS: Record<string, { label: string; cls: string }> = {
   aberto: { label: 'Lido', cls: 'bg-teal-100 text-teal-800' },
   entregue: { label: 'Entregue', cls: 'bg-emerald-100 text-emerald-800' },
-  enviado: { label: 'Processado', cls: 'bg-emerald-50 text-emerald-700' },
+  enviado: { label: 'Enviado', cls: 'bg-emerald-50 text-emerald-700' },
   atrasado: { label: 'Atrasado', cls: 'bg-amber-100 text-amber-800' },
   rejeitado: { label: 'Rejeitado', cls: 'bg-red-100 text-red-700' },
   reclamado: { label: 'Reclamação', cls: 'bg-orange-100 text-orange-700' },
@@ -98,7 +98,7 @@ export default function EmailsTab() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-bold text-gray-800">E-mails Enviados</h2>
-        <p className="text-sm text-gray-500">Notificações do portal enviadas por e-mail e seu status. <strong>Processado</strong> = entregue ao provedor sem erro (não confirma leitura); <strong>Suprimido</strong> = não enviado (fase de testes/allowlist).</p>
+        <p className="text-sm text-gray-500">Notificações do portal enviadas por e-mail e seu status (espelha o provedor). <strong>Enviado → Entregue → Lido</strong> é o caminho de sucesso; <strong>Rejeitado</strong> = devolvido (bounce); <strong>Suprimido</strong> = não enviado (fase de testes/allowlist).</p>
       </div>
 
       {/* Dashboard — números principais do período/busca selecionados */}
@@ -108,11 +108,9 @@ export default function EmailsTab() {
             { key: '', label: 'Total', value: stats.total, cls: 'text-gray-900', bar: 'bg-gray-300', nobar: true },
             { key: 'aberto', label: 'Lidos', value: stats.aberto, cls: 'text-teal-800', bar: 'bg-teal-600' },
             { key: 'entregue', label: 'Entregues', value: stats.entregue, cls: 'text-emerald-800', bar: 'bg-emerald-600' },
-            { key: 'enviado', label: 'Processados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-400' },
+            { key: 'enviado', label: 'Enviados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-400' },
             { key: 'rejeitado', label: 'Rejeitados', value: stats.rejeitado, cls: 'text-red-700', bar: 'bg-red-500' },
             { key: 'suprimido', label: 'Suprimidos', value: stats.suprimido, cls: 'text-gray-600', bar: 'bg-gray-400' },
-            { key: 'falhou', label: 'Falharam', value: stats.falhou, cls: 'text-red-700', bar: 'bg-red-500' },
-            { key: 'pendente', label: 'Pendentes', value: stats.pendente, cls: 'text-amber-700', bar: 'bg-amber-500' },
             { key: '', label: 'Reenviados', value: stats.reenviados, cls: 'text-blue-700', bar: 'bg-blue-500', nobar: true },
           ].map((c: any, i) => {
             const pct = stats.total > 0 ? Math.round((c.value / stats.total) * 100) : 0;
@@ -172,7 +170,7 @@ export default function EmailsTab() {
             <option value="">Todos</option>
             <option value="aberto">Lido</option>
             <option value="entregue">Entregue</option>
-            <option value="enviado">Processado</option>
+            <option value="enviado">Enviado</option>
             <option value="atrasado">Atrasado</option>
             <option value="rejeitado">Rejeitado</option>
             <option value="reclamado">Reclamação</option>

@@ -17,12 +17,14 @@ formalmente **reprovado** pelo auditor. Pontuação cheia ou N/A aprovado (não 
 aplica) não são não conformidade. Basta uma para rebaixar a Bronze.
 
 ## Status de e-mail (notificações)
-Estado do e-mail de uma notificação (`notifications.email_status`): **pendente**
-(na fila de envio), **enviado** = "**processado**" (entregue ao provedor de envio
-sem erro — *não* é prova de entrega na caixa nem de leitura), **suprimido** (não
-saiu de verdade: fora da lista de teste/allowlist ou ambiente sem envio real),
-**falhou** (o provedor recusou), **sem e-mail** (`na` — notificação só de portal).
-Entrega e abertura reais não são rastreadas (dependeria de webhooks do provedor).
+Estado do e-mail de uma notificação (`notifications.email_status`), espelhando o
+provedor (Resend). Caminho de sucesso: **pendente** (na fila) → **enviado**
+("Sent" — aceito pelo provedor) → **entregue** ("Delivered") → **aberto** ("Lido",
+via open tracking). Falhas: **rejeitado** (bounce/devolvido), **reclamado** (marcou
+como spam), **falhou** (provedor não conseguiu enviar), **atrasado** (transiente,
+vai retentar). Fora disso: **suprimido** (não saiu — allowlist de teste/sem envio
+real) e **sem e-mail** (`na` — notificação só de portal). Entrega/abertura reais
+vêm dos webhooks do Resend; falhas são "grudentas" (não regridem para entregue/lido).
 
 ## Validade do certificado
 Data até a qual um certificado de qualificação é válido. É **escolhida por quem

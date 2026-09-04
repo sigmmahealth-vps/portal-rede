@@ -27,12 +27,33 @@ export function verifyResendWebhook(
   });
 }
 
-// Mapeia o tipo de evento do Resend para o status de e-mail interno. null = ignorar.
-export function resendEventToStatus(type: string | undefined): 'entregue' | 'rejeitado' | 'reclamado' | null {
+export type WebhookStatus = 'entregue' | 'rejeitado' | 'reclamado' | 'aberto' | 'atrasado' | 'falhou';
+
+// Mapeia o tipo de evento do Resend para o status de e-mail interno. null = ignorar
+// (sent = já é 'enviado'; received/clicked/suppressed não viram status próprio aqui).
+export function resendEventToStatus(type: string | undefined): WebhookStatus | null {
   switch (type) {
     case 'email.delivered': return 'entregue';
+    case 'email.opened': return 'aberto';
     case 'email.bounced': return 'rejeitado';
     case 'email.complained': return 'reclamado';
+    case 'email.failed': return 'falhou';
+    case 'email.delivery_delayed': return 'atrasado';
     default: return null;
+  }
+}
+
+// Condição SQL de precedência: quais status atuais podem ser SOBRESCRITOS pelo novo.
+// Falhas (rejeitado/reclamado/falhou) são grudentas e vencem; o caminho feliz avança
+// enviado → entregue → aberto sem regredir; atrasado só no começo. Sempre evita repetir.
+export function webhookOverwriteCondition(status: WebhookStatus): string {
+  const FAIL = "'rejeitado','reclamado','falhou'";
+  switch (status) {
+    case 'rejeitado':
+    case 'reclamado':
+    case 'falhou':   return `email_status NOT IN (${FAIL})`;
+    case 'aberto':   return `email_status NOT IN (${FAIL},'aberto')`;
+    case 'entregue': return `email_status NOT IN (${FAIL},'aberto','entregue')`;
+    case 'atrasado': return `email_status IN ('pendente','enviado')`;
   }
 }

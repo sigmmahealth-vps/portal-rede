@@ -21,7 +21,7 @@ import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/prov
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
-import { verifyResendWebhook, resendEventToStatus } from './src/lib/resendWebhook.js';
+import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -623,8 +623,10 @@ async function startServer() {
         SELECT COUNT(*)::int AS total,
                COUNT(*) FILTER (WHERE n.email_status = 'enviado')::int   AS enviado,
                COUNT(*) FILTER (WHERE n.email_status = 'entregue')::int  AS entregue,
+               COUNT(*) FILTER (WHERE n.email_status = 'aberto')::int    AS aberto,
                COUNT(*) FILTER (WHERE n.email_status = 'rejeitado')::int AS rejeitado,
                COUNT(*) FILTER (WHERE n.email_status = 'reclamado')::int AS reclamado,
+               COUNT(*) FILTER (WHERE n.email_status = 'atrasado')::int  AS atrasado,
                COUNT(*) FILTER (WHERE n.email_status = 'suprimido')::int AS suprimido,
                COUNT(*) FILTER (WHERE n.email_status = 'falhou')::int    AS falhou,
                COUNT(*) FILTER (WHERE n.email_status = 'pendente')::int  AS pendente,
@@ -674,12 +676,10 @@ async function startServer() {
       const emailId = req.body?.data?.email_id;
       const status = resendEventToStatus(req.body?.type);
       if (emailId && status) {
-        // Precedência: bounce/reclamação (falhas) são "grudentas" — vencem 'entregue'/'enviado'
-        // e NÃO são desfeitas por um 'delivered' que chegue atrasado. 'entregue' só se aplica
-        // quando ainda não houve falha. Nunca reescreve o mesmo status.
-        let cond = 'provider_message_id = $1 AND email_status <> $2';
-        if (status === 'entregue') cond += " AND email_status NOT IN ('rejeitado','reclamado')";
-        await query(`UPDATE notifications SET email_status = $2 WHERE ${cond}`, [emailId, status]);
+        // Precedência centralizada (falhas grudentas; caminho feliz não regride).
+        await query(
+          `UPDATE notifications SET email_status = $2 WHERE provider_message_id = $1 AND ${webhookOverwriteCondition(status)}`,
+          [emailId, status]);
       }
       res.json({ ok: true });
     } catch (err: any) { console.error('[webhook resend]', err); res.status(500).json({ error: err.message }); }

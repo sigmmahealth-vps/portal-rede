@@ -29,8 +29,10 @@ const TRANSACTIONAL_TYPES = new Set(['convite', 'reset_senha', 'otp']);
 // Status de e-mail → rótulo + cor. 'enviado' = processado pelo provedor (não é
 // prova de entrega); 'suprimido' = não saiu (allowlist/dev).
 const STATUS: Record<string, { label: string; cls: string }> = {
+  aberto: { label: 'Lido', cls: 'bg-teal-100 text-teal-800' },
   entregue: { label: 'Entregue', cls: 'bg-emerald-100 text-emerald-800' },
   enviado: { label: 'Processado', cls: 'bg-emerald-50 text-emerald-700' },
+  atrasado: { label: 'Atrasado', cls: 'bg-amber-100 text-amber-800' },
   rejeitado: { label: 'Rejeitado', cls: 'bg-red-100 text-red-700' },
   reclamado: { label: 'Reclamação', cls: 'bg-orange-100 text-orange-700' },
   suprimido: { label: 'Suprimido', cls: 'bg-gray-200 text-gray-600' },
@@ -104,6 +106,7 @@ export default function EmailsTab() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
           {[
             { key: '', label: 'Total', value: stats.total, cls: 'text-gray-900', bar: 'bg-gray-300', nobar: true },
+            { key: 'aberto', label: 'Lidos', value: stats.aberto, cls: 'text-teal-800', bar: 'bg-teal-600' },
             { key: 'entregue', label: 'Entregues', value: stats.entregue, cls: 'text-emerald-800', bar: 'bg-emerald-600' },
             { key: 'enviado', label: 'Processados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-400' },
             { key: 'rejeitado', label: 'Rejeitados', value: stats.rejeitado, cls: 'text-red-700', bar: 'bg-red-500' },
@@ -167,8 +170,10 @@ export default function EmailsTab() {
           <span className="block text-xs text-gray-500 mb-0.5">Status</span>
           <select value={status} onChange={e => setStatus(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-2 text-sm">
             <option value="">Todos</option>
+            <option value="aberto">Lido</option>
             <option value="entregue">Entregue</option>
             <option value="enviado">Processado</option>
+            <option value="atrasado">Atrasado</option>
             <option value="rejeitado">Rejeitado</option>
             <option value="reclamado">Reclamação</option>
             <option value="suprimido">Suprimido</option>

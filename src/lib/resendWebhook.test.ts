@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { verifyResendWebhook, resendEventToStatus } from './resendWebhook.js';
+import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './resendWebhook.js';
 
 const secretRaw = crypto.randomBytes(24).toString('base64');
 const secret = `whsec_${secretRaw}`;
@@ -41,8 +41,23 @@ test('headers ausentes falham', () => {
 
 test('mapeamento de eventos', () => {
   assert.equal(resendEventToStatus('email.delivered'), 'entregue');
+  assert.equal(resendEventToStatus('email.opened'), 'aberto');
   assert.equal(resendEventToStatus('email.bounced'), 'rejeitado');
   assert.equal(resendEventToStatus('email.complained'), 'reclamado');
-  assert.equal(resendEventToStatus('email.delivery_delayed'), null);
+  assert.equal(resendEventToStatus('email.failed'), 'falhou');
+  assert.equal(resendEventToStatus('email.delivery_delayed'), 'atrasado');
+  assert.equal(resendEventToStatus('email.sent'), null);      // = já é 'enviado'
+  assert.equal(resendEventToStatus('email.clicked'), null);
   assert.equal(resendEventToStatus(undefined), null);
+});
+
+test('precedência: falhas grudentas, caminho feliz não regride', () => {
+  // falha vence entregue/enviado, mas não outra falha
+  assert.match(webhookOverwriteCondition('rejeitado'), /NOT IN \('rejeitado','reclamado','falhou'\)/);
+  // entregue não sobrescreve falha nem aberto (não regride de Lido)
+  assert.match(webhookOverwriteCondition('entregue'), /'aberto','entregue'/);
+  // aberto vence entregue mas não falha
+  assert.match(webhookOverwriteCondition('aberto'), /NOT IN \('rejeitado','reclamado','falhou','aberto'\)/);
+  // atrasado só no começo
+  assert.match(webhookOverwriteCondition('atrasado'), /IN \('pendente','enviado'\)/);
 });

@@ -87,8 +87,10 @@ export function buildScoreMemory(
   }));
 
   const base_pct = max > 0 ? Math.round((obtained / max) * 10000) / 100 : 0;
+  // Bônus da pesquisa: +10 pontos no NUMERADOR (não no percentual). Ex.: 180/200
+  // com bônus vira (180+10)/200 = 95%, não 90%+10 = 100%.
   const bonus = survey?.within_deadline ? 10 : 0;
-  const final_pct = Math.min(100, base_pct + bonus);
+  const final_pct = max > 0 ? Math.min(100, Math.round(((obtained + bonus) / max) * 10000) / 100) : 0;
   const eliminatory_failed = criteria.some(c => c.evidence_status === 'reprovado' && c.is_eliminatory);
 
   return {

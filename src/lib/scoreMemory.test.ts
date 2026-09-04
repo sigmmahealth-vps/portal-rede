@@ -68,9 +68,19 @@ test('bonus +10 no prazo, teto 100, e seal via computeSeal', () => {
   assert.equal(semBonus.final_pct, 100);
   assert.equal(semBonus.seal, 'Ouro');
   const comBonus = buildScoreMemory(rows, { within_deadline: true });
-  assert.equal(comBonus.final_pct, 100);      // teto 100 (100+10 -> 100)
+  assert.equal(comBonus.final_pct, 100);      // teto 100 ((10+10)/10 -> 200 -> 100)
   const semSurvey = buildScoreMemory(rows, null);
   assert.equal(semSurvey.bonus_pending, true);
+});
+
+test('bonus soma no numerador, nao em pontos percentuais: 180/200 +10 = 95%', () => {
+  const rows = [row({ question_id: 1, code: 'A', score_obtained: 180, max_score: 200 })];
+  const com = buildScoreMemory(rows, { within_deadline: true });
+  assert.equal(com.totals.base_pct, 90);
+  assert.equal(com.bonus, 10);
+  assert.equal(com.final_pct, 95);            // (180+10)/200 = 95, NAO 90+10 = 100
+  const sem = buildScoreMemory(rows, { within_deadline: false });
+  assert.equal(sem.final_pct, 90);
 });
 
 test('eliminatorio reprovado rebaixa selo a Bronze', () => {
@@ -95,7 +105,8 @@ test('paridade com a formula do parecer (base/final/seal)', () => {
   const score = counted.reduce((s, r) => s + (r.score_obtained ?? 0), 0);
   const max = counted.reduce((s, r) => s + r.max_score, 0);
   const base = max > 0 ? Math.round((score / max) * 10000) / 100 : 0;
-  const final = Math.min(100, base + (survey.within_deadline ? 10 : 0));
+  const bonus = survey.within_deadline ? 10 : 0;
+  const final = max > 0 ? Math.min(100, Math.round(((score + bonus) / max) * 10000) / 100) : 0;
   const m = buildScoreMemory(rows, survey);
   assert.equal(m.totals.base_pct, base);
   assert.equal(m.final_pct, final);

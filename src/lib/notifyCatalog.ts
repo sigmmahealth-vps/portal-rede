@@ -35,16 +35,18 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
   switch (type) {
     case 'ciclo_aberto':
       return { title: `Ciclo de qualificação ${ctx.cycle_label ?? ''} aberto`.replace(/\s+/g, ' ').trim(),
-               body: 'Seu roteiro de qualificação está disponível para preenchimento no portal.', link };
+               body: `Seu roteiro de qualificação está disponível para preenchimento no portal.${ctx.end_date ? ` O prazo para envio termina em ${fmtDate(ctx.end_date)}.` : ''}`, link };
     case 'roteiro_enviado':
       return { title: 'Roteiro enviado para análise',
                body: `${ctx.provider_name ?? 'Um prestador'} enviou o roteiro de qualificação para análise.`, link };
-    case 'reanalise_solicitada':
+    case 'reanalise_solicitada': {
+      const prazoRe = ctx.end_date ? ` O prazo para reenvio termina em ${fmtDate(ctx.end_date)}.` : '';
       return ctx.integral
         ? { title: 'Avaliação devolvida para reanálise',
-            body: 'O auditor devolveu sua avaliação. Revise os critérios apontados e reenvie.', link }
+            body: `O auditor devolveu sua avaliação. Revise os critérios apontados e reenvie.${prazoRe}`, link }
         : { title: `Reanálise solicitada — critério ${ctx.question_code ?? ''}`.trim(),
-            body: 'O auditor solicitou reanálise de um critério da sua avaliação. Ajuste a evidência e reenvie.', link };
+            body: `O auditor solicitou reanálise de um critério da sua avaliação. Ajuste a evidência e reenvie.${prazoRe}`, link };
+    }
     case 'parecer_aprovado':
       return { title: `Avaliação aprovada — selo ${ctx.seal ?? ''}`.trim(),
                body: `Sua avaliação de qualificação foi aprovada com ${fmtPct(ctx.percentual ?? 0)} de atingimento. Veja o parecer no portal.`, link };

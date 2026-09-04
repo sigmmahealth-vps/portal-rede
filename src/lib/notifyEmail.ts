@@ -174,6 +174,7 @@ export function notificationBlocks(
         paragraphs: [
           `O ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi aberto e o seu roteiro já está disponível para preenchimento no portal.`,
         ],
+        ...(ctx.end_date ? { highlight: { label: 'Prazo para envio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
         steps: 'acesse o portal, responda aos critérios do roteiro anexando as evidências solicitadas e, ao concluir, envie a avaliação para análise.',
         cta,
       };
@@ -191,12 +192,14 @@ export function notificationBlocks(
         ? {
             banner: 'Avaliação devolvida para reanálise',
             paragraphs: ['O auditor devolveu a sua avaliação de qualificação para reanálise.'],
+            ...(ctx.end_date ? { highlight: { label: 'Prazo para reenvio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
             steps: 'acesse o roteiro no portal, revise os critérios apontados, ajuste as evidências e reenvie a avaliação para análise.',
             cta,
           }
         : {
             banner: 'Reanálise de critério solicitada',
             paragraphs: ['O auditor solicitou a reanálise de um critério da sua avaliação de qualificação.'],
+            ...(ctx.end_date ? { highlight: { label: 'Prazo para reenvio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
             steps: 'acesse o roteiro, leia a orientação do auditor no critério apontado, anexe a nova evidência e reenvie para análise.',
             cta,
           };

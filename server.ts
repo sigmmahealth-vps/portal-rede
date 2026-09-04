@@ -3753,7 +3753,7 @@ async function startServer() {
       });
 
       void (async () => {
-        await notifyEvent('reanalise_solicitada', { integral: true },
+        await notifyEvent('reanalise_solicitada', { integral: true, end_date: await instanceCycleEnd(id) },
           await prestadorRecipients(Number(reopened.provider_id), reopened.location_id ?? null),
           { providerId: Number(reopened.provider_id) });
       })().catch((e) => console.error('[notify] site reanalise_solicitada (reopen):', e));
@@ -4571,7 +4571,7 @@ async function startServer() {
   // { ok, code, error?, created? } — reutilizada tanto pelo POST manual quanto pelo
   // job automático (5.4.1.1 abertura em data definida).
   async function openCycleCore(cycleId: number): Promise<{ ok: boolean; code?: number; error?: string; created?: { groups: number; instances: number; dl_bypass: number } }> {
-    const { rows: cy } = await query('SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]);
+    const { rows: cy } = await query('SELECT id, label, active, end_date FROM eval_cycles WHERE id = $1', [cycleId]);
     if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado' };
     if (!cy[0].active) return { ok: false, code: 400, error: 'ciclo não está ativo' };
     const { rows: existInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
@@ -4663,7 +4663,7 @@ async function startServer() {
       // Notifica os prestadores do ciclo (fire-and-forget; não atrasa a resposta).
       void (async () => {
         for (const pid of cycleProviderIds) {
-          await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label },
+          await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label, end_date: cy[0].end_date },
             await prestadorRecipients(pid), { providerId: pid });
         }
       })();
@@ -4784,6 +4784,15 @@ async function startServer() {
     }
   }
 
+  // Fim do ciclo da instância = prazo máximo de resposta (envio do roteiro / reenvio
+  // de reanálise). null se a instância não tiver ciclo. Usado nas notificações (E-03).
+  async function instanceCycleEnd(instanceId: number): Promise<string | null> {
+    const { rows } = await query(
+      `SELECT c.end_date FROM eval_instances ei JOIN eval_cycles c ON c.id = ei.cycle_id WHERE ei.id = $1`,
+      [instanceId]);
+    return rows[0]?.end_date ?? null;
+  }
+
   // ==========================================================================
   // Ações do auditor por critério (spec 5.4.1.2 etapa 4)
   // ==========================================================================
@@ -4884,7 +4893,8 @@ async function startServer() {
       if (action === 'solicitou_reanalise') {
         void (async () => {
           const { rows: [q] } = await query('SELECT code FROM eval_questions WHERE id = $1', [ans.question_id]);
-          await notifyEvent('reanalise_solicitada', { question_code: q?.code ?? '' },
+          await notifyEvent('reanalise_solicitada',
+            { question_code: q?.code ?? '', end_date: await instanceCycleEnd(Number(ans.instance_id)) },
             await prestadorRecipients(Number(ans.provider_id), ans.location_id ?? null),
             { providerId: Number(ans.provider_id) });
         })().catch((e) => console.error('[notify] site reanalise_solicitada (auditorAction):', e));

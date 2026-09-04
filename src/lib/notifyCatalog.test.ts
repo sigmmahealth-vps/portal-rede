@@ -61,6 +61,19 @@ test('ciclo_encerrado_sem_avaliacao: título com o ciclo e orientação de próx
   assert.ok(c.body.toLowerCase().includes('próximo ciclo'), c.body);
 });
 
+test('E-03: ciclo_aberto e reanálise mostram o prazo (fim do ciclo) quando há end_date', () => {
+  const aberto = renderNotification('ciclo_aberto', { cycle_label: '2026', end_date: '2026-12-31' });
+  assert.ok(aberto.body.includes('31/12/2026'), aberto.body);
+  assert.ok(aberto.body.toLowerCase().includes('prazo'), aberto.body);
+  const reInt = renderNotification('reanalise_solicitada', { integral: true, end_date: '2026-12-31' });
+  assert.ok(reInt.body.includes('reenvio') && reInt.body.includes('31/12/2026'), reInt.body);
+  const reCrit = renderNotification('reanalise_solicitada', { question_code: '1.1.2', end_date: '2026-12-31' });
+  assert.ok(reCrit.body.includes('31/12/2026'), reCrit.body);
+  // Sem end_date, não inventa prazo.
+  const semPrazo = renderNotification('ciclo_aberto', { cycle_label: '2026' });
+  assert.ok(!semPrazo.body.toLowerCase().includes('prazo'), semPrazo.body);
+});
+
 test('dedupeKey determinística', () => {
   assert.equal(dedupeKey('acao_vencendo', 'item:9', 7), 'acao_vencendo:item:9:7');
 });

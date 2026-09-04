@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 import { Plus, Edit3, Trash2, Check, Settings, Lock } from 'lucide-react';
 import NovoCicloModal from './NovoCicloModal';
 import AbrirCicloPage from './AbrirCicloPage';
@@ -89,8 +90,8 @@ export default function CiclosAdmin({ user }: { user: any }) {
             })().map(({ c, hasOtherActive }) => (
               <tr key={c.id} className="border-b border-gray-50">
                 <td className="p-3 font-medium">{c.label}</td>
-                <td className="p-3 text-sm text-gray-600">{String(c.start_date).slice(0, 10)}</td>
-                <td className="p-3 text-sm text-gray-600">{String(c.end_date).slice(0, 10)}</td>
+                <td className="p-3 text-sm text-gray-600">{fmtData(c.start_date)}</td>
+                <td className="p-3 text-sm text-gray-600">{fmtData(c.end_date)}</td>
                 <td className="p-3">
                   {c.active
                     ? <span className="px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-700 font-semibold">Ativo</span>

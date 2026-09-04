@@ -4125,7 +4125,7 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const { rows } = await query(`
-        SELECT c.id, c.label, c.start_date, c.end_date, c.active,
+        SELECT c.id, c.label, c.start_date, c.end_date, c.active, c.cert_valid_until,
                (SELECT COUNT(*)::int FROM eval_instances ei WHERE ei.cycle_id = c.id) AS instances_count
           FROM eval_cycles c
          ORDER BY c.active DESC, c.start_date DESC, c.id DESC

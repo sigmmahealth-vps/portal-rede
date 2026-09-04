@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtData } from '../../lib/formatDate';
 
 export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?: any; onClose: () => void; onSaved: () => void }) {
   const [label, setLabel] = useState(initial?.label || '');
@@ -51,13 +52,18 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
           </div>
           <label className="block">
             <span className="text-sm text-gray-600">Validade dos certificados</span>
-            <input
-              type="date"
-              value={certValidUntil}
-              disabled={opened}
-              onChange={e => setCertValidUntil(e.target.value)}
-              className="mt-1 w-full border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500"
-            />
+            {opened ? (
+              <div className="mt-1 w-full rounded border bg-gray-100 px-3 py-2 text-gray-700">
+                {certValidUntil ? fmtData(certValidUntil) : '—'}
+              </div>
+            ) : (
+              <input
+                type="date"
+                value={certValidUntil}
+                onChange={e => setCertValidUntil(e.target.value)}
+                className="mt-1 w-full border rounded px-3 py-2"
+              />
+            )}
             <span className="mt-1 block text-xs text-gray-500">
               {opened
                 ? 'Ciclo já aberto — a validade não pode mais ser alterada.'

@@ -674,11 +674,12 @@ async function startServer() {
       const emailId = req.body?.data?.email_id;
       const status = resendEventToStatus(req.body?.type);
       if (emailId && status) {
-        // Não sobrescreve com o mesmo status; bounce/reclamação/entrega vindas do provedor
-        // vencem o 'enviado' anterior.
-        await query(
-          `UPDATE notifications SET email_status = $2 WHERE provider_message_id = $1 AND email_status <> $2`,
-          [emailId, status]);
+        // Precedência: bounce/reclamação (falhas) são "grudentas" — vencem 'entregue'/'enviado'
+        // e NÃO são desfeitas por um 'delivered' que chegue atrasado. 'entregue' só se aplica
+        // quando ainda não houve falha. Nunca reescreve o mesmo status.
+        let cond = 'provider_message_id = $1 AND email_status <> $2';
+        if (status === 'entregue') cond += " AND email_status NOT IN ('rejeitado','reclamado')";
+        await query(`UPDATE notifications SET email_status = $2 WHERE ${cond}`, [emailId, status]);
       }
       res.json({ ok: true });
     } catch (err: any) { console.error('[webhook resend]', err); res.status(500).json({ error: err.message }); }

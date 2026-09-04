@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
-import { fmtData } from '../../lib/formatDate';
+import { fmtData, fmtPct } from '../../lib/formatDate';
 import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
   AlertTriangle, ChevronDown, ChevronRight, CheckCircle2,
@@ -362,7 +362,7 @@ export default function PrestadorView({ user }: { user: any }) {
             <div className="flex flex-col">
               <span className="text-xs text-gray-500">{inst.status === 'finalizado' ? 'Score' : 'Progresso'}</span>
               <span className={(inst.status === 'finalizado' ? Number(inst.percentual) : fillPct(inst)) >= 80 ? 'text-emerald-600' : 'text-amber-600'}>
-                {inst.status === 'finalizado' ? Number(inst.percentual).toFixed(0) : fillPct(inst)}%
+                {inst.status === 'finalizado' ? fmtPct(inst.percentual) : `${fillPct(inst)}%`}
               </span>
             </div>
           </div>

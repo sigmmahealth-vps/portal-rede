@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import { Award, Download } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
-import { fmtData } from '../../lib/formatDate';
+import { fmtData, fmtPct } from '../../lib/formatDate';
 
 export interface Certificate {
   id: number;
@@ -147,7 +147,7 @@ export default function CertificadosTab() {
                     </div>
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Pontuação Final</p>
-                      <p className="text-sm font-bold text-secondary-900">{c.percentual.toFixed(1)}%</p>
+                      <p className="text-sm font-bold text-secondary-900">{fmtPct(c.percentual)}</p>
                     </div>
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Data Emissão</p>

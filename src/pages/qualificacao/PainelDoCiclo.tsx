@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtPct } from '../../lib/formatDate';
 import { Search, Download, Eye, Undo2, Award, AlertTriangle } from 'lucide-react';
 import AuditorPlayer from './AuditorPlayer';
 import { statusLabel } from '../../lib/statusLabels';
@@ -234,7 +235,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     </span>
                   </td>
                   <td className="p-3">
-                    <div className="font-bold text-gray-700">{Number(i.percentual).toFixed(0)}%</div>
+                    <div className="font-bold text-gray-700">{fmtPct(i.percentual)}</div>
                     {i.dims && (
                       <div className="mt-1 space-y-0.5">
                         {DIMENSOES.map(([abbr, key]) => {

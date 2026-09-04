@@ -11,7 +11,7 @@ export type NotifyType = typeof NOTIFY_TYPES[number];
 
 export interface NotifyContent { title: string; body: string; link: string; }
 
-import { fmtData } from './formatDate';
+import { fmtData, fmtPct } from './formatDate';
 export const fmtDate = fmtData;
 
 export function dedupeKey(type: string, ref: string, dest: string | number): string {
@@ -46,7 +46,7 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
             body: 'O auditor solicitou reanálise de um critério da sua avaliação. Ajuste a evidência e reenvie.', link };
     case 'parecer_aprovado':
       return { title: `Avaliação aprovada — selo ${ctx.seal ?? ''}`.trim(),
-               body: `Sua avaliação de qualificação foi aprovada com ${Math.round(Number(ctx.percentual ?? 0))}% de atingimento. Veja o parecer no portal.`, link };
+               body: `Sua avaliação de qualificação foi aprovada com ${fmtPct(ctx.percentual ?? 0)} de atingimento. Veja o parecer no portal.`, link };
     case 'parecer_reprovado':
       return { title: 'Avaliação concluída — não qualificado',
                body: 'Sua avaliação foi concluída sem atingir os requisitos do selo. Veja o parecer e o plano de ação no portal.', link };

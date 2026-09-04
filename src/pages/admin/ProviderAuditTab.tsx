@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtPct } from '../../lib/formatDate';
 import {
   History, LogIn, KeyRound, ShieldCheck, UserPlus, User, Pencil,
   FileText, CheckCircle, XCircle, RotateCcw, Undo2, Award, ClipboardCheck, ClipboardList, Activity,
@@ -89,7 +90,7 @@ function detailFor(action: string | null, meta: any): string | null {
       return [
         m.location_label && `Unidade ${m.location_label}`,
         m.seal && `selo: ${m.seal}`,
-        m.percentual != null && `${Number(m.percentual).toFixed(0)}%`,
+        m.percentual != null && fmtPct(m.percentual),
       ].filter(Boolean).join(' · ') || null;
     case 'certificate_issued':
       return [m.seal && `selo: ${m.seal}`, m.valid_until && `válido até ${new Date(m.valid_until).toLocaleDateString('pt-BR')}`]

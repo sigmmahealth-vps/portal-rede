@@ -24,3 +24,12 @@ export function fmtDataHora(v: string | number | Date | null | undefined): strin
   const d = new Date(v);
   return isNaN(d.getTime()) ? '' : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
+
+/** Percentual pt-BR com 1 casa decimal (vírgula), sem zero à toa: 95,7% · 100% · 89,7%.
+ *  Fonte única do atingimento — nunca arredondar para inteiro (B-03). '' se inválido. */
+export function fmtPct(v: number | string | null | undefined): string {
+  if (v == null || v === '') return '';
+  const n = Number(v);
+  if (!isFinite(n)) return '';
+  return `${(Math.round(n * 10) / 10).toString().replace('.', ',')}%`;
+}

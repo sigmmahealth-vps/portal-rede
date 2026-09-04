@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import { fmtPct } from '../../lib/formatDate';
 import { X, Loader2, AlertTriangle } from 'lucide-react';
 
 const answerLabel = (v: string | null) =>
@@ -43,7 +44,7 @@ export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceI
         ) : (
           <>
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <span className="text-2xl font-bold text-secondary-900">{Number(headlinePct).toFixed(2)}%</span>
+              <span className="text-2xl font-bold text-secondary-900">{fmtPct(headlinePct)}</span>
               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">{headlineSeal || '—'}</span>
               {mem.eliminatory_failed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">
@@ -110,7 +111,7 @@ export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceI
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-secondary-900">
               <div className="flex justify-between"><span>Base (Σ obtido / Σ máx)</span><span className="font-semibold tabular-nums">{mem.totals.obtained}/{mem.totals.max} = {mem.totals.base_pct}%</span></div>
               <div className="flex justify-between"><span>Bônus da pesquisa (pontos no numerador)</span><span className="font-semibold tabular-nums">{mem.bonus_pending ? '0 (pesquisa pendente)' : `+${mem.bonus}`}</span></div>
-              <div className="mt-1 flex justify-between border-t border-emerald-200 pt-1 text-base font-bold"><span>Nota final (teto 100)</span><span className="tabular-nums">{mem.bonus_pending || !mem.bonus ? '' : `(${mem.totals.obtained}+${mem.bonus})/${mem.totals.max} = `}{mem.final_pct}%</span></div>
+              <div className="mt-1 flex justify-between border-t border-emerald-200 pt-1 text-base font-bold"><span>Nota final (teto 100)</span><span className="tabular-nums">{mem.bonus_pending || !mem.bonus ? '' : `(${mem.totals.obtained}+${mem.bonus})/${mem.totals.max} = `}{fmtPct(mem.final_pct)}</span></div>
               <div className="flex justify-between"><span>Selo</span><span className="font-semibold">{mem.seal}</span></div>
             </div>
           </>

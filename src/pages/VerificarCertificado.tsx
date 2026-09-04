@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { BadgeCheck, BadgeX, Clock } from 'lucide-react';
 import { fetchApi } from '../lib/api';
-import { fmtData } from '../lib/formatDate';
+import { fmtData, fmtPct } from '../lib/formatDate';
 
 interface VerifyResult {
   valido: boolean;
@@ -81,7 +81,7 @@ export default function VerificarCertificado() {
                   ['Prestador', result.provider_name],
                   ['Endereço', result.location_address],
                   ['Selo', result.seal],
-                  ['Pontuação', result.percentual != null ? `${result.percentual.toFixed(1)}%` : null],
+                  ['Pontuação', result.percentual != null ? fmtPct(result.percentual) : null],
                   ['Ciclo', result.cycle_label],
                   ['Emitido em', result.issued_at ? fmtData(result.issued_at) : null],
                   ['Válido até', result.valid_until ? fmtDateOnly(result.valid_until) : null],

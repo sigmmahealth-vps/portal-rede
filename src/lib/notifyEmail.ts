@@ -5,6 +5,7 @@
 // E-mail-safe: tabelas + estilos inline (sem CSS externo, sem flexbox).
 
 import { type NotifyType, fmtDate } from './notifyCatalog.js';
+import { fmtPct } from './formatDate.js';
 
 const C = {
   darkGreen: '#00483A',   // cabeçalho/rodapé
@@ -204,7 +205,7 @@ export function notificationBlocks(
       b = {
         banner: 'Avaliação de qualificação aprovada',
         paragraphs: ['Sua avaliação de qualificação foi concluída pelo auditor com **aprovação**. Parabéns!'],
-        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${Math.round(Number(ctx.percentual ?? 0))}% de atingimento`, icon: '🏅', iconImg: sealImageUrl(ctx.seal, appUrl) },
+        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${fmtPct(ctx.percentual ?? 0)} de atingimento`, icon: '🏅', iconImg: sealImageUrl(ctx.seal, appUrl) },
         steps: 'acesse o portal para consultar o parecer completo e o seu certificado de qualificação.',
         cta,
       };

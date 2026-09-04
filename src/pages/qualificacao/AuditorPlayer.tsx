@@ -4,6 +4,7 @@ import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
 import { ITEM_STATUS_LABEL } from './planoStatus';
 import MemoriaCalculoModal from './MemoriaCalculoModal';
+import { fmtPct } from '../../lib/formatDate';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, XCircle, RotateCcw,
   Loader2, Paperclip, ShieldCheck, FileText, MessageSquare, Ban,
@@ -379,7 +380,7 @@ export default function AuditorPlayer({
       method: 'POST',
       ...(planAnswerIds ? { body: JSON.stringify({ plan_answer_ids: planAnswerIds }) } : {}),
     });
-    let msg = `Parecer emitido: selo ${res.seal} (${Number(res.percentual).toFixed(2)}%)`;
+    let msg = `Parecer emitido: selo ${res.seal} (${fmtPct(res.percentual)})`;
     if (res.plan_id != null && planAnswerIds) msg += ` — Plano de ação gerado com ${planAnswerIds.length} ações`;
     alert(msg);
     onClose();

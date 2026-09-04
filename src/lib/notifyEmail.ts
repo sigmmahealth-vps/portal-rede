@@ -305,6 +305,15 @@ export function notificationBlocks(
         cta,
       };
       break;
+    case 'ciclo_encerrado_sem_avaliacao':
+      b = {
+        banner: 'Ciclo de qualificação encerrado',
+        paragraphs: ['O ciclo de qualificação da Rede de Prestadores foi encerrado e a sua avaliação não foi concluída a tempo.'],
+        highlight: { label: 'Ciclo encerrado', value: ctx.cycle_label ?? '—', iconImg: `${appUrl}/calendario.png` },
+        steps: 'aguarde a abertura do próximo ciclo de qualificação para retomar a sua avaliação.',
+        cta,
+      };
+      break;
     default:
       b = { banner: String(type), paragraphs: [''], cta };
   }

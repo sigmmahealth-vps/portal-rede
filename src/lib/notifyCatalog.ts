@@ -6,6 +6,7 @@ export const NOTIFY_TYPES = [
   'parecer_aprovado', 'parecer_reprovado', 'certificado_emitido',
   'plano_gerado', 'acao_aguardando_validacao',
   'acao_vencendo', 'acao_atrasada', 'roteiro_pendente', 'certificado_vencendo',
+  'ciclo_encerrado_sem_avaliacao',
 ] as const;
 export type NotifyType = typeof NOTIFY_TYPES[number];
 
@@ -82,6 +83,9 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
     case 'certificado_vencendo':
       return { title: 'Certificado próximo do vencimento',
                body: `Seu certificado de qualificação vence em ${fmtDate(ctx.valid_until)}.`, link };
+    case 'ciclo_encerrado_sem_avaliacao':
+      return { title: `Ciclo ${ctx.cycle_label ?? ''} encerrado — avaliação não concluída`.replace(/\s+/g, ' ').trim(),
+               body: 'O ciclo de qualificação foi encerrado e a sua avaliação não foi concluída a tempo. Aguarde a abertura do próximo ciclo para se qualificar.', link };
     default:
       return { title: String(type), body: '', link };
   }

@@ -4170,6 +4170,7 @@ async function startServer() {
               AND status NOT IN ('aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado')`,
           [id]
         );
+        await notifyCycleClosed(id);   // B-04: avisa quem ficou sem avaliação processada
       }
       res.json(rows[0]);
     } catch (err: any) {
@@ -4764,7 +4765,23 @@ async function startServer() {
                         WHERE i.plan_id = p.id AND i.status <> 'concluida')
       `, [cycleId]);
     });
+    await notifyCycleClosed(cycleId);
     return { ok: true, inconclusive };
+  }
+
+  // Notifica cada prestador cuja instância terminou em 'ciclo_encerrado' (sem parecer
+  // emitido) que o ciclo encerrou sem avaliação processada (B-04). Dedupe por instância.
+  async function notifyCycleClosed(cycleId: number) {
+    const { rows } = await query(`
+      SELECT ei.id, ei.provider_id, ei.location_id, c.label
+        FROM eval_instances ei
+        JOIN eval_cycles c ON c.id = ei.cycle_id
+       WHERE ei.cycle_id = $1 AND ei.status = 'ciclo_encerrado'`, [cycleId]);
+    for (const inst of rows) {
+      await notifyEvent('ciclo_encerrado_sem_avaliacao', { cycle_label: inst.label },
+        await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
+        { providerId: Number(inst.provider_id), dedupeRef: `close:${inst.id}` });
+    }
   }
 
   // ==========================================================================

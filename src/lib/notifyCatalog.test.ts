@@ -54,6 +54,13 @@ test('roteiroReminderMarco: janelas por dias restantes', () => {
   assert.equal(roteiroReminderMarco(-3), 'fim');   // ciclo sem auto-close já passou
 });
 
+test('ciclo_encerrado_sem_avaliacao: título com o ciclo e orientação de próximo ciclo', () => {
+  const c = renderNotification('ciclo_encerrado_sem_avaliacao', { cycle_label: '2026' });
+  assert.ok(c.title.includes('2026'), c.title);
+  assert.ok(c.title.toLowerCase().includes('não concluída'), c.title);
+  assert.ok(c.body.toLowerCase().includes('próximo ciclo'), c.body);
+});
+
 test('dedupeKey determinística', () => {
   assert.equal(dedupeKey('acao_vencendo', 'item:9', 7), 'acao_vencendo:item:9:7');
 });

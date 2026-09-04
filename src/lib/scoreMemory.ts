@@ -47,6 +47,9 @@ function consolidate(dim: string | null): string {
 }
 
 function classify(r: ScoreMemoryRow): Classification {
+  // "Não se aplica" do auditor (decisão de evidência) sai do cálculo, preservando
+  // a resposta do prestador. Também o N/A do próprio prestador (na + evidência aprovada).
+  if (r.evidence_status === 'nao_se_aplica') return 'na_aprovado';
   const v = (r.answer_value ?? '').toLowerCase();
   if (!v) return 'sem_resposta';
   if (v === 'na' && r.evidence_status === 'aprovado') return 'na_aprovado';

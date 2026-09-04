@@ -109,6 +109,20 @@ test('DL pontuando o maximo nao eh eliminatorio', () => {
   assert.equal(m.seal, 'Ouro');
 });
 
+test('auditor marca nao_se_aplica: preserva resposta do prestador, sai do calculo e nao eh eliminatorio', () => {
+  const m = buildScoreMemory([
+    row({ question_id: 1, code: 'A', dimension: 'Conforto', score_obtained: 10, max_score: 10 }),
+    // prestador respondeu "nao"; auditor decidiu nao_se_aplica (evidence_status), resposta preservada.
+    row({ question_id: 2, code: 'DL', dimension: 'Documento Legal', is_eliminatory: true, answer_value: 'nao', evidence_status: 'nao_se_aplica', score_obtained: 0, max_score: 10 }),
+  ], { within_deadline: false });
+  const dl = m.criteria.find(c => c.code === 'DL')!;
+  assert.equal(dl.answer_value, 'nao');              // resposta do prestador preservada
+  assert.equal(dl.classification, 'na_aprovado');    // sai do calculo
+  assert.equal(m.totals.max, 10);                    // so o critério A entra no denominador
+  assert.equal(m.eliminatory_failed, false);         // nao_se_aplica nao eh eliminatorio
+  assert.deepEqual(m.out_of_calc.na_aprovado, ['DL']);
+});
+
 test('DL N/A aprovado (nao se aplica) nao eh eliminatorio', () => {
   const m = buildScoreMemory([
     row({ question_id: 1, code: 'X', dimension: 'Conforto', score_obtained: 10, max_score: 10 }),

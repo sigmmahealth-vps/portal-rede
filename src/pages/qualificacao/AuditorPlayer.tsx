@@ -144,6 +144,7 @@ function CardSkeleton() {
 
 type AnalStatus = 'analisada' | 'pendente' | 'sem_resposta';
 function analStatus(a: Answer | undefined): AnalStatus {
+  if (a?.evidence_status === 'nao_se_aplica') return 'analisada';   // decisão do auditor, independe da resposta
   if (!a || !a.answer_value) return 'sem_resposta';
   if (a.evidence_status === 'aprovado' || a.evidence_status === 'reprovado') return 'analisada';
   return 'pendente';
@@ -151,7 +152,8 @@ function analStatus(a: Answer | undefined): AnalStatus {
 
 const evidenceLabel = (ev: string | null | undefined, answerValue?: string | null): { label: string; cls: string } | null => {
   if (!ev) return null;
-  if (ev === 'aprovado' && answerValue === 'na') return { label: 'Analisado — Não se aplica', cls: 'bg-gray-100 text-gray-700 border-gray-300' };
+  // 'nao_se_aplica' = decisão do auditor (novo modelo); answerValue==='na'+aprovado = registros antigos.
+  if (ev === 'nao_se_aplica' || (ev === 'aprovado' && answerValue === 'na')) return { label: 'Analisado — Não se aplica', cls: 'bg-gray-100 text-gray-700 border-gray-300' };
   if (ev === 'aprovado') return { label: 'Analisado — Aprovado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   if (ev === 'reprovado') return { label: 'Analisado — Reprovado', cls: 'bg-red-50 text-red-700 border-red-200' };
   if (ev === 'aguardando_reanalise') return { label: 'Aguardando Reanálise', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
@@ -600,9 +602,9 @@ export default function AuditorPlayer({
 
                           {secQuestions.map(q => {
                             const a = answersByQ[q.id];
-                            const evLabel = evidenceLabel(a?.evidence_status);
+                            const evLabel = evidenceLabel(a?.evidence_status, a?.answer_value);
                             const ansPill = answerPill(a?.answer_value);
-                            const terminal = a?.evidence_status === 'aprovado' || a?.evidence_status === 'reprovado';
+                            const terminal = a?.evidence_status === 'aprovado' || a?.evidence_status === 'reprovado' || a?.evidence_status === 'nao_se_aplica';
                             const awaitingProvider = a?.evidence_status === 'aguardando_reanalise';
                             const bypass = (a?.auditor_observation || '').includes('Aprovado via cadastro');
                             const showPrompt = reasonPrompt?.answerId === a?.id;

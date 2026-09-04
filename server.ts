@@ -29,7 +29,8 @@ import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.
 // Predicado sobre a resposta aliasada como `ea`. Usado em parecer, segurança%,
 // dims (painel/export), parcial ao vivo e candidatos de plano — sempre igual.
 const COUNTS_IN_SCORE_SQL =
-  "NOT (LOWER(COALESCE(ea.answer_value,'')) = 'na' AND ea.evidence_status = 'aprovado')";
+  "NOT (LOWER(COALESCE(ea.answer_value,'')) = 'na' AND ea.evidence_status = 'aprovado')" +
+  " AND ea.evidence_status IS DISTINCT FROM 'nao_se_aplica'";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -3798,7 +3799,7 @@ async function startServer() {
                  'Avaliação devolvida integralmente ao prestador'
             FROM eval_answers ea
            WHERE ea.instance_id = $1
-             AND COALESCE(ea.evidence_status, 'pendente') NOT IN ('aprovado','reprovado')
+             AND COALESCE(ea.evidence_status, 'pendente') NOT IN ('aprovado','reprovado','nao_se_aplica')
         `, [id, req.user.id]);
       });
       if (!reopened) return res.status(404).json({ error: 'instance not found' });
@@ -4890,20 +4891,21 @@ async function startServer() {
       }
       // Revisão de decisão: se já havia veredito terminal, exigir justificativa em
       // qualquer nova ação — inclusive Aprovar. Trilha fica em eval_answer_iterations.
-      const isRevision = ans.evidence_status === 'aprovado' || ans.evidence_status === 'reprovado';
+      const isRevision = ['aprovado', 'reprovado', 'nao_se_aplica'].includes(ans.evidence_status);
       if ((observationRequired || isRevision) && !observation) {
         return res.status(400).json({ error: isRevision ? 'justificativa obrigatória para revisar a decisão' : 'observação obrigatória' });
       }
 
-      // marcou_na: o auditor declara "não se aplica" — vira N/A aprovado (sai do
-      // cálculo). Sobrescreve a resposta original para 'na' e aprova a evidência.
+      // marcou_na: o auditor declara "não se aplica" — é uma DECISÃO DE EVIDÊNCIA
+      // (evidence_status='nao_se_aplica'), sai do cálculo e não é eliminatório. NÃO
+      // sobrescreve a resposta do prestador (answer_value fica como ele respondeu).
       const newEvidenceStatus =
         action === 'aprovou' ? 'aprovado' :
         action === 'reprovou' ? 'reprovado' :
-        action === 'marcou_na' ? 'aprovado' : 'aguardando_reanalise';
+        action === 'marcou_na' ? 'nao_se_aplica' : 'aguardando_reanalise';
       const newScore = action === 'reprovou' || action === 'marcou_na' ? 0 : Number(ans.score_obtained ?? 0);
       const isNonCompliant = action === 'reprovou';
-      const newAnswerValue = action === 'marcou_na' ? 'na' : ans.answer_value;
+      const newAnswerValue = ans.answer_value;
 
       await withTransaction(async (client) => {
         await client.query(`
@@ -5053,7 +5055,7 @@ async function startServer() {
 
       const { rows: pending } = await query(`
         SELECT id FROM eval_answers
-         WHERE instance_id = $1 AND evidence_status NOT IN ('aprovado','reprovado')
+         WHERE instance_id = $1 AND evidence_status NOT IN ('aprovado','reprovado','nao_se_aplica')
       `, [id]);
       if (pending.length) {
         return res.status(409).json({ error: 'critérios sem decisão terminal', pending_answer_ids: pending.map((r: any) => Number(r.id)) });

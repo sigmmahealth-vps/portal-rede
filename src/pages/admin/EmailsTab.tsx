@@ -35,7 +35,8 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   atrasado: { label: 'Atrasado', cls: 'bg-amber-100 text-amber-800' },
   rejeitado: { label: 'Rejeitado', cls: 'bg-red-100 text-red-700' },
   reclamado: { label: 'Reclamação', cls: 'bg-orange-100 text-orange-700' },
-  suprimido: { label: 'Suprimido', cls: 'bg-gray-200 text-gray-600' },
+  suprimido: { label: 'Suprimido', cls: 'bg-slate-200 text-slate-700' },
+  ignorado: { label: 'Ignorado', cls: 'bg-gray-100 text-gray-500' },
   falhou: { label: 'Falhou', cls: 'bg-red-100 text-red-700' },
   pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-800' },
 };
@@ -98,7 +99,7 @@ export default function EmailsTab() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-bold text-gray-800">E-mails Enviados</h2>
-        <p className="text-sm text-gray-500">Notificações do portal enviadas por e-mail e seu status (espelha o provedor). <strong>Enviado → Entregue → Lido</strong> é o caminho de sucesso; <strong>Rejeitado</strong> = devolvido (bounce); <strong>Suprimido</strong> = não enviado (fase de testes/allowlist).</p>
+        <p className="text-sm text-gray-500">Notificações do portal enviadas por e-mail e seu status (espelha o provedor). <strong>Enviado → Entregue → Lido</strong> é o caminho de sucesso; <strong>Rejeitado</strong> = devolvido (bounce); <strong>Ignorado</strong> = não enviado pela lista de teste (allowlist); <strong>Suprimido</strong> = bloqueado pelo provedor (endereço na lista do Resend).</p>
       </div>
 
       {/* Dashboard — números principais do período/busca selecionados */}
@@ -110,7 +111,7 @@ export default function EmailsTab() {
             { key: 'entregue', label: 'Entregues', value: stats.entregue, cls: 'text-emerald-800', bar: 'bg-emerald-600' },
             { key: 'enviado', label: 'Enviados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-400' },
             { key: 'rejeitado', label: 'Rejeitados', value: stats.rejeitado, cls: 'text-red-700', bar: 'bg-red-500' },
-            { key: 'suprimido', label: 'Suprimidos', value: stats.suprimido, cls: 'text-gray-600', bar: 'bg-gray-400' },
+            { key: 'ignorado', label: 'Ignorados', value: stats.ignorado, cls: 'text-gray-500', bar: 'bg-gray-300' },
             { key: '', label: 'Reenviados', value: stats.reenviados, cls: 'text-blue-700', bar: 'bg-blue-500', nobar: true },
           ].map((c: any, i) => {
             const pct = stats.total > 0 ? Math.round((c.value / stats.total) * 100) : 0;
@@ -174,7 +175,8 @@ export default function EmailsTab() {
             <option value="atrasado">Atrasado</option>
             <option value="rejeitado">Rejeitado</option>
             <option value="reclamado">Reclamação</option>
-            <option value="suprimido">Suprimido</option>
+            <option value="suprimido">Suprimido (provedor)</option>
+            <option value="ignorado">Ignorado (allowlist)</option>
             <option value="falhou">Falhou</option>
             <option value="pendente">Pendente</option>
           </select>

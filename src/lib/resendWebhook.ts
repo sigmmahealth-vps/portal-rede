@@ -27,10 +27,12 @@ export function verifyResendWebhook(
   });
 }
 
-export type WebhookStatus = 'entregue' | 'rejeitado' | 'reclamado' | 'aberto' | 'atrasado' | 'falhou';
+export type WebhookStatus = 'entregue' | 'rejeitado' | 'reclamado' | 'aberto' | 'atrasado' | 'falhou' | 'suprimido';
 
 // Mapeia o tipo de evento do Resend para o status de e-mail interno. null = ignorar
-// (sent = já é 'enviado'; received/clicked/suppressed não viram status próprio aqui).
+// (sent = já é 'enviado'; received/clicked não viram status próprio aqui).
+// 'suprimido' aqui = supressão do PROVEDOR (email.suppressed); a supressão da nossa
+// allowlist é gravada como 'ignorado' no momento do envio.
 export function resendEventToStatus(type: string | undefined): WebhookStatus | null {
   switch (type) {
     case 'email.delivered': return 'entregue';
@@ -39,6 +41,7 @@ export function resendEventToStatus(type: string | undefined): WebhookStatus | n
     case 'email.complained': return 'reclamado';
     case 'email.failed': return 'falhou';
     case 'email.delivery_delayed': return 'atrasado';
+    case 'email.suppressed': return 'suprimido';
     default: return null;
   }
 }
@@ -47,13 +50,14 @@ export function resendEventToStatus(type: string | undefined): WebhookStatus | n
 // Falhas (rejeitado/reclamado/falhou) são grudentas e vencem; o caminho feliz avança
 // enviado → entregue → aberto sem regredir; atrasado só no começo. Sempre evita repetir.
 export function webhookOverwriteCondition(status: WebhookStatus): string {
-  const FAIL = "'rejeitado','reclamado','falhou'";
+  const FAIL = "'rejeitado','reclamado','falhou','suprimido'";
   switch (status) {
     case 'rejeitado':
     case 'reclamado':
-    case 'falhou':   return `email_status NOT IN (${FAIL})`;
-    case 'aberto':   return `email_status NOT IN (${FAIL},'aberto')`;
-    case 'entregue': return `email_status NOT IN (${FAIL},'aberto','entregue')`;
-    case 'atrasado': return `email_status IN ('pendente','enviado')`;
+    case 'falhou':
+    case 'suprimido': return `email_status NOT IN (${FAIL})`;
+    case 'aberto':    return `email_status NOT IN (${FAIL},'aberto')`;
+    case 'entregue':  return `email_status NOT IN (${FAIL},'aberto','entregue')`;
+    case 'atrasado':  return `email_status IN ('pendente','enviado')`;
   }
 }

@@ -46,18 +46,20 @@ test('mapeamento de eventos', () => {
   assert.equal(resendEventToStatus('email.complained'), 'reclamado');
   assert.equal(resendEventToStatus('email.failed'), 'falhou');
   assert.equal(resendEventToStatus('email.delivery_delayed'), 'atrasado');
+  assert.equal(resendEventToStatus('email.suppressed'), 'suprimido'); // supressão do provedor
   assert.equal(resendEventToStatus('email.sent'), null);      // = já é 'enviado'
   assert.equal(resendEventToStatus('email.clicked'), null);
   assert.equal(resendEventToStatus(undefined), null);
 });
 
 test('precedência: falhas grudentas, caminho feliz não regride', () => {
-  // falha vence entregue/enviado, mas não outra falha
-  assert.match(webhookOverwriteCondition('rejeitado'), /NOT IN \('rejeitado','reclamado','falhou'\)/);
+  // falha vence entregue/enviado, mas não outra falha (suprimido do provedor entra no grupo)
+  assert.match(webhookOverwriteCondition('rejeitado'), /NOT IN \('rejeitado','reclamado','falhou','suprimido'\)/);
+  assert.match(webhookOverwriteCondition('suprimido'), /NOT IN \('rejeitado','reclamado','falhou','suprimido'\)/);
   // entregue não sobrescreve falha nem aberto (não regride de Lido)
   assert.match(webhookOverwriteCondition('entregue'), /'aberto','entregue'/);
   // aberto vence entregue mas não falha
-  assert.match(webhookOverwriteCondition('aberto'), /NOT IN \('rejeitado','reclamado','falhou','aberto'\)/);
+  assert.match(webhookOverwriteCondition('aberto'), /NOT IN \('rejeitado','reclamado','falhou','suprimido','aberto'\)/);
   // atrasado só no começo
   assert.match(webhookOverwriteCondition('atrasado'), /IN \('pendente','enviado'\)/);
 });

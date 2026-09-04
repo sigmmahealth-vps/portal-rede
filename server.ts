@@ -281,7 +281,7 @@ async function startServer() {
       if (!claimed.length) return;
       const { result, messageId } = await mailer.sendNotification(to, subject, text, html);
       await query(`UPDATE notifications SET email_status = $2, provider_message_id = COALESCE($3, provider_message_id) WHERE id = $1`,
-        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado', messageId ?? null]);
+        [rowId, result === 'suppressed' ? 'ignorado' : 'enviado', messageId ?? null]);
     } catch (e) {
       console.error(`[notify] e-mail falhou (notification ${rowId}):`, e);
       await query(`UPDATE notifications SET email_status = 'falhou' WHERE id = $1`, [rowId]).catch(() => {});
@@ -307,7 +307,7 @@ async function startServer() {
     try {
       const { result, messageId } = await send();
       if (rowId) await query(`UPDATE notifications SET email_status = $2, email_attempts = 1, provider_message_id = $3 WHERE id = $1`,
-        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado', messageId ?? null]).catch(() => {});
+        [rowId, result === 'suppressed' ? 'ignorado' : 'enviado', messageId ?? null]).catch(() => {});
     } catch (e) {
       if (rowId) await query(`UPDATE notifications SET email_status = 'falhou', email_attempts = 1 WHERE id = $1`, [rowId]).catch(() => {});
       throw e;
@@ -628,6 +628,7 @@ async function startServer() {
                COUNT(*) FILTER (WHERE n.email_status = 'reclamado')::int AS reclamado,
                COUNT(*) FILTER (WHERE n.email_status = 'atrasado')::int  AS atrasado,
                COUNT(*) FILTER (WHERE n.email_status = 'suprimido')::int AS suprimido,
+               COUNT(*) FILTER (WHERE n.email_status = 'ignorado')::int  AS ignorado,
                COUNT(*) FILTER (WHERE n.email_status = 'falhou')::int    AS falhou,
                COUNT(*) FILTER (WHERE n.email_status = 'pendente')::int  AS pendente,
                COUNT(*) FILTER (WHERE n.email_attempts > 1)::int         AS reenviados

@@ -22,8 +22,9 @@ provedor (Resend). Caminho de sucesso: **pendente** (na fila) → **enviado**
 ("Sent" — aceito pelo provedor) → **entregue** ("Delivered") → **aberto** ("Lido",
 via open tracking). Falhas: **rejeitado** (bounce/devolvido), **reclamado** (marcou
 como spam), **falhou** (provedor não conseguiu enviar), **atrasado** (transiente,
-vai retentar). Fora disso: **suprimido** (não saiu — allowlist de teste/sem envio
-real) e **sem e-mail** (`na` — notificação só de portal). Entrega/abertura reais
+vai retentar). Fora disso, dois "não saiu" distintos: **ignorado** (a nossa allowlist de teste/
+ConsoleMailer não enviou) e **suprimido** (o provedor bloqueou — `email.suppressed`,
+endereço na lista de supressão do Resend). E **sem e-mail** (`na` — só portal). Entrega/abertura reais
 vêm dos webhooks do Resend; falhas são "grudentas" (não regridem para entregue/lido).
 
 ## Validade do certificado

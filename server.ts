@@ -19,7 +19,7 @@ import { hashIp } from './auth/ipHash.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
-import { renderNotification, dedupeKey, type NotifyType } from './src/lib/notifyCatalog.js';
+import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
 import { certValidUntilOk } from './src/lib/certValidity.js';
 
@@ -6253,19 +6253,24 @@ async function startServer() {
           { providerId: Number(it.provider_id), dedupeRef: `item:${it.id}` });
       }
 
-      // 3) Roteiro pendente a 30 dias do fim do ciclo — SÓ E-MAIL (spec).
-      //    Prestador: individual por instância. Auditoria: resumo por ciclo.
+      // 3) Roteiro pendente — SÓ E-MAIL (spec). Avisos por marco temporal: 30 dias,
+      //    7 dias e no fim do ciclo. Cada marco dispara UMA vez (dedupe por marco);
+      //    o fim (days_left <= 0) ainda pega o último dia, pois o auto-close só encerra
+      //    em end_date < hoje. Prestador: individual. Auditoria: resumo por ciclo.
       const { rows: pendentes } = await query(`
-        SELECT ei.id, ei.provider_id, ei.location_id, c.id AS cycle_id, c.label, c.end_date
+        SELECT ei.id, ei.provider_id, ei.location_id, c.id AS cycle_id, c.label, c.end_date,
+               (c.end_date - CURRENT_DATE) AS days_left
           FROM eval_instances ei
           JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.status IN ('pendente', 'em_andamento')
            AND c.active = true
-           AND c.end_date - 30 <= CURRENT_DATE AND c.end_date >= CURRENT_DATE`);
+           AND c.end_date - 30 <= CURRENT_DATE`);
       for (const inst of pendentes) {
-        await notifyEvent('roteiro_pendente', { end_date: inst.end_date },
+        const marco = roteiroReminderMarco(Number(inst.days_left));
+        if (!marco) continue;
+        await notifyEvent('roteiro_pendente', { end_date: inst.end_date, marco },
           await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
-          { providerId: Number(inst.provider_id), dedupeRef: `inst:${inst.id}`, portal: false });
+          { providerId: Number(inst.provider_id), dedupeRef: `inst:${inst.id}:${marco}`, portal: false });
       }
       const byCycle = new Map<number, { label: string; end_date: string; count: number }>();
       for (const inst of pendentes) {

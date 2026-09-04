@@ -18,6 +18,17 @@ export function dedupeKey(type: string, ref: string, dest: string | number): str
   return `${type}:${ref}:${dest}`;
 }
 
+// Marco do lembrete de roteiro pendente pelos dias até o fim do ciclo.
+// 'fim' quando o prazo chegou/passou (daysLeft <= 0); senão 7 ou 30 dias.
+// null fora da janela (mais de 30 dias). Cada marco dispara um aviso próprio.
+export type RoteiroReminderMarco = '30' | '7' | 'fim';
+export function roteiroReminderMarco(daysLeft: number): RoteiroReminderMarco | null {
+  if (daysLeft <= 0) return 'fim';
+  if (daysLeft <= 7) return '7';
+  if (daysLeft <= 30) return '30';
+  return null;
+}
+
 export function renderNotification(type: NotifyType, ctx: Record<string, any> = {}): NotifyContent {
   const link = '/qualificacao';
   switch (type) {
@@ -57,11 +68,17 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       return { title: `Ação do plano em atraso${ctx.provider_name ? ` — ${ctx.provider_name}` : ''}`,
                body: `A ação "${ctx.what ?? ''}" venceu em ${fmtDate(ctx.due_date)} e não foi concluída.`, link };
     case 'roteiro_pendente':
-      return ctx.digest
-        ? { title: `${ctx.count ?? 0} roteiro(s) pendente(s) — ciclo ${ctx.cycle_label ?? ''} encerra em ${fmtDate(ctx.end_date)}`,
-            body: 'Há prestadores que ainda não enviaram o roteiro de qualificação. Veja o painel do ciclo.', link }
-        : { title: `Roteiro pendente — o ciclo encerra em ${fmtDate(ctx.end_date)}`,
-            body: 'Você ainda não enviou seu roteiro de qualificação. O prazo termina junto com o ciclo.', link };
+      if (ctx.digest)
+        return { title: `${ctx.count ?? 0} roteiro(s) pendente(s) — ciclo ${ctx.cycle_label ?? ''} encerra em ${fmtDate(ctx.end_date)}`,
+                 body: 'Há prestadores que ainda não enviaram o roteiro de qualificação. Veja o painel do ciclo.', link };
+      if (ctx.marco === 'fim')
+        return { title: `Último dia — o ciclo encerra hoje (${fmtDate(ctx.end_date)})`,
+                 body: 'Hoje é o último dia para enviar seu roteiro de qualificação. Após o encerramento do ciclo não será mais possível enviar.', link };
+      if (ctx.marco === '7')
+        return { title: `Roteiro pendente — faltam 7 dias (ciclo encerra em ${fmtDate(ctx.end_date)})`,
+                 body: 'Faltam 7 dias para o encerramento do ciclo e você ainda não enviou seu roteiro de qualificação.', link };
+      return { title: `Roteiro pendente — o ciclo encerra em ${fmtDate(ctx.end_date)}`,
+               body: 'Você ainda não enviou seu roteiro de qualificação. O prazo termina junto com o ciclo.', link };
     case 'certificado_vencendo':
       return { title: 'Certificado próximo do vencimento',
                body: `Seu certificado de qualificação vence em ${fmtDate(ctx.valid_until)}.`, link };

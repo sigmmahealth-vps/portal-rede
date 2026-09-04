@@ -271,6 +271,22 @@ export function notificationBlocks(
             steps: 'acesse o painel do ciclo para acompanhar os pendentes e orientar os prestadores.',
             cta,
           }
+        : ctx.marco === 'fim'
+        ? {
+            banner: 'Último dia para enviar o roteiro',
+            paragraphs: ['Hoje é o último dia do ciclo de qualificação e você ainda não enviou o seu roteiro. Após o encerramento não será mais possível enviar.'],
+            highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
+            steps: 'acesse o portal agora, conclua o roteiro com as evidências e envie para análise antes do encerramento de hoje.',
+            cta,
+          }
+        : ctx.marco === '7'
+        ? {
+            banner: 'Faltam 7 dias para enviar o roteiro',
+            paragraphs: ['Faltam 7 dias para o encerramento do ciclo de qualificação e você ainda não enviou o seu roteiro.'],
+            highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
+            steps: 'acesse o portal e envie o roteiro com as evidências antes do encerramento.',
+            cta,
+          }
         : {
             banner: 'Roteiro de qualificação pendente',
             paragraphs: ['Você ainda não enviou o seu roteiro de qualificação e o prazo termina junto com o encerramento do ciclo.'],

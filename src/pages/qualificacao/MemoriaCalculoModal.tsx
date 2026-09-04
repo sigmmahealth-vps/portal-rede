@@ -47,7 +47,7 @@ export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceI
               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">{headlineSeal || '—'}</span>
               {mem.eliminatory_failed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">
-                  <AlertTriangle className="h-3.5 w-3.5" /> Reprovado em critério eliminatório
+                  <AlertTriangle className="h-3.5 w-3.5" /> Não conformidade em critério eliminatório
                 </span>
               )}
             </div>

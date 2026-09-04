@@ -91,7 +91,11 @@ export function buildScoreMemory(
   // com bônus vira (180+10)/200 = 95%, não 90%+10 = 100%.
   const bonus = survey?.within_deadline ? 10 : 0;
   const final_pct = max > 0 ? Math.min(100, Math.round(((obtained + bonus) / max) * 10000) / 100) : 0;
-  const eliminatory_failed = criteria.some(c => c.evidence_status === 'reprovado' && c.is_eliminatory);
+  // Eliminatório: QUALQUER não conformidade num documento legal rebaixa a Bronze —
+  // não apenas o formalmente reprovado. Não conformidade = critério que entra no
+  // cálculo ('conta') e não pontuou o máximo (obtido < máx). Pega reprovado,
+  // respondido "não" e N/A-reprovado; exclui pontuação cheia e N/A aprovado.
+  const eliminatory_failed = criteria.some(c => c.is_eliminatory && c.classification === 'conta' && c.obtained < c.max);
 
   return {
     criteria,

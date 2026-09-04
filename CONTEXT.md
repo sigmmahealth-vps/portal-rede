@@ -8,6 +8,14 @@ máximo um ciclo ativo por vez. Passa por dois momentos distintos: **criar** o
 ciclo (define seus parâmetros) e **abrir** o ciclo (gera as instâncias de
 avaliação e passa a aceitar emissão de certificados).
 
+## Critério eliminatório (documento legal)
+Critério cuja **não conformidade** rebaixa o selo a Bronze independentemente da nota.
+São os documentos legais (dimensão "Documento Legal", `is_eliminatory`). **Não
+conformidade** aqui = o critério entra no cálculo e não pontuou o máximo (por
+qualquer motivo: reprovado, respondido "não", ou N/A reprovado) — não é apenas o
+formalmente **reprovado** pelo auditor. Pontuação cheia ou N/A aprovado (não se
+aplica) não são não conformidade. Basta uma para rebaixar a Bronze.
+
 ## Validade do certificado
 Data até a qual um certificado de qualificação é válido. É **escolhida por quem
 cria o ciclo** e vale igual para todos os certificados emitidos naquele ciclo

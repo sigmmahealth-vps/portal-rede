@@ -92,6 +92,31 @@ test('eliminatorio reprovado rebaixa selo a Bronze', () => {
   assert.equal(m.seal, 'Bronze');
 });
 
+test('nao conformidade em DL sem reprovar (respondido nao, evidencia aprovada) rebaixa a Bronze', () => {
+  const m = buildScoreMemory([
+    row({ question_id: 1, code: 'A', dimension: 'Conforto', score_obtained: 10, max_score: 10 }),
+    row({ question_id: 2, code: 'DL', dimension: 'Documento Legal', is_eliminatory: true, answer_value: 'nao', evidence_status: 'aprovado', score_obtained: 0, max_score: 10 }),
+  ], { within_deadline: false });
+  assert.equal(m.eliminatory_failed, true);   // nao pontuou o maximo => nao conformidade => eliminatorio
+  assert.equal(m.seal, 'Bronze');
+});
+
+test('DL pontuando o maximo nao eh eliminatorio', () => {
+  const m = buildScoreMemory([
+    row({ question_id: 1, code: 'DL', dimension: 'Documento Legal', is_eliminatory: true, answer_value: 'sim', evidence_status: 'aprovado', score_obtained: 10, max_score: 10 }),
+  ], { within_deadline: false });
+  assert.equal(m.eliminatory_failed, false);
+  assert.equal(m.seal, 'Ouro');
+});
+
+test('DL N/A aprovado (nao se aplica) nao eh eliminatorio', () => {
+  const m = buildScoreMemory([
+    row({ question_id: 1, code: 'X', dimension: 'Conforto', score_obtained: 10, max_score: 10 }),
+    row({ question_id: 2, code: 'DLNA', dimension: 'Documento Legal', is_eliminatory: true, answer_value: 'na', evidence_status: 'aprovado', score_obtained: 0, max_score: 10 }),
+  ], { within_deadline: false });
+  assert.equal(m.eliminatory_failed, false);
+});
+
 test('paridade com a formula do parecer (base/final/seal)', () => {
   const rows: ScoreMemoryRow[] = [
     row({ question_id: 1, code: 'A', dimension: 'Segurança', score_obtained: 7, max_score: 10 }),

@@ -18,7 +18,13 @@ const TYPE_LABELS: Record<string, string> = {
   roteiro_pendente: 'Roteiro pendente',
   certificado_vencendo: 'Certificado a vencer',
   ciclo_encerrado_sem_avaliacao: 'Ciclo encerrado sem avaliação',
+  convite: 'Convite de acesso',
+  reset_senha: 'Redefinição de senha',
+  otp: 'Código de acesso (login)',
 };
+
+// E-mails de acesso: registrados só para consulta, não reenviáveis pela tela.
+const TRANSACTIONAL_TYPES = new Set(['convite', 'reset_senha', 'otp']);
 
 // Status de e-mail → rótulo + cor. 'enviado' = processado pelo provedor (não é
 // prova de entrega); 'suprimido' = não saiu (allowlist/dev).
@@ -214,10 +220,14 @@ export default function EmailsTab() {
                   <td className="p-3"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${st.cls}`}>{st.label}</span></td>
                   <td className="p-3 text-center tabular-nums text-gray-600">{row.email_attempts}</td>
                   <td className="p-3 text-right">
-                    <button onClick={() => reenviar(row)} disabled={resending === row.id}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#00995D] hover:text-[#007A4A] disabled:opacity-40">
-                      <Send className="w-3.5 h-3.5" /> {resending === row.id ? 'Reenviando...' : 'Reenviar'}
-                    </button>
+                    {TRANSACTIONAL_TYPES.has(row.type) ? (
+                      <span className="text-xs text-gray-300" title="E-mail de acesso — reenvie pelo fluxo próprio (convite / esqueci a senha / novo login)">—</span>
+                    ) : (
+                      <button onClick={() => reenviar(row)} disabled={resending === row.id}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-[#00995D] hover:text-[#007A4A] disabled:opacity-40">
+                        <Send className="w-3.5 h-3.5" /> {resending === row.id ? 'Reenviando...' : 'Reenviar'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

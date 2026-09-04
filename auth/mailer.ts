@@ -39,9 +39,9 @@ export const resetEmailHtml = (link: string) => renderEmailHtml({
 export type EmailSendResult = 'sent' | 'suppressed';
 
 export interface Mailer {
-  sendOtp(to: string, code: string): Promise<void>;
-  sendInvite(to: string, name: string, link: string): Promise<void>;
-  sendPasswordReset(to: string, link: string): Promise<void>;
+  sendOtp(to: string, code: string): Promise<EmailSendResult>;
+  sendInvite(to: string, name: string, link: string): Promise<EmailSendResult>;
+  sendPasswordReset(to: string, link: string): Promise<EmailSendResult>;
   sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult>;
 }
 
@@ -68,14 +68,17 @@ const RESET_BODY = (link: string) =>
 
 export class ConsoleMailer implements Mailer {
   constructor(private readonly log: (msg: string) => void = console.log) {}
-  async sendOtp(to: string, code: string): Promise<void> {
+  async sendOtp(to: string, code: string): Promise<EmailSendResult> {
     this.log(`[ConsoleMailer] Para: ${to} | ${OTP_SUBJECT(code)}`);
+    return 'suppressed';
   }
-  async sendInvite(to: string, name: string, link: string): Promise<void> {
+  async sendInvite(to: string, name: string, link: string): Promise<EmailSendResult> {
     this.log(`[ConsoleMailer] Para: ${to} | ${INVITE_SUBJECT} | ${name} | ${link}`);
+    return 'suppressed';
   }
-  async sendPasswordReset(to: string, link: string): Promise<void> {
+  async sendPasswordReset(to: string, link: string): Promise<EmailSendResult> {
     this.log(`[ConsoleMailer] Para: ${to} | ${RESET_SUBJECT} | ${link}`);
+    return 'suppressed';
   }
   async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
     this.log(`[ConsoleMailer] Para: ${to} | ${subject} | ${text.slice(0, 120)}${html ? ' | [html]' : ''}`);
@@ -112,14 +115,14 @@ export class ResendMailer implements Mailer {
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
     return 'sent';
   }
-  async sendOtp(to: string, code: string): Promise<void> {
-    await this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code));
+  async sendOtp(to: string, code: string): Promise<EmailSendResult> {
+    return this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code));
   }
-  async sendInvite(to: string, name: string, link: string): Promise<void> {
-    await this.send(to, INVITE_SUBJECT, INVITE_BODY(name, link), inviteEmailHtml(name, link));
+  async sendInvite(to: string, name: string, link: string): Promise<EmailSendResult> {
+    return this.send(to, INVITE_SUBJECT, INVITE_BODY(name, link), inviteEmailHtml(name, link));
   }
-  async sendPasswordReset(to: string, link: string): Promise<void> {
-    await this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link));
+  async sendPasswordReset(to: string, link: string): Promise<EmailSendResult> {
+    return this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link));
   }
   async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
     return this.send(to, subject, text, html);

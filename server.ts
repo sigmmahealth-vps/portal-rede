@@ -11,7 +11,7 @@ import { parseWorkbook } from './db/roteiro-parser.js';
 import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS, isTestMasterOtp } from './auth/otp.js';
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
 import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
-import { createMailer } from './auth/mailer.js';
+import { createMailer, type EmailSendResult } from './auth/mailer.js';
 import { generateToken, hashToken, verifyToken, expirationFor } from './auth/setupToken.js';
 import { validatePassword } from './auth/passwordPolicy.js';
 import { auditLog } from './auth/auditLog.js';
@@ -287,6 +287,32 @@ async function startServer() {
     }
   }
 
+  // Tipos de e-mail transacional (acesso) — registrados na base de e-mails, mas NÃO
+  // reenviáveis pela tela (o link/token é de uso único e não é guardado; reenvio tem
+  // fluxo próprio: "Reenviar convite" / "Esqueci a senha" / novo login).
+  const TRANSACTIONAL_EMAIL_TYPES = ['convite', 'reset_senha', 'otp'];
+
+  // Registra e envia um e-mail transacional (convite/reset/OTP), guardando só tipo +
+  // destinatário + status na tabela `notifications` (nunca o código do OTP nem o token
+  // do link). Preserva o comportamento antigo: relança o erro do envio ao chamador.
+  async function sendTransactionalEmail(to: string, type: string, title: string, send: () => Promise<EmailSendResult>): Promise<void> {
+    let rowId: number | null = null;
+    try {
+      const { rows } = await query(
+        `INSERT INTO notifications (email_to, type, title, email_status) VALUES ($1, $2, $3, 'pendente') RETURNING id`,
+        [to, type, title]);
+      rowId = Number(rows[0].id);
+    } catch (e) { console.error(`[email-log] falha ao registrar ${type}:`, e); }
+    try {
+      const result = await send();
+      if (rowId) await query(`UPDATE notifications SET email_status = $2, email_attempts = 1 WHERE id = $1`,
+        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado']).catch(() => {});
+    } catch (e) {
+      if (rowId) await query(`UPDATE notifications SET email_status = 'falhou', email_attempts = 1 WHERE id = $1`, [rowId]).catch(() => {});
+      throw e;
+    }
+  }
+
   // Grava as notificações e dispara os e-mails (fire-and-forget). NUNCA lança.
   // opts.email=false → só portal; opts.portal=false → só e-mail;
   // opts.dedupeRef → eventos de prazo (disparo único por item×destinatário).
@@ -469,7 +495,7 @@ async function startServer() {
       'INSERT INTO otp_codes (user_id, code_hash, expires_at, ip) VALUES ($1, $2, $3, $4) RETURNING id',
       [user.id, hashOtp(code), expiresAt, req.ip],
     );
-    await mailer.sendOtp(user.email, code);
+    await sendTransactionalEmail(user.email, 'otp', 'Código de acesso ao Portal', () => mailer.sendOtp(user.email, code));
     return rows[0].id;
   };
 
@@ -617,6 +643,9 @@ async function startServer() {
            FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.id = $1`, [id]);
       if (!n) return res.status(404).json({ error: 'not found' });
       if (!n.email_to) return res.status(409).json({ error: 'notificação sem e-mail' });
+      if (TRANSACTIONAL_EMAIL_TYPES.includes(n.type)) {
+        return res.status(409).json({ error: 'E-mail de acesso (convite/senha/código) não é reenviável por aqui — use o fluxo próprio (Reenviar convite / Esqueci a senha / novo login).' });
+      }
       const appUrl = notifyAppUrl();
       const link = n.link ?? '/qualificacao';
       const { subject, html } = renderNotificationEmail(n.type, n.ctx ?? {}, appUrl, n.user_name ?? undefined);
@@ -768,7 +797,7 @@ async function startServer() {
         return res.status(429).json({ error: 'Aguarde alguns segundos antes de pedir um novo código.' });
       }
       try {
-        await mailer.sendOtp(user.email, code);
+        await sendTransactionalEmail(user.email, 'otp', 'Código de acesso ao Portal', () => mailer.sendOtp(user.email, code));
       } catch (mailErr: any) {
         console.error('Falha ao reenviar OTP:', mailErr);
         return res.status(502).json({ error: 'Não foi possível reenviar o código. Tente novamente.' });
@@ -824,7 +853,7 @@ async function startServer() {
 
       const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
       const link = `${appUrl}/definir-senha?token=${token}`;
-      await mailer.sendPasswordReset(user.email, link);
+      await sendTransactionalEmail(user.email, 'reset_senha', 'Redefinição de senha', () => mailer.sendPasswordReset(user.email, link));
 
       res.json({ ok: true });
     } catch (err: any) {
@@ -1088,7 +1117,7 @@ async function startServer() {
 
       const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
       const link = `${appUrl}/definir-senha?token=${token}`;
-      await mailer.sendInvite(newUser.email, newUser.name, link);
+      await sendTransactionalEmail(newUser.email, 'convite', 'Convite de acesso ao Portal', () => mailer.sendInvite(newUser.email, newUser.name, link));
 
       await auditLog({
         query, userId: req.user.id, action: 'user_invited',
@@ -1287,7 +1316,7 @@ async function startServer() {
 
       const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
       const link = `${appUrl}/definir-senha?token=${token}`;
-      await mailer.sendInvite(target.email, target.name, link);
+      await sendTransactionalEmail(target.email, 'convite', 'Convite de acesso ao Portal', () => mailer.sendInvite(target.email, target.name, link));
 
       await auditLog({
         query, userId: req.user.id, action: 'invite_resent',
@@ -1854,7 +1883,7 @@ async function startServer() {
              VALUES ($1, $2, 'invite', $3, $4)`,
             [created[0].id, tokenHash, expiresAt, req.user.id]);
           const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
-          await mailer.sendInvite(email, provRows[0].name, `${appUrl}/definir-senha?token=${token}`);
+          await sendTransactionalEmail(email, 'convite', 'Convite de acesso ao Portal', () => mailer.sendInvite(email, provRows[0].name, `${appUrl}/definir-senha?token=${token}`));
           await auditLog({
             query, userId: req.user.id, action: 'provider_access_created',
             meta: { provider_id: Number(providerId), location_id: unit.location_id, user_id: created[0].id, invited: true },
@@ -2022,7 +2051,7 @@ async function startServer() {
       const expiresAt = expirationFor('reset');
       await query(`INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at) VALUES ($1, $2, 'reset', $3)`, [user.id, tokenHash, expiresAt]);
       const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
-      await mailer.sendPasswordReset(user.email, `${appUrl}/definir-senha?token=${token}`);
+      await sendTransactionalEmail(user.email, 'reset_senha', 'Redefinição de senha', () => mailer.sendPasswordReset(user.email, `${appUrl}/definir-senha?token=${token}`));
       await auditLog({
         query, userId: req.user.id, action: 'password_reset_requested',
         meta: { provider_id: Number(req.params.id), location_id: unit!.location_id, user_id: user.id, by_admin: true },

@@ -268,11 +268,14 @@ async function startServer() {
 
   // Envia o e-mail de uma notification e atualiza o outbox. O UPDATE inicial é o
   // "claim": incrementa attempts atomicamente e some da fila se outro tick pegou.
-  async function sendNotificationEmail(rowId: number, to: string, subject: string, text: string, html?: string) {
+  // force=true: reenvio manual (staff) — ignora o teto de 3 e o filtro de status do
+  // retry automático, mas SEMPRE incrementa email_attempts (o contador acumula, nunca zera).
+  async function sendNotificationEmail(rowId: number, to: string, subject: string, text: string, html?: string, force = false) {
     try {
+      const guard = force ? '' : "AND email_attempts < 3 AND email_status IN ('pendente','falhou')";
       const { rows: claimed } = await query(
         `UPDATE notifications SET email_attempts = email_attempts + 1
-          WHERE id = $1 AND email_attempts < 3 AND email_status IN ('pendente','falhou')
+          WHERE id = $1 ${guard}
           RETURNING id`, [rowId]);
       if (!claimed.length) return;
       const result = await mailer.sendNotification(to, subject, text, html);
@@ -571,8 +574,39 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
-  // Reenviar um e-mail (staff): reabre no outbox (pendente + tentativas 0) e dispara
-  // na hora, remontando o e-mail rico a partir do ctx guardado.
+  // Números do dashboard de e-mails (staff): totais por status + por tipo, no mesmo
+  // recorte de período e busca da listagem (ignora o filtro de status, de propósito).
+  app.get('/api/admin/emails/stats', authenticate, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin' && req.user.role !== 'auditoria')
+        return res.status(403).json({ error: 'Unauthorized' });
+      const params: any[] = [];
+      const cond: string[] = ['n.email_to IS NOT NULL'];
+      const days = req.query.days === 'all' ? null : Math.max(1, Number(req.query.days) || 90);
+      if (days) { params.push(days); cond.push(`n.created_at >= now() - ($${params.length}::text || ' days')::interval`); }
+      if (typeof req.query.q === 'string' && req.query.q.trim()) {
+        params.push(`%${req.query.q.trim()}%`);
+        const i = params.length;
+        cond.push(`(n.email_to ILIKE $${i} OR p.name ILIKE $${i} OR p.sgu_code ILIKE $${i})`);
+      }
+      const where = cond.join(' AND ');
+      const base = `FROM notifications n LEFT JOIN providers p ON p.id = n.provider_id WHERE ${where}`;
+      const { rows: [s] } = await query(`
+        SELECT COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE n.email_status = 'enviado')::int   AS enviado,
+               COUNT(*) FILTER (WHERE n.email_status = 'suprimido')::int AS suprimido,
+               COUNT(*) FILTER (WHERE n.email_status = 'falhou')::int    AS falhou,
+               COUNT(*) FILTER (WHERE n.email_status = 'pendente')::int  AS pendente,
+               COUNT(*) FILTER (WHERE n.email_attempts > 1)::int         AS reenviados
+          ${base}`, params);
+      const { rows: byType } = await query(
+        `SELECT n.type, COUNT(*)::int AS count ${base} GROUP BY n.type ORDER BY count DESC LIMIT 8`, params);
+      res.json({ ...s, by_type: byType });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Reenviar um e-mail (staff): dispara na hora, remontando o e-mail rico do ctx.
+  // NÃO zera email_attempts — o contador acumula (force ignora o teto de 3 do retry).
   app.post('/api/admin/emails/:id/reenviar', authenticate, async (req: any, res) => {
     try {
       if (req.user.role !== 'admin' && req.user.role !== 'auditoria')
@@ -583,11 +617,10 @@ async function startServer() {
            FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.id = $1`, [id]);
       if (!n) return res.status(404).json({ error: 'not found' });
       if (!n.email_to) return res.status(409).json({ error: 'notificação sem e-mail' });
-      await query(`UPDATE notifications SET email_status = 'pendente', email_attempts = 0 WHERE id = $1`, [id]);
       const appUrl = notifyAppUrl();
       const link = n.link ?? '/qualificacao';
       const { subject, html } = renderNotificationEmail(n.type, n.ctx ?? {}, appUrl, n.user_name ?? undefined);
-      await sendNotificationEmail(id, n.email_to, subject, `${n.body ?? ''}\n\nAcesse: ${appUrl}${link}`, html);
+      await sendNotificationEmail(id, n.email_to, subject, `${n.body ?? ''}\n\nAcesse: ${appUrl}${link}`, html, true);
       const { rows: [after] } = await query('SELECT email_status, email_attempts FROM notifications WHERE id = $1', [id]);
       res.json({ ok: true, email_status: after.email_status, email_attempts: after.email_attempts });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }

@@ -46,6 +46,14 @@ export default function EmailsTab() {
   const [days, setDays] = useState('90');
   const [q, setQ] = useState('');
   const [resending, setResending] = useState<number | null>(null);
+  const [stats, setStats] = useState<any>(null);
+
+  const loadStats = async () => {
+    // Dashboard segue o recorte de período + busca (não o filtro de status).
+    const p = new URLSearchParams({ days });
+    if (q.trim()) p.set('q', q.trim());
+    try { setStats(await fetchApi(`/admin/emails/stats?${p.toString()}`)); } catch { /* ignora */ }
+  };
 
   const load = async (p = page) => {
     setLoading(true);
@@ -56,6 +64,7 @@ export default function EmailsTab() {
       if (q.trim()) params.set('q', q.trim());
       const data = await fetchApi(`/admin/emails?${params.toString()}`);
       setItems(data.items); setTotal(data.total); setPage(data.page);
+      loadStats();
     } finally { setLoading(false); }
   };
   // Recarrega ao mudar filtros de seleção; a busca textual é aplicada no submit.
@@ -80,6 +89,59 @@ export default function EmailsTab() {
         <h2 className="text-lg font-bold text-gray-800">E-mails Enviados</h2>
         <p className="text-sm text-gray-500">Notificações do portal enviadas por e-mail e seu status. <strong>Processado</strong> = entregue ao provedor sem erro (não confirma leitura); <strong>Suprimido</strong> = não enviado (fase de testes/allowlist).</p>
       </div>
+
+      {/* Dashboard — números principais do período/busca selecionados */}
+      {stats && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            { key: '', label: 'Total', value: stats.total, cls: 'text-gray-900', bar: 'bg-gray-300' },
+            { key: 'enviado', label: 'Processados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-500' },
+            { key: 'suprimido', label: 'Suprimidos', value: stats.suprimido, cls: 'text-gray-600', bar: 'bg-gray-400' },
+            { key: 'falhou', label: 'Falharam', value: stats.falhou, cls: 'text-red-700', bar: 'bg-red-500' },
+            { key: 'pendente', label: 'Pendentes', value: stats.pendente, cls: 'text-amber-700', bar: 'bg-amber-500' },
+            { key: '', label: 'Reenviados', value: stats.reenviados, cls: 'text-blue-700', bar: 'bg-blue-500' },
+          ].map((c, i) => {
+            const pct = stats.total > 0 ? Math.round((c.value / stats.total) * 100) : 0;
+            const active = status === c.key && c.key !== '';
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => c.key ? setStatus(status === c.key ? '' : c.key) : null}
+                className={`rounded-xl border bg-white p-3 text-left transition-shadow hover:shadow-sm ${active ? 'border-[#00995D] ring-1 ring-[#00995D]' : 'border-gray-200'} ${c.key ? 'cursor-pointer' : 'cursor-default'}`}
+              >
+                <div className="text-xs text-gray-500">{c.label}</div>
+                <div className={`text-2xl font-bold tabular-nums ${c.cls}`}>{c.value ?? 0}</div>
+                {c.label !== 'Total' && c.label !== 'Reenviados' && (
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-gray-100">
+                    <span className={`block h-full rounded-full ${c.bar}`} style={{ width: `${pct}%` }} />
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {stats?.by_type?.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="mb-2 text-sm font-semibold text-gray-700">Por tipo de notificação</div>
+          <div className="space-y-1.5">
+            {stats.by_type.map((t: any) => {
+              const pct = stats.total > 0 ? Math.round((t.count / stats.total) * 100) : 0;
+              return (
+                <div key={t.type} className="flex items-center gap-3 text-sm">
+                  <span className="w-56 shrink-0 truncate text-gray-700">{TYPE_LABELS[t.type] ?? t.type}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <span className="block h-full rounded-full bg-[#00995D]" style={{ width: `${Math.max(pct, 2)}%` }} />
+                  </div>
+                  <span className="w-16 shrink-0 text-right tabular-nums text-gray-600">{t.count} · {pct}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end gap-3 bg-white p-4 rounded-xl border border-gray-200">
         <form onSubmit={(e) => { e.preventDefault(); load(1); }} className="flex items-center gap-2">

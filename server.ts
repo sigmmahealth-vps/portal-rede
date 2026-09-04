@@ -21,7 +21,6 @@ import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/prov
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
-import { certValidUntilOk } from './src/lib/certValidity.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -4162,9 +4161,6 @@ async function startServer() {
       if (new Date(end_date) < new Date(start_date)) {
         return res.status(400).json({ error: 'end_date < start_date' });
       }
-      if (!certValidUntilOk(cert_valid_until, end_date)) {
-        return res.status(400).json({ error: 'cert_valid_until deve ser igual ou posterior a end_date' });
-      }
       if (active) {
         const other = await findConflictingActiveCycle();
         if (other != null) {
@@ -4199,12 +4195,6 @@ async function startServer() {
         const { rows: refs } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [id]);
         if (refs.length) {
           return res.status(409).json({ error: 'Ciclo já aberto — validade dos certificados não pode ser alterada.' });
-        }
-        const { rows: [cur] } = await query('SELECT end_date FROM eval_cycles WHERE id = $1', [id]);
-        if (!cur) return res.status(404).json({ error: 'not found' });
-        const effEnd = end_date ?? cur.end_date;
-        if (!certValidUntilOk(cert_valid_until, String(effEnd))) {
-          return res.status(400).json({ error: 'cert_valid_until deve ser igual ou posterior a end_date' });
         }
       }
       const { rows } = await query(

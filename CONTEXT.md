@@ -27,7 +27,8 @@ Entrega e abertura reais não são rastreadas (dependeria de webhooks do provedo
 ## Validade do certificado
 Data até a qual um certificado de qualificação é válido. É **escolhida por quem
 cria o ciclo** e vale igual para todos os certificados emitidos naquele ciclo
-(um valor único por ciclo). Deve ser igual ou posterior ao fim do ciclo. Fica
+(um valor único por ciclo). É obrigatória, mas pode ser qualquer data (sem
+exigência de ser posterior ao fim do ciclo). Fica
 **travada assim que o ciclo é aberto** e é **congelada em cada certificado no
 momento da emissão** — editar o ciclo depois não altera certificados já
 emitidos. Não é mais derivada por regra automática (antes era "fim do ciclo +

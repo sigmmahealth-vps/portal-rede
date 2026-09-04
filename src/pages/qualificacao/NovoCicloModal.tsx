@@ -54,7 +54,6 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
             <input
               type="date"
               value={certValidUntil}
-              min={end || undefined}
               disabled={opened}
               onChange={e => setCertValidUntil(e.target.value)}
               className="mt-1 w-full border rounded px-3 py-2 disabled:bg-gray-100 disabled:text-gray-500"

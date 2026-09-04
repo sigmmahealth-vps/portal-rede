@@ -29,7 +29,10 @@ const TRANSACTIONAL_TYPES = new Set(['convite', 'reset_senha', 'otp']);
 // Status de e-mail → rótulo + cor. 'enviado' = processado pelo provedor (não é
 // prova de entrega); 'suprimido' = não saiu (allowlist/dev).
 const STATUS: Record<string, { label: string; cls: string }> = {
-  enviado: { label: 'Processado', cls: 'bg-emerald-100 text-emerald-700' },
+  entregue: { label: 'Entregue', cls: 'bg-emerald-100 text-emerald-800' },
+  enviado: { label: 'Processado', cls: 'bg-emerald-50 text-emerald-700' },
+  rejeitado: { label: 'Rejeitado', cls: 'bg-red-100 text-red-700' },
+  reclamado: { label: 'Reclamação', cls: 'bg-orange-100 text-orange-700' },
   suprimido: { label: 'Suprimido', cls: 'bg-gray-200 text-gray-600' },
   falhou: { label: 'Falhou', cls: 'bg-red-100 text-red-700' },
   pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-800' },
@@ -98,15 +101,17 @@ export default function EmailsTab() {
 
       {/* Dashboard — números principais do período/busca selecionados */}
       {stats && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
           {[
-            { key: '', label: 'Total', value: stats.total, cls: 'text-gray-900', bar: 'bg-gray-300' },
-            { key: 'enviado', label: 'Processados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-500' },
+            { key: '', label: 'Total', value: stats.total, cls: 'text-gray-900', bar: 'bg-gray-300', nobar: true },
+            { key: 'entregue', label: 'Entregues', value: stats.entregue, cls: 'text-emerald-800', bar: 'bg-emerald-600' },
+            { key: 'enviado', label: 'Processados', value: stats.enviado, cls: 'text-emerald-700', bar: 'bg-emerald-400' },
+            { key: 'rejeitado', label: 'Rejeitados', value: stats.rejeitado, cls: 'text-red-700', bar: 'bg-red-500' },
             { key: 'suprimido', label: 'Suprimidos', value: stats.suprimido, cls: 'text-gray-600', bar: 'bg-gray-400' },
             { key: 'falhou', label: 'Falharam', value: stats.falhou, cls: 'text-red-700', bar: 'bg-red-500' },
             { key: 'pendente', label: 'Pendentes', value: stats.pendente, cls: 'text-amber-700', bar: 'bg-amber-500' },
-            { key: '', label: 'Reenviados', value: stats.reenviados, cls: 'text-blue-700', bar: 'bg-blue-500' },
-          ].map((c, i) => {
+            { key: '', label: 'Reenviados', value: stats.reenviados, cls: 'text-blue-700', bar: 'bg-blue-500', nobar: true },
+          ].map((c: any, i) => {
             const pct = stats.total > 0 ? Math.round((c.value / stats.total) * 100) : 0;
             const active = status === c.key && c.key !== '';
             return (
@@ -118,7 +123,7 @@ export default function EmailsTab() {
               >
                 <div className="text-xs text-gray-500">{c.label}</div>
                 <div className={`text-2xl font-bold tabular-nums ${c.cls}`}>{c.value ?? 0}</div>
-                {c.label !== 'Total' && c.label !== 'Reenviados' && (
+                {!c.nobar && (
                   <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-gray-100">
                     <span className={`block h-full rounded-full ${c.bar}`} style={{ width: `${pct}%` }} />
                   </div>
@@ -162,7 +167,10 @@ export default function EmailsTab() {
           <span className="block text-xs text-gray-500 mb-0.5">Status</span>
           <select value={status} onChange={e => setStatus(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-2 text-sm">
             <option value="">Todos</option>
+            <option value="entregue">Entregue</option>
             <option value="enviado">Processado</option>
+            <option value="rejeitado">Rejeitado</option>
+            <option value="reclamado">Reclamação</option>
             <option value="suprimido">Suprimido</option>
             <option value="falhou">Falhou</option>
             <option value="pendente">Pendente</option>

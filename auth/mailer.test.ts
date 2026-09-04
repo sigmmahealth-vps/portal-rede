@@ -51,11 +51,11 @@ test('e-mails de auth em HTML no padrão da marca', () => {
 test('sendNotification devolve o desfecho: ConsoleMailer suprime, Resend suprime fora da allowlist', async () => {
   // ConsoleMailer nunca envia de verdade → 'suppressed'.
   const cm = new ConsoleMailer(() => {});
-  assert.equal(await cm.sendNotification('x@y.com', 'assunto', 'corpo'), 'suppressed');
+  assert.equal((await cm.sendNotification('x@y.com', 'assunto', 'corpo')).result, 'suppressed');
   // ResendMailer com allowlist que NÃO casa o destinatário → 'suppressed' sem tocar a rede
   // (a supressão retorna antes de chamar o cliente Resend).
   const rm = new ResendMailer('re_dummy', 'Portal <no@reply.com>', ['@sigmma.health']);
-  assert.equal(await rm.sendNotification('clinica-real@terra.com.br', 'assunto', 'corpo'), 'suppressed');
+  assert.equal((await rm.sendNotification('clinica-real@terra.com.br', 'assunto', 'corpo')).result, 'suppressed');
 });
 
 test('allowlist por sufixo: padrão homolog, domínio e exato; vazia libera tudo', () => {

@@ -34,15 +34,17 @@ export const resetEmailHtml = (link: string) => renderEmailHtml({
   cta: { label: 'Redefinir senha', url: link },
 }, appUrl());
 
-// Desfecho de um envio de notificação: 'sent' = entregue ao provedor (Resend) sem
-// erro; 'suppressed' = não saiu de verdade (fora da EMAIL_ALLOWLIST ou ConsoleMailer).
+// Desfecho de um envio: 'sent' = aceito pelo provedor (Resend) sem erro; 'suppressed'
+// = não saiu de verdade (fora da EMAIL_ALLOWLIST ou ConsoleMailer). messageId = id da
+// mensagem no Resend (quando enviado de verdade), para casar o webhook de entrega/bounce.
 export type EmailSendResult = 'sent' | 'suppressed';
+export type EmailSendOutcome = { result: EmailSendResult; messageId?: string };
 
 export interface Mailer {
-  sendOtp(to: string, code: string): Promise<EmailSendResult>;
-  sendInvite(to: string, name: string, link: string): Promise<EmailSendResult>;
-  sendPasswordReset(to: string, link: string): Promise<EmailSendResult>;
-  sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult>;
+  sendOtp(to: string, code: string): Promise<EmailSendOutcome>;
+  sendInvite(to: string, name: string, link: string): Promise<EmailSendOutcome>;
+  sendPasswordReset(to: string, link: string): Promise<EmailSendOutcome>;
+  sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendOutcome>;
 }
 
 const OTP_SUBJECT = (code: string) => `Seu código de acesso ao Portal Unimed: ${code}`;
@@ -68,21 +70,21 @@ const RESET_BODY = (link: string) =>
 
 export class ConsoleMailer implements Mailer {
   constructor(private readonly log: (msg: string) => void = console.log) {}
-  async sendOtp(to: string, code: string): Promise<EmailSendResult> {
+  async sendOtp(to: string, code: string): Promise<EmailSendOutcome> {
     this.log(`[ConsoleMailer] Para: ${to} | ${OTP_SUBJECT(code)}`);
-    return 'suppressed';
+    return { result: 'suppressed' };
   }
-  async sendInvite(to: string, name: string, link: string): Promise<EmailSendResult> {
+  async sendInvite(to: string, name: string, link: string): Promise<EmailSendOutcome> {
     this.log(`[ConsoleMailer] Para: ${to} | ${INVITE_SUBJECT} | ${name} | ${link}`);
-    return 'suppressed';
+    return { result: 'suppressed' };
   }
-  async sendPasswordReset(to: string, link: string): Promise<EmailSendResult> {
+  async sendPasswordReset(to: string, link: string): Promise<EmailSendOutcome> {
     this.log(`[ConsoleMailer] Para: ${to} | ${RESET_SUBJECT} | ${link}`);
-    return 'suppressed';
+    return { result: 'suppressed' };
   }
-  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
+  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendOutcome> {
     this.log(`[ConsoleMailer] Para: ${to} | ${subject} | ${text.slice(0, 120)}${html ? ' | [html]' : ''}`);
-    return 'suppressed'; // dev/homolog: nada é enviado de verdade
+    return { result: 'suppressed' }; // dev/homolog: nada é enviado de verdade
   }
 }
 
@@ -106,25 +108,25 @@ export class ResendMailer implements Mailer {
   constructor(apiKey: string, private readonly from: string, private readonly allowlist: string[] = []) {
     this.client = new Resend(apiKey);
   }
-  private async send(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
+  private async send(to: string, subject: string, text: string, html?: string): Promise<EmailSendOutcome> {
     if (!emailAllowed(to, this.allowlist)) {
       console.log(`[mailer] SUPRIMIDO (fora da EMAIL_ALLOWLIST): ${to} | ${subject}`);
-      return 'suppressed';
+      return { result: 'suppressed' };
     }
-    const { error } = await this.client.emails.send({ from: this.from, to, subject, text, ...(html ? { html } : {}) });
+    const { data, error } = await this.client.emails.send({ from: this.from, to, subject, text, ...(html ? { html } : {}) });
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
-    return 'sent';
+    return { result: 'sent', messageId: data?.id };
   }
-  async sendOtp(to: string, code: string): Promise<EmailSendResult> {
+  async sendOtp(to: string, code: string): Promise<EmailSendOutcome> {
     return this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code));
   }
-  async sendInvite(to: string, name: string, link: string): Promise<EmailSendResult> {
+  async sendInvite(to: string, name: string, link: string): Promise<EmailSendOutcome> {
     return this.send(to, INVITE_SUBJECT, INVITE_BODY(name, link), inviteEmailHtml(name, link));
   }
-  async sendPasswordReset(to: string, link: string): Promise<EmailSendResult> {
+  async sendPasswordReset(to: string, link: string): Promise<EmailSendOutcome> {
     return this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link));
   }
-  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
+  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendOutcome> {
     return this.send(to, subject, text, html);
   }
 }

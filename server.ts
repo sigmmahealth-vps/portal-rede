@@ -11,7 +11,7 @@ import { parseWorkbook } from './db/roteiro-parser.js';
 import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS, isTestMasterOtp } from './auth/otp.js';
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
 import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
-import { createMailer, type EmailSendResult } from './auth/mailer.js';
+import { createMailer, type EmailSendOutcome } from './auth/mailer.js';
 import { generateToken, hashToken, verifyToken, expirationFor } from './auth/setupToken.js';
 import { validatePassword } from './auth/passwordPolicy.js';
 import { auditLog } from './auth/auditLog.js';
@@ -21,6 +21,7 @@ import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/prov
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
+import { verifyResendWebhook, resendEventToStatus } from './src/lib/resendWebhook.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -278,9 +279,9 @@ async function startServer() {
           WHERE id = $1 ${guard}
           RETURNING id`, [rowId]);
       if (!claimed.length) return;
-      const result = await mailer.sendNotification(to, subject, text, html);
-      await query(`UPDATE notifications SET email_status = $2 WHERE id = $1`,
-        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado']);
+      const { result, messageId } = await mailer.sendNotification(to, subject, text, html);
+      await query(`UPDATE notifications SET email_status = $2, provider_message_id = COALESCE($3, provider_message_id) WHERE id = $1`,
+        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado', messageId ?? null]);
     } catch (e) {
       console.error(`[notify] e-mail falhou (notification ${rowId}):`, e);
       await query(`UPDATE notifications SET email_status = 'falhou' WHERE id = $1`, [rowId]).catch(() => {});
@@ -295,7 +296,7 @@ async function startServer() {
   // Registra e envia um e-mail transacional (convite/reset/OTP), guardando só tipo +
   // destinatário + status na tabela `notifications` (nunca o código do OTP nem o token
   // do link). Preserva o comportamento antigo: relança o erro do envio ao chamador.
-  async function sendTransactionalEmail(to: string, type: string, title: string, send: () => Promise<EmailSendResult>): Promise<void> {
+  async function sendTransactionalEmail(to: string, type: string, title: string, send: () => Promise<EmailSendOutcome>): Promise<void> {
     let rowId: number | null = null;
     try {
       const { rows } = await query(
@@ -304,9 +305,9 @@ async function startServer() {
       rowId = Number(rows[0].id);
     } catch (e) { console.error(`[email-log] falha ao registrar ${type}:`, e); }
     try {
-      const result = await send();
-      if (rowId) await query(`UPDATE notifications SET email_status = $2, email_attempts = 1 WHERE id = $1`,
-        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado']).catch(() => {});
+      const { result, messageId } = await send();
+      if (rowId) await query(`UPDATE notifications SET email_status = $2, email_attempts = 1, provider_message_id = $3 WHERE id = $1`,
+        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado', messageId ?? null]).catch(() => {});
     } catch (e) {
       if (rowId) await query(`UPDATE notifications SET email_status = 'falhou', email_attempts = 1 WHERE id = $1`, [rowId]).catch(() => {});
       throw e;
@@ -367,7 +368,8 @@ async function startServer() {
     },
     credentials: true,
   }));
-  app.use(express.json());
+  // Guarda o corpo cru (para verificar a assinatura do webhook do Resend).
+  app.use(express.json({ verify: (req: any, _res, buf) => { req.rawBody = buf.toString('utf8'); } }));
   app.use(cookieParser());
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   // Se o arquivo não existe, retorna 404 explícito — evita cair no SPA fallback
@@ -620,6 +622,9 @@ async function startServer() {
       const { rows: [s] } = await query(`
         SELECT COUNT(*)::int AS total,
                COUNT(*) FILTER (WHERE n.email_status = 'enviado')::int   AS enviado,
+               COUNT(*) FILTER (WHERE n.email_status = 'entregue')::int  AS entregue,
+               COUNT(*) FILTER (WHERE n.email_status = 'rejeitado')::int AS rejeitado,
+               COUNT(*) FILTER (WHERE n.email_status = 'reclamado')::int AS reclamado,
                COUNT(*) FILTER (WHERE n.email_status = 'suprimido')::int AS suprimido,
                COUNT(*) FILTER (WHERE n.email_status = 'falhou')::int    AS falhou,
                COUNT(*) FILTER (WHERE n.email_status = 'pendente')::int  AS pendente,
@@ -653,6 +658,30 @@ async function startServer() {
       const { rows: [after] } = await query('SELECT email_status, email_attempts FROM notifications WHERE id = $1', [id]);
       res.json({ ok: true, email_status: after.email_status, email_attempts: after.email_attempts });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Webhook do Resend (público, autenticado por assinatura Svix): eventos de entrega/
+  // bounce/reclamação atualizam o status do e-mail pela id da mensagem. Sem segredo
+  // configurado, responde 503 (não processa nada).
+  app.post('/api/webhooks/resend', async (req: any, res) => {
+    try {
+      const secret = process.env.RESEND_WEBHOOK_SECRET;
+      if (!secret) return res.status(503).json({ error: 'webhook não configurado' });
+      const ok = verifyResendWebhook(secret,
+        { id: req.headers['svix-id'], timestamp: req.headers['svix-timestamp'], signature: req.headers['svix-signature'] },
+        req.rawBody ?? '');
+      if (!ok) return res.status(401).json({ error: 'assinatura inválida' });
+      const emailId = req.body?.data?.email_id;
+      const status = resendEventToStatus(req.body?.type);
+      if (emailId && status) {
+        // Não sobrescreve com o mesmo status; bounce/reclamação/entrega vindas do provedor
+        // vencem o 'enviado' anterior.
+        await query(
+          `UPDATE notifications SET email_status = $2 WHERE provider_message_id = $1 AND email_status <> $2`,
+          [emailId, status]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) { console.error('[webhook resend]', err); res.status(500).json({ error: err.message }); }
   });
 
   // Login — etapa 1: senha. Emite sessão se o dispositivo for confiável; senão, dispara OTP.

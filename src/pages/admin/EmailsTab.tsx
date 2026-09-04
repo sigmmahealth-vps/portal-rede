@@ -135,7 +135,7 @@ export default function EmailsTab() {
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
                     <span className="block h-full rounded-full bg-[#00995D]" style={{ width: `${Math.max(pct, 2)}%` }} />
                   </div>
-                  <span className="w-16 shrink-0 text-right tabular-nums text-gray-600">{t.count} · {pct}%</span>
+                  <span className="w-24 shrink-0 whitespace-nowrap text-right tabular-nums text-gray-600">{t.count} · {pct}%</span>
                 </div>
               );
             })}

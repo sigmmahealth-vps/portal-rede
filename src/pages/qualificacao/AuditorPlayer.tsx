@@ -6,7 +6,7 @@ import { ITEM_STATUS_LABEL } from './planoStatus';
 import MemoriaCalculoModal from './MemoriaCalculoModal';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, XCircle, RotateCcw,
-  Loader2, Paperclip, ShieldCheck, FileText, MessageSquare,
+  Loader2, Paperclip, ShieldCheck, FileText, MessageSquare, Ban,
 } from 'lucide-react';
 
 interface Question {
@@ -148,8 +148,9 @@ function analStatus(a: Answer | undefined): AnalStatus {
   return 'pendente';
 }
 
-const evidenceLabel = (ev: string | null | undefined): { label: string; cls: string } | null => {
+const evidenceLabel = (ev: string | null | undefined, answerValue?: string | null): { label: string; cls: string } | null => {
   if (!ev) return null;
+  if (ev === 'aprovado' && answerValue === 'na') return { label: 'Analisado — Não se aplica', cls: 'bg-gray-100 text-gray-700 border-gray-300' };
   if (ev === 'aprovado') return { label: 'Analisado — Aprovado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   if (ev === 'reprovado') return { label: 'Analisado — Reprovado', cls: 'bg-red-50 text-red-700 border-red-200' };
   if (ev === 'aguardando_reanalise') return { label: 'Aguardando Reanálise', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
@@ -189,7 +190,7 @@ export default function AuditorPlayer({
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [reasonPrompt, setReasonPrompt] = useState<{ answerId: number; action: 'aprovou' | 'reprovou' | 'solicitou_reanalise' } | null>(null);
+  const [reasonPrompt, setReasonPrompt] = useState<{ answerId: number; action: 'aprovou' | 'reprovou' | 'solicitou_reanalise' | 'marcou_na' } | null>(null);
   const [reasonText, setReasonText] = useState('');
   const [revising, setRevising] = useState<Set<number>>(new Set());
   const [planCandidates, setPlanCandidates] = useState<{ seguranca_pct: number; items: any[] } | null>(null);
@@ -352,9 +353,10 @@ export default function AuditorPlayer({
   const readOnly = !!instance && READONLY_STATUSES.includes(instance.status);
 
   // Ações do auditor ----------------------------------------------------------
-  const act = async (answerId: number, action: 'aprovou' | 'reprovou' | 'solicitou_reanalise', observation?: string) => {
+  const act = async (answerId: number, action: 'aprovou' | 'reprovou' | 'solicitou_reanalise' | 'marcou_na', observation?: string) => {
     setBusy(true);
-    const path = action === 'aprovou' ? 'aprovar' : action === 'reprovou' ? 'reprovar' : 'solicitar-reanalise';
+    const path = action === 'aprovou' ? 'aprovar' : action === 'reprovou' ? 'reprovar'
+      : action === 'marcou_na' ? 'nao-aplica' : 'solicitar-reanalise';
     try {
       await fetchApi(`/eval/answers/${answerId}/${path}`, {
         method: 'POST',
@@ -771,6 +773,15 @@ export default function AuditorPlayer({
                                       </button>
                                       <button
                                         type="button"
+                                        disabled={busy || awaitingProvider}
+                                        title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : 'Marcar como não se aplica (sai do cálculo)'}
+                                        onClick={() => { setReasonPrompt({ answerId: a.id, action: 'marcou_na' }); setReasonText(''); }}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        <Ban className="h-3.5 w-3.5" /> Não se aplica
+                                      </button>
+                                      <button
+                                        type="button"
                                         disabled={busy}
                                         onClick={() => { setReasonPrompt({ answerId: a.id, action: 'solicitou_reanalise' }); setReasonText(''); }}
                                         className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -799,9 +810,11 @@ export default function AuditorPlayer({
                                   const act2 = reasonPrompt!.action;
                                   const label = act2 === 'aprovou' ? 'Justificativa da revisão'
                                     : act2 === 'reprovou' ? 'Motivo da reprovação'
+                                    : act2 === 'marcou_na' ? 'Motivo do "não se aplica"'
                                     : 'Orientação para reanálise';
                                   const placeholder = act2 === 'aprovou' ? 'Explique por que está revendo a decisão anterior.'
                                     : act2 === 'reprovou' ? 'Descreva por que o critério foi reprovado.'
+                                    : act2 === 'marcou_na' ? 'Explique por que este critério não se aplica a este prestador.'
                                     : 'Descreva o que o prestador deve corrigir/enviar.';
                                   return (
                                     <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3">

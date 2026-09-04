@@ -4793,7 +4793,7 @@ async function startServer() {
 
   async function auditorAction(
     req: any, res: any,
-    action: 'aprovou' | 'reprovou' | 'solicitou_reanalise',
+    action: 'aprovou' | 'reprovou' | 'solicitou_reanalise' | 'marcou_na',
     observationRequired: boolean
   ) {
     try {
@@ -4817,13 +4817,15 @@ async function startServer() {
         return res.status(400).json({ error: isRevision ? 'justificativa obrigatória para revisar a decisão' : 'observação obrigatória' });
       }
 
+      // marcou_na: o auditor declara "não se aplica" — vira N/A aprovado (sai do
+      // cálculo). Sobrescreve a resposta original para 'na' e aprova a evidência.
       const newEvidenceStatus =
         action === 'aprovou' ? 'aprovado' :
-        action === 'reprovou' ? 'reprovado' : 'aguardando_reanalise';
-      const newScore =
-        action === 'reprovou' ? 0 :
-        action === 'aprovou'  ? Number(ans.score_obtained ?? 0) : Number(ans.score_obtained ?? 0);
+        action === 'reprovou' ? 'reprovado' :
+        action === 'marcou_na' ? 'aprovado' : 'aguardando_reanalise';
+      const newScore = action === 'reprovou' || action === 'marcou_na' ? 0 : Number(ans.score_obtained ?? 0);
       const isNonCompliant = action === 'reprovou';
+      const newAnswerValue = action === 'marcou_na' ? 'na' : ans.answer_value;
 
       await withTransaction(async (client) => {
         await client.query(`
@@ -4831,16 +4833,17 @@ async function startServer() {
              SET evidence_status = $1,
                  score_obtained  = $2,
                  auditor_observation = $3,
-                 is_non_compliant = $4
-           WHERE id = $5
-        `, [newEvidenceStatus, newScore, observation || null, isNonCompliant, answerId]);
+                 is_non_compliant = $4,
+                 answer_value = $5
+           WHERE id = $6
+        `, [newEvidenceStatus, newScore, observation || null, isNonCompliant, newAnswerValue, answerId]);
 
         const n = await nextIterationNumber(client, answerId);
         await client.query(`
           INSERT INTO eval_answer_iterations
             (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
           VALUES ($1, $2, $3, 'auditor', $4, $5, $6, $7, $8)
-        `, [answerId, n, req.user.id, action, ans.answer_value, newScore, ans.evidence_url, observation || null]);
+        `, [answerId, n, req.user.id, action, newAnswerValue, newScore, ans.evidence_url, observation || null]);
 
         if (action === 'solicitou_reanalise' && ans.instance_status === 'em_analise') {
           await client.query(
@@ -4880,6 +4883,7 @@ async function startServer() {
   app.post('/api/eval/answers/:id/aprovar',              authenticate, (req, res) => auditorAction(req, res, 'aprovou', false));
   app.post('/api/eval/answers/:id/reprovar',             authenticate, (req, res) => auditorAction(req, res, 'reprovou', true));
   app.post('/api/eval/answers/:id/solicitar-reanalise',  authenticate, (req, res) => auditorAction(req, res, 'solicitou_reanalise', true));
+  app.post('/api/eval/answers/:id/nao-aplica',           authenticate, (req, res) => auditorAction(req, res, 'marcou_na', true));
 
   // Candidatos a plano de ação (não conformes) da instância — usado no modal do parecer
   app.get('/api/eval/instances/:id/plano-candidatos', authenticate, async (req: any, res) => {

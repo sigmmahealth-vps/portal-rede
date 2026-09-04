@@ -34,11 +34,15 @@ export const resetEmailHtml = (link: string) => renderEmailHtml({
   cta: { label: 'Redefinir senha', url: link },
 }, appUrl());
 
+// Desfecho de um envio de notificação: 'sent' = entregue ao provedor (Resend) sem
+// erro; 'suppressed' = não saiu de verdade (fora da EMAIL_ALLOWLIST ou ConsoleMailer).
+export type EmailSendResult = 'sent' | 'suppressed';
+
 export interface Mailer {
   sendOtp(to: string, code: string): Promise<void>;
   sendInvite(to: string, name: string, link: string): Promise<void>;
   sendPasswordReset(to: string, link: string): Promise<void>;
-  sendNotification(to: string, subject: string, text: string, html?: string): Promise<void>;
+  sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult>;
 }
 
 const OTP_SUBJECT = (code: string) => `Seu código de acesso ao Portal Unimed: ${code}`;
@@ -73,8 +77,9 @@ export class ConsoleMailer implements Mailer {
   async sendPasswordReset(to: string, link: string): Promise<void> {
     this.log(`[ConsoleMailer] Para: ${to} | ${RESET_SUBJECT} | ${link}`);
   }
-  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<void> {
+  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
     this.log(`[ConsoleMailer] Para: ${to} | ${subject} | ${text.slice(0, 120)}${html ? ' | [html]' : ''}`);
+    return 'suppressed'; // dev/homolog: nada é enviado de verdade
   }
 }
 
@@ -98,13 +103,14 @@ export class ResendMailer implements Mailer {
   constructor(apiKey: string, private readonly from: string, private readonly allowlist: string[] = []) {
     this.client = new Resend(apiKey);
   }
-  private async send(to: string, subject: string, text: string, html?: string): Promise<void> {
+  private async send(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
     if (!emailAllowed(to, this.allowlist)) {
       console.log(`[mailer] SUPRIMIDO (fora da EMAIL_ALLOWLIST): ${to} | ${subject}`);
-      return;
+      return 'suppressed';
     }
     const { error } = await this.client.emails.send({ from: this.from, to, subject, text, ...(html ? { html } : {}) });
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
+    return 'sent';
   }
   async sendOtp(to: string, code: string): Promise<void> {
     await this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code));
@@ -115,8 +121,8 @@ export class ResendMailer implements Mailer {
   async sendPasswordReset(to: string, link: string): Promise<void> {
     await this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link));
   }
-  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<void> {
-    await this.send(to, subject, text, html);
+  async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendResult> {
+    return this.send(to, subject, text, html);
   }
 }
 

@@ -16,6 +16,14 @@ qualquer motivo: reprovado, respondido "não", ou N/A reprovado) — não é ape
 formalmente **reprovado** pelo auditor. Pontuação cheia ou N/A aprovado (não se
 aplica) não são não conformidade. Basta uma para rebaixar a Bronze.
 
+## Status de e-mail (notificações)
+Estado do e-mail de uma notificação (`notifications.email_status`): **pendente**
+(na fila de envio), **enviado** = "**processado**" (entregue ao provedor de envio
+sem erro — *não* é prova de entrega na caixa nem de leitura), **suprimido** (não
+saiu de verdade: fora da lista de teste/allowlist ou ambiente sem envio real),
+**falhou** (o provedor recusou), **sem e-mail** (`na` — notificação só de portal).
+Entrega e abertura reais não são rastreadas (dependeria de webhooks do provedor).
+
 ## Validade do certificado
 Data até a qual um certificado de qualificação é válido. É **escolhida por quem
 cria o ciclo** e vale igual para todos os certificados emitidos naquele ciclo

@@ -6,6 +6,7 @@ import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
 import ConfirmDeleteRoteiroModal from './qualificacao/ConfirmDeleteRoteiroModal';
 import UsuariosTab from './admin/UsuariosTab';
+import EmailsTab from './admin/EmailsTab';
 import {
   Users, 
   GraduationCap, 
@@ -40,7 +41,7 @@ const TABS = [
   { id: 'roteiros', label: 'Roteiros de Avaliação', icon: CheckCircle },
   { id: 'treinamentos', label: 'Cursos e Treinamentos', icon: GraduationCap },
   { id: 'comunicados', label: 'Comunicados', icon: Megaphone },
-  { id: 'emails', label: 'Disparo de E-mails', icon: Mail },
+  { id: 'emails', label: 'E-mails Enviados', icon: Mail },
   { id: 'banners', label: 'Banners', icon: ImageIcon },
   { id: 'acessos', label: 'Trilha de Acesso', icon: ShieldCheck },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
@@ -866,67 +867,7 @@ export default function Admin() {
           </div>
         )}
 
-        {activeTab === 'emails' && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-              <h2 className="text-lg font-bold text-gray-800">Disparo de E-mails Automáticos</h2>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-              <h3 className="text-md font-bold text-gray-800 mb-4 border-b pb-2">Novo Disparo</h3>
-              
-              <form onSubmit={(e) => { e.preventDefault(); alert('E-mail enviado com sucesso! (Simulação)'); }} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Público-Alvo</label>
-                    <select 
-                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D] p-2 border"
-                    >
-                      <option value="todos">Todos os Prestadores</option>
-                      <option value="grupo_medicos">Grupo: Médicos Cooperados</option>
-                      <option value="grupo_clinicas">Grupo: Clínicas</option>
-                      <option value="vencimento_docs">Prestadores com Documentos a Vencer (30 dias)</option>
-                      <option value="especifico">Usuário Específico</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Assunto do E-mail</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="Ex: Aviso de Vencimento de Documento"
-                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D] p-2 border"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Conteúdo da Mensagem</label>
-                  <textarea 
-                    required
-                    rows={6}
-                    placeholder="Digite a mensagem que será enviada..."
-                    className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D] p-2 border"
-                  ></textarea>
-                </div>
-
-                <div className="pt-4 flex justify-end">
-                  <button type="submit" className="flex items-center gap-2 bg-[#00995D] text-white px-6 py-2 rounded-lg hover:bg-[#007A4A] transition-colors">
-                    <Mail className="w-4 h-4" />
-                    Enviar E-mail
-                  </button>
-                </div>
-              </form>
-            </div>
-            
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-              <h3 className="text-md font-bold text-gray-800 mb-4 border-b pb-2">Histórico de Disparos</h3>
-              <div className="text-center text-gray-500 py-8">
-                Nenhum e-mail disparado recentemente.
-              </div>
-            </div>
-          </div>
-        )}
+        {activeTab === 'emails' && <EmailsTab />}
 
         {activeTab === 'comunicados' && (
           <div className="space-y-6">

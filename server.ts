@@ -275,8 +275,9 @@ async function startServer() {
           WHERE id = $1 AND email_attempts < 3 AND email_status IN ('pendente','falhou')
           RETURNING id`, [rowId]);
       if (!claimed.length) return;
-      await mailer.sendNotification(to, subject, text, html);
-      await query(`UPDATE notifications SET email_status = 'enviado' WHERE id = $1`, [rowId]);
+      const result = await mailer.sendNotification(to, subject, text, html);
+      await query(`UPDATE notifications SET email_status = $2 WHERE id = $1`,
+        [rowId, result === 'suppressed' ? 'suprimido' : 'enviado']);
     } catch (e) {
       console.error(`[notify] e-mail falhou (notification ${rowId}):`, e);
       await query(`UPDATE notifications SET email_status = 'falhou' WHERE id = $1`, [rowId]).catch(() => {});
@@ -528,6 +529,67 @@ async function startServer() {
     try {
       await query('UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL', [req.user.id]);
       res.json({ ok: true });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // E-mails enviados (staff: admin/auditoria) — lista notificações que têm e-mail,
+  // com status real (inclui 'suprimido'). Filtros: status, tipo, período (padrão 90d),
+  // busca por e-mail OU nome/código do prestador. Paginado, mais recentes primeiro.
+  app.get('/api/admin/emails', authenticate, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin' && req.user.role !== 'auditoria')
+        return res.status(403).json({ error: 'Unauthorized' });
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const perPage = 25;
+      const params: any[] = [];
+      const cond: string[] = ['n.email_to IS NOT NULL'];
+      const days = req.query.days === 'all' ? null : Math.max(1, Number(req.query.days) || 90);
+      if (days) { params.push(days); cond.push(`n.created_at >= now() - ($${params.length}::text || ' days')::interval`); }
+      if (typeof req.query.status === 'string' && req.query.status) {
+        params.push(req.query.status); cond.push(`n.email_status = $${params.length}`);
+      }
+      if (typeof req.query.type === 'string' && req.query.type) {
+        params.push(req.query.type); cond.push(`n.type = $${params.length}`);
+      }
+      if (typeof req.query.q === 'string' && req.query.q.trim()) {
+        params.push(`%${req.query.q.trim()}%`);
+        const i = params.length;
+        cond.push(`(n.email_to ILIKE $${i} OR p.name ILIKE $${i} OR p.sgu_code ILIKE $${i})`);
+      }
+      const where = cond.join(' AND ');
+      const { rows: cnt } = await query(
+        `SELECT COUNT(*)::int AS total FROM notifications n LEFT JOIN providers p ON p.id = n.provider_id WHERE ${where}`, params);
+      params.push((page - 1) * perPage);
+      const { rows } = await query(`
+        SELECT n.id, n.email_to, n.type, n.title, n.email_status, n.email_attempts, n.created_at,
+               p.name AS provider_name, p.sgu_code AS provider_code
+          FROM notifications n
+          LEFT JOIN providers p ON p.id = n.provider_id
+         WHERE ${where}
+         ORDER BY n.id DESC LIMIT ${perPage} OFFSET $${params.length}`, params);
+      res.json({ page, per_page: perPage, total: cnt[0].total, items: rows });
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
+  // Reenviar um e-mail (staff): reabre no outbox (pendente + tentativas 0) e dispara
+  // na hora, remontando o e-mail rico a partir do ctx guardado.
+  app.post('/api/admin/emails/:id/reenviar', authenticate, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin' && req.user.role !== 'auditoria')
+        return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows: [n] } = await query(
+        `SELECT n.id, n.type, n.ctx, n.email_to, n.body, n.link, u.name AS user_name
+           FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.id = $1`, [id]);
+      if (!n) return res.status(404).json({ error: 'not found' });
+      if (!n.email_to) return res.status(409).json({ error: 'notificação sem e-mail' });
+      await query(`UPDATE notifications SET email_status = 'pendente', email_attempts = 0 WHERE id = $1`, [id]);
+      const appUrl = notifyAppUrl();
+      const link = n.link ?? '/qualificacao';
+      const { subject, html } = renderNotificationEmail(n.type, n.ctx ?? {}, appUrl, n.user_name ?? undefined);
+      await sendNotificationEmail(id, n.email_to, subject, `${n.body ?? ''}\n\nAcesse: ${appUrl}${link}`, html);
+      const { rows: [after] } = await query('SELECT email_status, email_attempts FROM notifications WHERE id = $1', [id]);
+      res.json({ ok: true, email_status: after.email_status, email_attempts: after.email_attempts });
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 

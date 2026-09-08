@@ -16,6 +16,7 @@ import { generateToken, hashToken, verifyToken, expirationFor } from './auth/set
 import { validatePassword } from './auth/passwordPolicy.js';
 import { auditLog } from './auth/auditLog.js';
 import { hashIp } from './auth/ipHash.js';
+import { SESSION, isAbsoluteExpired, isRevoked } from './auth/session.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
@@ -390,18 +391,46 @@ async function startServer() {
 
   // --- API Routes ---
 
-  // Auth Middleware — sessão por cookie httpOnly; mantém fallback ao header Authorization
-  // para compatibilidade durante a transição (clientes antigos com token no localStorage).
-  const authenticate = (req: any, res: any, next: any) => {
-    const fromCookie = req.cookies?.session;
-    const authHeader = req.headers.authorization;
-    const token = fromCookie || (authHeader ? authHeader.split(' ')[1] : null);
-    if (!token) return res.status(401).json({ error: 'No token provided' });
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Sessão (spec 2026-09-08): JWT curto (janela de inatividade) reemitido a cada
+  // request, com `sa` = início da sessão (teto absoluto) e `sv` = users.session_version
+  // (revogação). Escopo por unidade continua fora do JWT (migration 0036).
+  const signSession = (user: { id: number; name: string; role: string; provider_id: number | null }, sv: number, sa: number) =>
+    jwt.sign(
+      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id, sv, sa },
+      JWT_SECRET as string,
+      { expiresIn: Math.floor(SESSION.idleMs / 1000) },
+    );
+  const setSessionCookie = (res: any, token: string) =>
+    res.cookie('session', token, { httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: SESSION.idleMs });
+
+  // Auth Middleware — sessão só por cookie httpOnly (o fallback ao header Authorization
+  // foi removido: o frontend nunca envia token por header). A cada request confere
+  // assinatura e exp (inatividade), teto absoluto, e lê is_active/role/session_version
+  // do banco — desativação, mudança de perfil e revogação valem na requisição seguinte.
+  const authenticate = async (req: any, res: any, next: any) => {
+    const token = req.cookies?.session;
+    const reject = (error: string) => { res.clearCookie('session'); return res.status(401).json({ error }); };
+    if (!token) return reject('No token provided');
+    let claims: any;
     try {
-      req.user = jwt.verify(token, JWT_SECRET as string);
+      claims = jwt.verify(token, JWT_SECRET as string);
+    } catch {
+      return reject('Sessão expirada');
+    }
+    if (isAbsoluteExpired(claims.sa, new Date())) return reject('Sessão expirada');
+    try {
+      const { rows } = await query('SELECT is_active, role, session_version FROM users WHERE id = $1', [claims.id]);
+      const u = rows[0];
+      if (!u || u.is_active === false) return reject('Sessão encerrada');
+      if (isRevoked(claims.sv, Number(u.session_version))) return reject('Sessão encerrada');
+      req.user = { id: claims.id, name: claims.name, provider_id: claims.provider_id, role: u.role };
+      setSessionCookie(res, signSession(req.user, Number(u.session_version), claims.sa)); // deslizante
       next();
     } catch (err) {
-      return res.status(401).json({ error: 'Invalid token' });
+      console.error('authenticate:', err);
+      return res.status(500).json({ error: 'Falha ao validar sessão.' });
     }
   };
 
@@ -440,8 +469,6 @@ async function startServer() {
     });
   };
 
-  const isProd = process.env.NODE_ENV === 'production';
-
   // Emite a sessão (JWT em cookie httpOnly) e devolve o payload do usuário.
   // Traz do provider: person_type (PF/PJ) e is_cooperado (grupo "MEDICOS COOPERADOS").
   const issueSession = async (res: any, user: any, previousLoginAt: any) => {
@@ -455,16 +482,9 @@ async function startServer() {
     // Cooperado = grupo "MEDICOS COOPERADOS" (com ou sem sufixo ARARANGUA). Regra ancorada
     // no provider_group porque o provider_type "MÉDICO" cobre também psicólogos/nutris/etc.
     const isCooperado = /^MEDICOS COOPERADOS(\s+ARARANGUA)?$/i.test(String(providerGroup ?? '').trim());
-    // Escopo por unidade não vai no JWT (migration 0036) — resolvido por request
-    // via userLocationIds(req), a partir de user_locations no banco.
-    const token = jwt.sign(
-      { id: user.id, name: user.name, role: user.role, provider_id: user.provider_id },
-      JWT_SECRET as string,
-      { expiresIn: '24h' },
-    );
-    res.cookie('session', token, {
-      httpOnly: true, secure: isProd, sameSite: 'lax', maxAge: 24 * 60 * 60 * 1000,
-    });
+    // `sv` lido do banco (o `user` do login pode vir de um SELECT sem a coluna); `sa` = agora.
+    const { rows: svRows } = await query('SELECT session_version FROM users WHERE id = $1', [user.id]);
+    setSessionCookie(res, signSession(user, Number(svRows[0]?.session_version ?? 1), Date.now()));
     return {
       user: {
         id: user.id, name: user.name, email: user.email, role: user.role,
@@ -989,7 +1009,7 @@ async function startServer() {
         );
         if (claim.rowCount === 0) throw new Error('token_already_consumed');
         await client.query(
-          `UPDATE users SET password = $1, invite_status = 'accepted' WHERE id = $2`,
+          `UPDATE users SET password = $1, invite_status = 'accepted', session_version = session_version + 1 WHERE id = $2`,
           [pwHash, matched.user_id],
         );
         if (matched.kind === 'reset') {
@@ -1013,8 +1033,17 @@ async function startServer() {
     }
   });
 
-  // Logout — limpa apenas o cookie de sessão (trusted_device segue valendo).
-  app.post('/api/auth/logout', (_req, res) => {
+  // Logout — incrementa session_version (encerra TODAS as sessões do usuário, em todos os
+  // dispositivos) e limpa o cookie. Não passa por `authenticate` para nunca devolver 401
+  // no logout; aceita token já expirado só para identificar o usuário. trusted_device
+  // segue valendo (só dispensa o 2FA).
+  app.post('/api/auth/logout', async (req: any, res) => {
+    try {
+      const claims: any = req.cookies?.session
+        ? jwt.verify(req.cookies.session, JWT_SECRET as string, { ignoreExpiration: true })
+        : null;
+      if (claims?.id) await query('UPDATE users SET session_version = session_version + 1 WHERE id = $1', [claims.id]);
+    } catch { /* token inválido: só limpa o cookie */ }
     res.clearCookie('session');
     res.json({ ok: true });
   });
@@ -1869,7 +1898,7 @@ async function startServer() {
         if (existing) {
           if (password) {
             const pwHash = await bcrypt.hash(password, 10);
-            await query(`UPDATE users SET email = $1, password = $2, invite_status = 'accepted' WHERE id = $3`, [email, pwHash, existing.id]);
+            await query(`UPDATE users SET email = $1, password = $2, invite_status = 'accepted', session_version = session_version + 1 WHERE id = $3`, [email, pwHash, existing.id]);
             await query(
               `UPDATE password_setup_tokens SET used_at = now()
                 WHERE user_id = $1 AND kind = 'invite' AND used_at IS NULL`,

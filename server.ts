@@ -6524,6 +6524,8 @@ async function startServer() {
           status: r.status, percentual: Number(r.percentual) || 0, seal: r.seal,
           has_certificate: !!r.has_certificate,
           certificate_id: r.certificate_id != null ? Number(r.certificate_id) : null,
+          submitted_at: r.submitted_at != null ? new Date(r.submitted_at).toISOString() : null,
+          has_survey_response: !!r.has_survey_response,
         })),
         dimPct.map((r: any) => ({
           instance_id: Number(r.instance_id), dimension: r.dimension, pct: Number(r.pct) || 0,

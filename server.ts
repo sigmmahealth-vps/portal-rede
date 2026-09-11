@@ -4490,6 +4490,8 @@ async function startServer() {
           ON ov.cycle_id = $2 AND ov.provider_id = p.id AND ov.location_id = pl.id
        WHERE pl.in_medical_guide = true
          AND (p.provider_group = ANY($1::text[]) OR ov.script_id IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x
+                          WHERE x.cycle_id = $2 AND x.provider_id = p.id AND x.location_id = pl.id)
     `, [groupList.length ? groupList : ['__none__'], cycleId]);
 
     // DL bypass — usa o roteiro EFETIVO por grupo (respeita saved). Junta providers ao script do grupo.
@@ -4679,13 +4681,19 @@ async function startServer() {
                g.script_id AS default_script_id,
                s_default.title AS default_script_title,
                ov.script_id AS override_script_id,
-               s_override.title AS override_script_title
+               s_override.title AS override_script_title,
+               x.id AS excluded_id,
+               x.reason AS excluded_reason,
+               ux.name AS excluded_by,
+               x.created_at AS excluded_at
           FROM provider_locations pl
           JOIN providers p ON p.id = pl.provider_id
           LEFT JOIN eff_groups g ON g.provider_group = p.provider_group
           LEFT JOIN eval_scripts s_default ON s_default.id = g.script_id
           LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
           LEFT JOIN eval_scripts s_override ON s_override.id = ov.script_id
+          LEFT JOIN eval_cycle_exclusions x ON x.cycle_id = $1 AND x.provider_id = p.id AND x.location_id = pl.id
+          LEFT JOIN users ux ON ux.id = x.created_by
          WHERE pl.in_medical_guide = true
            AND p.provider_group IS NOT NULL
            -- Só mostra prestadores de grupos participantes (na eff_groups) OU com override
@@ -4753,6 +4761,69 @@ async function startServer() {
     }
   });
 
+  // Exclui um prestador×local do ciclo com motivo (dupla checagem, spec 2026-09-11).
+  // Só antes de abrir — depois o conjunto de instâncias é imutável.
+  app.post('/api/eval/cycles/:id/exclusions', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const providerId = Number(req.body?.provider_id);
+      const locationId = Number(req.body?.location_id);
+      const reason = String(req.body?.reason ?? '').trim();
+      if (!Number.isFinite(providerId) || !Number.isFinite(locationId) || !reason) {
+        return res.status(400).json({ error: 'provider_id, location_id e reason são obrigatórios' });
+      }
+      const { rows: cy } = await query('SELECT 1 FROM eval_cycles WHERE id = $1', [cycleId]);
+      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      const { rows: hasInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
+      if (hasInst.length) return res.status(409).json({ error: 'ciclo já foi aberto — exclusões são imutáveis' });
+
+      const { rows } = await query(
+        `INSERT INTO eval_cycle_exclusions (cycle_id, provider_id, location_id, reason, created_by)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (cycle_id, provider_id, location_id)
+         DO UPDATE SET reason = EXCLUDED.reason, created_by = EXCLUDED.created_by, created_at = now()
+         RETURNING id`,
+        [cycleId, providerId, locationId, reason, req.user.id]
+      );
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_exclusion_added',
+        meta: { cycle_id: cycleId, provider_id: providerId, location_id: locationId, reason },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true, id: Number(rows[0].id) });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Reinclui (desfaz a exclusão). Só antes de abrir.
+  app.delete('/api/eval/cycles/:id/exclusions/:exclusionId', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const exclusionId = Number(req.params.exclusionId);
+      const { rows: hasInst } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
+      if (hasInst.length) return res.status(409).json({ error: 'ciclo já foi aberto — exclusões são imutáveis' });
+
+      const { rows } = await query(
+        'DELETE FROM eval_cycle_exclusions WHERE id = $1 AND cycle_id = $2 RETURNING provider_id, location_id',
+        [exclusionId, cycleId]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'exclusão não encontrada' });
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_exclusion_removed',
+        meta: { cycle_id: cycleId, provider_id: Number(rows[0].provider_id), location_id: Number(rows[0].location_id) },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Executa a abertura de um ciclo (mesma lógica do endpoint /abrir). Retorna
   // { ok, code, error?, created? } — reutilizada tanto pelo POST manual quanto pelo
   // job automático (5.4.1.1 abertura em data definida).
@@ -4797,6 +4868,8 @@ async function startServer() {
               ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
            WHERE pl.in_medical_guide = true
              AND COALESCE(ov.script_id, ecg.script_id) IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x
+                              WHERE x.cycle_id = $1 AND x.provider_id = p.id AND x.location_id = pl.id)
           RETURNING id, provider_id, script_id
         `, [cycleId]);
         cycleProviderIds = [...new Set(instances.map((r: any) => Number(r.provider_id)))];

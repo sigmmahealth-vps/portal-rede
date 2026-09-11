@@ -4025,6 +4025,27 @@ async function startServer() {
         RETURNING id
       `, [providerId, 'qualificacao_evidencia', new Date().toISOString(), 'valido', fileUrl, req.user.id, instanceId, questionId]);
 
+      // Reanálise: anexar nova evidência CONTA como resposta do prestador — sem isso
+      // o critério fica 'aguardando_reanalise' (o save só reseta quando a resposta
+      // muda) e o reenvio trava no submit. Reset + iteração na primeira evidência.
+      if (isProvider && questionId) {
+        const { rows: flipped } = await query(
+          `UPDATE eval_answers SET evidence_status = 'pendente'
+            WHERE instance_id = $1 AND question_id = $2 AND evidence_status = 'aguardando_reanalise'
+            RETURNING id, answer_value, score_obtained`,
+          [instanceId, questionId]);
+        if (flipped.length) {
+          const a = flipped[0];
+          const { rows: [{ n }] } = await query(
+            'SELECT COALESCE(MAX(iteration_number), 0) + 1 AS n FROM eval_answer_iterations WHERE answer_id = $1', [a.id]);
+          await query(`
+            INSERT INTO eval_answer_iterations
+              (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
+            VALUES ($1, $2, $3, 'prestador', 'respondeu', $4, $5, $6, 'Nova evidência anexada na reanálise')`,
+            [a.id, n, req.user.id, a.answer_value, a.score_obtained, fileUrl]);
+        }
+      }
+
       // Mantém eval_answers.evidence_url apontando p/ o último anexo (compat com consumidores legados).
       if (questionId) {
         await query(`

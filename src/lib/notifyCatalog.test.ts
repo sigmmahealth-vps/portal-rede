@@ -27,6 +27,13 @@ test('reanálise: integral vs por critério', () => {
   assert.ok(criterio.title.includes('1.1.4'));
 });
 
+test('ciclo_reaberto: título com label e corpo com o novo prazo', () => {
+  const n = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
+  assert.equal(n.title, 'Ciclo Ciclo 2026 reaberto — prazo prorrogado');
+  assert.ok(n.body.includes('15/10/2026'), n.body);
+  assert.equal(n.link, '/qualificacao');
+});
+
 test('roteiro_pendente: individual vs resumo auditoria', () => {
   const ind = renderNotification('roteiro_pendente', { end_date: '2026-12-31' });
   const dig = renderNotification('roteiro_pendente', { digest: true, count: 12, cycle_label: '2026', end_date: '2026-12-31' });

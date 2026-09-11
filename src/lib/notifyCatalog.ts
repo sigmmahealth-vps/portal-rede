@@ -2,7 +2,7 @@
 // O link é relativo; o server prefixa APP_URL no corpo do e-mail.
 
 export const NOTIFY_TYPES = [
-  'ciclo_aberto', 'roteiro_enviado', 'reanalise_solicitada',
+  'ciclo_aberto', 'ciclo_reaberto', 'roteiro_enviado', 'reanalise_solicitada',
   'parecer_aprovado', 'parecer_reprovado', 'certificado_emitido',
   'plano_gerado', 'acao_aguardando_validacao',
   'acao_vencendo', 'acao_atrasada', 'roteiro_pendente', 'certificado_vencendo',
@@ -36,6 +36,9 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
     case 'ciclo_aberto':
       return { title: `Ciclo de qualificação ${ctx.cycle_label ?? ''} aberto`.replace(/\s+/g, ' ').trim(),
                body: `Seu roteiro de qualificação está disponível para preenchimento no portal.${ctx.end_date ? ` O prazo para envio termina em ${fmtDate(ctx.end_date)}.` : ''}`, link };
+    case 'ciclo_reaberto':
+      return { title: `Ciclo ${ctx.cycle_label ?? ''} reaberto — prazo prorrogado`.replace(/\s+/g, ' ').trim(),
+               body: `O ciclo de qualificação foi reaberto e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link };
     case 'roteiro_enviado':
       return { title: 'Roteiro enviado para análise',
                body: `${ctx.provider_name ?? 'Um prestador'} enviou o roteiro de qualificação para análise.`, link };

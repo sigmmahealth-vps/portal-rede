@@ -151,13 +151,17 @@ function analStatus(a: Answer | undefined): AnalStatus {
   return 'pendente';
 }
 
-const evidenceLabel = (ev: string | null | undefined, answerValue?: string | null): { label: string; cls: string } | null => {
+const evidenceLabel = (ev: string | null | undefined, answerValue?: string | null, reanaliseDraft = false): { label: string; cls: string } | null => {
   if (!ev) return null;
   // 'nao_se_aplica' = decisão do auditor (novo modelo); answerValue==='na'+aprovado = registros antigos.
   if (ev === 'nao_se_aplica' || (ev === 'aprovado' && answerValue === 'na')) return { label: 'Analisado — Não se aplica', cls: 'bg-gray-100 text-gray-700 border-gray-300' };
   if (ev === 'aprovado') return { label: 'Analisado — Aprovado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   if (ev === 'reprovado') return { label: 'Analisado — Reprovado', cls: 'bg-red-50 text-red-700 border-red-200' };
-  if (ev === 'aguardando_reanalise') return { label: 'Aguardando Reanálise', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+  // Durante em_analise a reanálise ainda é rascunho — só chega ao prestador no
+  // "Devolver para reanálise" (lote, spec 2026-09-11).
+  if (ev === 'aguardando_reanalise') return reanaliseDraft
+    ? { label: 'Reanálise — a enviar', cls: 'bg-amber-50 text-amber-800 border-amber-300 border-dashed' }
+    : { label: 'Aguardando Reanálise', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
   return { label: 'Pendente de Análise', cls: 'bg-gray-100 text-gray-600 border-gray-200' };
 };
 
@@ -378,6 +382,25 @@ export default function AuditorPlayer({
     }
   };
 
+  const reanaliseDrafts = useMemo(
+    () => questions.filter(q => answersByQ[q.id]?.evidence_status === 'aguardando_reanalise'),
+    [questions, answersByQ]);
+
+  const enviarReanalise = async () => {
+    const codes = reanaliseDrafts.map(q => q.code).sort();
+    if (!confirm(`Devolver ${reanaliseDrafts.length} critério(s) para reanálise?\n\n${codes.join(', ')}\n\nO prestador receberá uma única notificação com a lista e poderá reeditar esses critérios.`)) return;
+    setBusy(true);
+    try {
+      const r = await fetchApi(`/eval/instances/${instanceId}/enviar-reanalise`, { method: 'POST' });
+      alert(`${r.sent} critério(s) devolvido(s) para reanálise.`);
+      await load(true);
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao devolver para reanálise');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const emitirParecerFinal = async (planAnswerIds?: number[]) => {
     const res = await fetchApi(`/eval/instances/${instanceId}/parecer`, {
       method: 'POST',
@@ -464,6 +487,17 @@ export default function AuditorPlayer({
             >
               <FileText className="h-4 w-4" /> Memória de cálculo
             </button>
+            {!readOnly && instance?.status === 'em_analise' && reanaliseDrafts.length > 0 && (
+              <button
+                onClick={enviarReanalise}
+                disabled={busy || loading}
+                title="Devolver ao prestador todos os critérios marcados para reanálise — envia uma única notificação"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                Devolver para reanálise ({reanaliseDrafts.length})
+              </button>
+            )}
             {readOnly ? (
               <span className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-bold text-gray-500">
                 <ShieldCheck className="h-4 w-4" /> Avaliação encerrada — somente leitura
@@ -603,7 +637,7 @@ export default function AuditorPlayer({
 
                           {secQuestions.map(q => {
                             const a = answersByQ[q.id];
-                            const evLabel = evidenceLabel(a?.evidence_status, a?.answer_value);
+                            const evLabel = evidenceLabel(a?.evidence_status, a?.answer_value, instance?.status === 'em_analise');
                             const ansPill = answerPill(a?.answer_value);
                             const terminal = a?.evidence_status === 'aprovado' || a?.evidence_status === 'reprovado' || a?.evidence_status === 'nao_se_aplica';
                             const awaitingProvider = a?.evidence_status === 'aguardando_reanalise';

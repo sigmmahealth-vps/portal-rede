@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { fmtData } from '../../lib/formatDate';
-import { Plus, Edit3, Trash2, Check, Settings, Lock } from 'lucide-react';
+import { Plus, Edit3, Trash2, Check, Settings, Lock, Unlock, CalendarPlus } from 'lucide-react';
 import NovoCicloModal from './NovoCicloModal';
 import AbrirCicloPage from './AbrirCicloPage';
 
@@ -11,6 +11,7 @@ export default function CiclosAdmin({ user }: { user: any }) {
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
   const [abrindo, setAbrindo] = useState<any>(null);
+  const [prorrogando, setProrrogando] = useState<any>(null);
 
   const load = async () => {
     setLoading(true);
@@ -29,6 +30,19 @@ export default function CiclosAdmin({ user }: { user: any }) {
       await fetchApi(`/eval/cycles/${c.id}`, { method: 'DELETE' });
       load();
     } catch (e: any) { alert(e.message); }
+  };
+
+  const reabrir = async (c: any, endDate?: string) => {
+    if (!endDate && !confirm(`Reabrir o ciclo "${c.label}"? As avaliações encerradas voltam ao status anterior.`)) return;
+    try {
+      const res = await fetchApi(`/eval/cycles/${c.id}/reabrir`, {
+        method: 'POST',
+        body: JSON.stringify(endDate ? { end_date: endDate } : {}),
+      });
+      alert(`Ciclo reaberto até ${fmtData(res.end_date)} — ${res.restored} avaliação(ões) reaberta(s).`);
+      setProrrogando(null);
+      load();
+    } catch (e: any) { alert(e?.message || 'Erro ao reabrir'); }
   };
 
   const encerrar = async (c: any) => {
@@ -95,7 +109,26 @@ export default function CiclosAdmin({ user }: { user: any }) {
                 <td className="p-3">
                   {c.active
                     ? <span className="px-2 py-0.5 text-xs rounded bg-emerald-100 text-emerald-700 font-semibold">Ativo</span>
-                    : (
+                    : c.instances_count > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => reabrir(c)}
+                          disabled={hasOtherActive}
+                          title={hasOtherActive ? 'Encerre o ciclo ativo antes' : 'Reabrir — as avaliações encerradas voltam ao status anterior'}
+                          className="text-xs text-emerald-700 hover:underline flex items-center gap-1 disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
+                        >
+                          <Unlock className="w-3 h-3" /> Reabrir
+                        </button>
+                        <button
+                          onClick={() => setProrrogando(c)}
+                          disabled={hasOtherActive}
+                          title={hasOtherActive ? 'Encerre o ciclo ativo antes' : 'Prorrogar — nova data fim e reabertura das avaliações'}
+                          className="text-xs text-sky-700 hover:underline flex items-center gap-1 disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
+                        >
+                          <CalendarPlus className="w-3 h-3" /> Prorrogar
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         onClick={() => activate(c)}
                         disabled={hasOtherActive}
@@ -136,9 +169,44 @@ export default function CiclosAdmin({ user }: { user: any }) {
         </table>
       </div>
 
+      {prorrogando && (
+        <ProrrogarModal
+          cycle={prorrogando}
+          onClose={() => setProrrogando(null)}
+          onConfirm={(d) => reabrir(prorrogando, d)}
+        />
+      )}
       {creating && <NovoCicloModal onClose={() => setCreating(false)} onSaved={load} />}
       {editing && <NovoCicloModal initial={editing} onClose={() => setEditing(null)} onSaved={load} />}
       {abrindo && <AbrirCicloPage cycle={abrindo} onClose={() => setAbrindo(null)} onDone={load} />}
+    </div>
+  );
+}
+
+function ProrrogarModal({ cycle, onClose, onConfirm }: { cycle: any; onClose: () => void; onConfirm: (endDate: string) => void }) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [endDate, setEndDate] = useState('');
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="p-5 border-b border-gray-100">
+          <h3 className="text-lg font-bold">Prorrogar {cycle.label}</h3>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-sm text-gray-600">
+            Fim atual: <strong>{fmtData(cycle.end_date)}</strong>. Ao prorrogar, o ciclo é
+            reaberto e as avaliações encerradas voltam ao status anterior.
+          </p>
+          <label className="block">
+            <span className="text-sm text-gray-600">Nova data fim</span>
+            <input type="date" min={hoje} value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 w-full border rounded px-3 py-2" />
+          </label>
+        </div>
+        <div className="p-4 bg-gray-50 rounded-b-xl flex justify-end gap-2">
+          <button onClick={onClose} className="btn btn-outline">Cancelar</button>
+          <button onClick={() => onConfirm(endDate)} disabled={!endDate || endDate < hoje} className="btn btn-primary">Prorrogar e reabrir</button>
+        </div>
+      </div>
     </div>
   );
 }

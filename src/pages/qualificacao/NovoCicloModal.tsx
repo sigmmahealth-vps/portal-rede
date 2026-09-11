@@ -13,6 +13,9 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
 
   // A validade dos certificados trava assim que o ciclo é aberto (tem instâncias).
   const opened = (initial?.instances_count ?? 0) > 0;
+  // Ciclo encerrado com instâncias não reativa pelo modal (o PATCH devolve 409) —
+  // a reabertura é pelos botões Reabrir/Prorrogar, que restauram as avaliações.
+  const lockedClosed = opened && initial && !initial.active;
 
   const save = async () => {
     setErr(null); setSaving(true);
@@ -20,7 +23,7 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
       // Não reenvia cert_valid_until em ciclo já aberto (o back rejeita).
       const cvu = opened ? undefined : certValidUntil;
       if (initial?.id) {
-        await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active, cert_valid_until: cvu }) });
+        await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active: lockedClosed ? undefined : active, cert_valid_until: cvu }) });
       } else {
         await fetchApi('/eval/cycles', { method: 'POST', body: JSON.stringify({ label, start_date: start, end_date: end, active, cert_valid_until: cvu }) });
       }
@@ -70,10 +73,14 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
                 : 'Todos os certificados emitidos neste ciclo valerão até esta data. Trava ao abrir o ciclo.'}
             </span>
           </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
-            <span>Ativar este ciclo (desativa o atual)</span>
-          </label>
+          {lockedClosed ? (
+            <p className="text-xs text-gray-500">Ciclo encerrado — para reativar use Reabrir ou Prorrogar na lista de ciclos.</p>
+          ) : (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
+              <span>Ativar este ciclo (desativa o atual)</span>
+            </label>
+          )}
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
         <div className="p-4 bg-gray-50 rounded-b-xl flex justify-end gap-2">

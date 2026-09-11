@@ -4323,6 +4323,16 @@ async function startServer() {
         if (other != null) {
           return res.status(409).json({ error: 'Existe ciclo ativo — encerre-o antes de ativar este.', active_cycle_id: other });
         }
+        // Ciclo encerrado com avaliações não reativa por aqui — Reabrir/Prorrogar
+        // restauram as instâncias 'ciclo_encerrado'; o PATCH deixaria tudo encerrado.
+        const { rows: closedInst } = await query(
+          `SELECT 1 FROM eval_cycles c
+            WHERE c.id = $1 AND c.active = false
+              AND EXISTS (SELECT 1 FROM eval_instances i WHERE i.cycle_id = c.id AND i.status = 'ciclo_encerrado')
+            LIMIT 1`, [id]);
+        if (closedInst.length) {
+          return res.status(409).json({ error: 'Ciclo encerrado com avaliações — use Reabrir ou Prorrogar na lista de ciclos.' });
+        }
       }
       if (cert_valid_until != null) {
         // A validade dos certificados trava assim que o ciclo é aberto (tem instâncias).
@@ -4988,6 +4998,40 @@ async function startServer() {
     }
   });
 
+  // Reabre/prorroga um ciclo encerrado (spec 2026-09-11). body.end_date = prorrogação.
+  app.post('/api/eval/cycles/:id/reabrir', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const rawEnd = req.body?.end_date;
+      const newEndDate = rawEnd ? String(rawEnd).slice(0, 10) : null;
+      if (newEndDate && !/^\d{4}-\d{2}-\d{2}$/.test(newEndDate)) {
+        return res.status(400).json({ error: 'end_date inválida (use YYYY-MM-DD)' });
+      }
+
+      const result = await reopenCycleCore(cycleId, newEndDate);
+      if (!result.ok) return res.status(result.code || 500).json({ error: result.error });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_reopened',
+        meta: { cycle_id: cycleId, restored: result.restored, end_date: result.endDate, prorrogado: !!newEndDate },
+        ip: hashClientIp(req),
+      });
+      // Avisa os prestadores restaurados (fire-and-forget; dedupe por instância).
+      void (async () => {
+        for (const inst of result.reopened ?? []) {
+          await notifyEvent('ciclo_reaberto', { cycle_label: result.label, end_date: result.endDate },
+            await prestadorRecipients(inst.provider_id, inst.location_id),
+            { providerId: inst.provider_id, dedupeRef: `reopen:${inst.id}:${result.endDate}` });
+        }
+      })();
+      res.json({ success: true, cycle_id: cycleId, restored: result.restored, end_date: result.endDate });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   async function closeCycleCore(cycleId: number, force: boolean): Promise<{ ok: boolean; code?: number; error?: string; inconclusive: number }> {
     const { rows: cy } = await query('SELECT id, label, active FROM eval_cycles WHERE id = $1', [cycleId]);
     if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado', inconclusive: 0 };
@@ -5043,6 +5087,57 @@ async function startServer() {
         await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
         { providerId: Number(inst.provider_id), dedupeRef: `close:${inst.id}` });
     }
+  }
+
+  // Reabre um ciclo encerrado (spec 2026-09-11): reativa e restaura as instâncias
+  // 'ciclo_encerrado' ao status anterior. newEndDate presente = prorrogação.
+  async function reopenCycleCore(cycleId: number, newEndDate: string | null): Promise<{ ok: boolean; code?: number; error?: string; restored?: number; endDate?: string; label?: string; reopened?: Array<{ id: number; provider_id: number; location_id: number | null }> }> {
+    const { rows: cy } = await query('SELECT id, label, active, start_date, end_date FROM eval_cycles WHERE id = $1', [cycleId]);
+    if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado' };
+    if (cy[0].active) return { ok: false, code: 409, error: 'ciclo já está ativo — para prorrogar, edite a data fim' };
+    const other = await findConflictingActiveCycle(cycleId);
+    if (other != null) return { ok: false, code: 409, error: 'Existe outro ciclo ativo — encerre-o antes de reabrir este.' };
+
+    const toISO = (v: any) => v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+    const effectiveEnd = newEndDate ?? toISO(cy[0].end_date);
+    const today = new Date().toISOString().slice(0, 10);
+    if (effectiveEnd < today) {
+      return { ok: false, code: 409, error: 'O prazo do ciclo está no passado — informe uma nova data fim (prorrogação).' };
+    }
+    if (newEndDate && newEndDate < toISO(cy[0].start_date)) {
+      return { ok: false, code: 400, error: 'A nova data fim não pode ser anterior ao início do ciclo.' };
+    }
+
+    let reopened: Array<{ id: number; provider_id: number; location_id: number | null }> = [];
+    await withTransaction(async (c) => {
+      await c.query('UPDATE eval_cycles SET active = true, end_date = COALESCE($2, end_date) WHERE id = $1', [cycleId, newEndDate]);
+      const { rows } = await c.query(`
+        UPDATE eval_instances ei
+           SET status = COALESCE(ei.status_before_close,
+                 CASE WHEN EXISTS (
+                        SELECT 1 FROM eval_answers a
+                          JOIN eval_answer_iterations it ON it.answer_id = a.id
+                         WHERE a.instance_id = ei.id AND it.actor_role = 'prestador')
+                      THEN 'em_andamento' ELSE 'pendente' END),
+               status_before_close = NULL,
+               completed_at = NULL
+         WHERE ei.cycle_id = $1 AND ei.status = 'ciclo_encerrado'
+         RETURNING ei.id, ei.provider_id, ei.location_id`, [cycleId]);
+      reopened = rows.map((r: any) => ({ id: Number(r.id), provider_id: Number(r.provider_id), location_id: r.location_id ?? null }));
+
+      // Espelho do closeCycleCore: planos marcados 'encerrado sem conclusão' pelo
+      // encerramento deste ciclo voltam ao acompanhamento normal.
+      await c.query(`
+        UPDATE eval_action_plans p
+           SET closed_without_completion = false
+         WHERE p.cycle_id = $1
+           AND p.closed_without_completion
+           AND EXISTS (SELECT 1 FROM eval_action_items i
+                        WHERE i.plan_id = p.id AND i.status <> 'concluida')
+      `, [cycleId]);
+    });
+
+    return { ok: true, restored: reopened.length, endDate: effectiveEnd, label: cy[0].label, reopened };
   }
 
   // Fim do ciclo da instância = prazo máximo de resposta (envio do roteiro / reenvio

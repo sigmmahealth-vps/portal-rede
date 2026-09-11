@@ -234,10 +234,13 @@ export default function RoteiroPlayer({
     if (!target) return;
     jumpedToReanalise.current = true;
     setStatusFilter('reanalise');
+    // Sobe na árvore só até a ETAPA do stepper (nó "SEÇÃO N" / raiz com critérios) —
+    // a raiz da árvore pode ser um grupo acima das seções e não é etapa válida.
+    const groupIds = new Set(computeStepGroups(sections, questions).map(g => g.id));
     const sectionById = new Map<number, Section>(sections.map(s => [s.id, s]));
     let cur = sectionById.get(target.section_id);
-    while (cur && cur.parent_section_id) cur = sectionById.get(cur.parent_section_id);
-    if (cur) setActiveSectionId(cur.id);
+    while (cur && !groupIds.has(cur.id) && cur.parent_section_id) cur = sectionById.get(cur.parent_section_id);
+    if (cur && groupIds.has(cur.id)) setActiveSectionId(cur.id);
   }, [loading, questions, answers, sections, initialFilter]);
 
   const loadScript = async () => {

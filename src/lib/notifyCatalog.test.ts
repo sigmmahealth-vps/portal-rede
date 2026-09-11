@@ -27,6 +27,27 @@ test('reanálise: integral vs por critério', () => {
   assert.ok(criterio.title.includes('1.1.4'));
 });
 
+test('reanálise em lote: uma notificação com a lista de critérios', () => {
+  const n = renderNotification('reanalise_solicitada', {
+    items: [
+      { code: '1.1.1', text: 'Dispõe de alvará de funcionamento válido e expedido pelo órgão competente?' },
+      { code: '2.3.4', text: 'X'.repeat(200) },
+    ],
+    end_date: '2026-12-31',
+  });
+  assert.equal(n.title, 'Reanálise solicitada — 2 critérios');
+  assert.ok(n.body.includes('1.1.1 — Dispõe de alvará'), n.body);
+  assert.ok(!n.body.includes('X'.repeat(120)), 'texto do item deve ser truncado');
+  assert.ok(n.body.includes('31/12/2026'), n.body);
+});
+
+test('reanálise em lote: lista longa é limitada a 15 itens', () => {
+  const items = Array.from({ length: 20 }, (_, i) => ({ code: `1.${i}`, text: `Critério ${i}` }));
+  const n = renderNotification('reanalise_solicitada', { items });
+  assert.ok(n.body.includes('e mais 5 critério(s)'), n.body);
+  assert.ok(!n.body.includes('Critério 19'), n.body);
+});
+
 test('ciclo_reaberto: título com label e corpo com o novo prazo', () => {
   const n = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
   assert.equal(n.title, 'Ciclo Ciclo 2026 reaberto — prazo prorrogado');

@@ -44,6 +44,20 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
                body: `${ctx.provider_name ?? 'Um prestador'} enviou o roteiro de qualificação para análise.`, link };
     case 'reanalise_solicitada': {
       const prazoRe = ctx.end_date ? ` O prazo para reenvio termina em ${fmtDate(ctx.end_date)}.` : '';
+      // Variante em lote (spec 2026-09-11): o auditor devolve todos os critérios de
+      // uma vez e o prestador recebe UMA notificação com a lista.
+      if (Array.isArray(ctx.items) && ctx.items.length) {
+        const MAX = 15;
+        const trunc = (s: string) => (s.length > 90 ? `${s.slice(0, 90)}…` : s);
+        const lines = ctx.items.slice(0, MAX).map((it: any) => `${it.code} — ${trunc(String(it.text ?? ''))}`);
+        const resto = ctx.items.length - MAX;
+        const plural = ctx.items.length === 1 ? 'critério' : 'critérios';
+        return {
+          title: `Reanálise solicitada — ${ctx.items.length} ${plural}`,
+          body: `O auditor devolveu ${ctx.items.length} ${plural} da sua avaliação para reanálise: ${lines.join('; ')}${resto > 0 ? `; … e mais ${resto} critério(s)` : ''}. Ajuste as evidências e reenvie.${prazoRe}`,
+          link,
+        };
+      }
       return ctx.integral
         ? { title: 'Avaliação devolvida para reanálise',
             body: `O auditor devolveu sua avaliação. Revise os critérios apontados e reenvie.${prazoRe}`, link }

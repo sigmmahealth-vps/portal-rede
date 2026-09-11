@@ -39,6 +39,28 @@ test('destaques por tipo: datas pt-BR e valores', () => {
   assert.ok(digest.html.includes('12'));
 });
 
+test('reanálise em lote: e-mail lista código e descrição de cada critério', () => {
+  const e = renderNotificationEmail('reanalise_solicitada', {
+    items: [
+      { code: '1.1.1', text: 'Dispõe de alvará de funcionamento válido?' },
+      { code: '3.2.2', text: 'Y'.repeat(200) },
+    ],
+    end_date: '2026-09-18',
+  }, APP);
+  assert.ok(e.subject.includes('2 critérios'), e.subject);
+  assert.ok(e.html.includes('<strong>1.1.1</strong>'), 'código em negrito');
+  assert.ok(e.html.includes('Dispõe de alvará de funcionamento válido?'));
+  assert.ok(!e.html.includes('Y'.repeat(120)), 'texto do item truncado');
+  assert.ok(e.html.includes('18/09/2026'), 'prazo no destaque');
+});
+
+test('reanálise em lote: lista longa limitada a 15 no e-mail', () => {
+  const items = Array.from({ length: 20 }, (_, i) => ({ code: `1.${i}`, text: `Critério ${i}` }));
+  const e = renderNotificationEmail('reanalise_solicitada', { items }, APP);
+  assert.ok(e.html.includes('e mais 5 critério(s)'), 'resto indicado');
+  assert.ok(!e.html.includes('Critério 19'));
+});
+
 test('renderEmailHtml genérico (retry) leva faixa, corpo e CTA', () => {
   const html = renderEmailHtml({
     banner: 'Título qualquer',

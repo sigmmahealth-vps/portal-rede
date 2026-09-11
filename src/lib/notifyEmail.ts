@@ -188,6 +188,24 @@ export function notificationBlocks(
       };
       break;
     case 'reanalise_solicitada':
+      // Variante em lote (spec 2026-09-11): devolução única com a lista de critérios.
+      if (Array.isArray(ctx.items) && ctx.items.length) {
+        const MAX = 15;
+        const trunc = (s: string) => (s.length > 90 ? `${s.slice(0, 90)}…` : s);
+        const plural = ctx.items.length === 1 ? 'critério' : 'critérios';
+        b = {
+          banner: `Reanálise solicitada — ${ctx.items.length} ${plural}`,
+          paragraphs: [
+            `O auditor devolveu **${ctx.items.length} ${plural}** da sua avaliação de qualificação para reanálise:`,
+            ...ctx.items.slice(0, MAX).map((it: any) => `**${it.code}** — ${trunc(String(it.text ?? ''))}`),
+            ...(ctx.items.length > MAX ? [`… e mais ${ctx.items.length - MAX} critério(s) — veja a lista completa no portal.`] : []),
+          ],
+          ...(ctx.end_date ? { highlight: { label: 'Prazo para reenvio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
+          steps: 'acesse o roteiro, leia a orientação do auditor em cada critério apontado, anexe as novas evidências e reenvie para análise.',
+          cta,
+        };
+        break;
+      }
       b = ctx.integral
         ? {
             banner: 'Avaliação devolvida para reanálise',

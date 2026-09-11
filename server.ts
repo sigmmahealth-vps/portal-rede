@@ -4351,7 +4351,8 @@ async function startServer() {
       if (active === false) {
         await query(
           `UPDATE eval_instances
-              SET status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
+              SET status_before_close = status,
+                  status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
             WHERE cycle_id = $1
               AND status NOT IN ('aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado')`,
           [id]
@@ -5007,7 +5008,8 @@ async function startServer() {
       // registradas com esse marcador em vez de sumir).
       await c.query(
         `UPDATE eval_instances
-            SET status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
+            SET status_before_close = status,
+                status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
           WHERE cycle_id = $1
             AND status NOT IN ('aprovado', 'reprovado', 'finalizado')`,
         [cycleId]

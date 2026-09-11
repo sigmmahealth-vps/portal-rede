@@ -6,6 +6,7 @@ const cycle = { id: 1, label: 'Ciclo 2026', start_date: '2026-01-01', end_date: 
 
 function inst(over: Partial<DashboardInstance> = {}): DashboardInstance {
   return {
+    ...over,
     id: over.id ?? 1,
     provider_id: over.provider_id ?? 10,
     location_id: over.location_id ?? null,
@@ -101,4 +102,26 @@ test('instances é mapeada 1:1 preservando order e has_certificate default false
   assert.equal(r.instances[0].id, 42);
   assert.equal(r.instances[0].provider_name, 'Clínica X');
   assert.equal(r.instances[0].has_certificate, false);
+});
+
+test('survey_state: aguardando dentro do prazo, finalizada com resposta, null nos demais', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  const r = buildAuditorDashboard(cycle, [
+    // em análise, sem resposta, enviada há 2 dias → aguardando
+    inst({ id: 1, status: 'em_analise', submitted_at: '2026-09-09T12:00:00Z', has_survey_response: false }),
+    // reanálise, com resposta → finalizada
+    inst({ id: 2, status: 'aguardando_evidencia', submitted_at: '2026-09-09T12:00:00Z', has_survey_response: true }),
+    // prazo vencido (10 dias) sem resposta → null (parecer já liberado)
+    inst({ id: 3, status: 'em_analise', submitted_at: '2026-09-01T12:00:00Z', has_survey_response: false }),
+    // terminal → null mesmo com resposta
+    inst({ id: 4, status: 'aprovado', submitted_at: '2026-09-09T12:00:00Z', has_survey_response: true }),
+    // ainda não enviada → null
+    inst({ id: 5, status: 'em_andamento', submitted_at: null, has_survey_response: false }),
+  ], [], now);
+  const st = Object.fromEntries(r.instances.map(i => [i.id, i.survey_state]));
+  assert.equal(st[1], 'aguardando');
+  assert.equal(st[2], 'finalizada');
+  assert.equal(st[3], null);
+  assert.equal(st[4], null);
+  assert.equal(st[5], null);
 });

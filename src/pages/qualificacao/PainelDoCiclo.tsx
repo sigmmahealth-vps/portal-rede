@@ -233,6 +233,18 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     <span className={`inline-block whitespace-nowrap px-2.5 py-1 text-[10px] font-bold uppercase rounded-full tracking-wide ${statusPill(i.status)}`}>
                       {statusLabel(i.status)}
                     </span>
+                    {/* Estado derivado da Pesquisa (spec 2026-09-11): 'aguardando' = parecer
+                        travado pela pesquisa; 'finalizada' = respondida. */}
+                    {i.survey_state === 'aguardando' && (
+                      <span className="mt-1 block w-fit whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                        Aguardando finalização da pesquisa
+                      </span>
+                    )}
+                    {i.survey_state === 'finalizada' && (
+                      <span className="mt-1 block w-fit whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                        Pesquisa finalizada
+                      </span>
+                    )}
                   </td>
                   <td className="p-3">
                     <div className="font-bold text-gray-700">{fmtPct(i.percentual)}</div>

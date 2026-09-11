@@ -6471,11 +6471,14 @@ async function startServer() {
                     THEN ei.percentual
                     ELSE COALESCE(partial.pct, 0) END AS percentual,
                (ec.id IS NOT NULL) AS has_certificate,
-               ec.id AS certificate_id
+               ec.id AS certificate_id,
+               ei.submitted_at,
+               (esr.id IS NOT NULL) AS has_survey_response
           FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN eval_certificates ec ON ec.instance_id = ei.id
+          LEFT JOIN eval_survey_responses esr ON esr.instance_id = ei.id
           LEFT JOIN (
             SELECT ea.instance_id,
                    (SUM(CASE WHEN ${COUNTS_IN_SCORE_SQL} THEN COALESCE(ea.score_obtained, 0) ELSE 0 END)

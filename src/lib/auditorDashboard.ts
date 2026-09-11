@@ -1,3 +1,5 @@
+import { isWithinDeadline } from './surveyBonus.js';
+
 export interface DashboardInstance {
   id: number;
   provider_id: number;
@@ -14,6 +16,24 @@ export interface DashboardInstance {
   has_certificate: boolean;
   certificate_id?: number | null;
   seguranca_pct?: number | null;
+  submitted_at?: string | null;
+  has_survey_response?: boolean;
+  survey_state?: 'aguardando' | 'finalizada' | null;
+}
+
+// Estado derivado da Pesquisa de Satisfação (spec 2026-09-11) — sem status novo no
+// banco. 'aguardando' = parecer travado pela pesquisa (spec 5.4.6); 'finalizada' =
+// respondida; null = não enviada, terminal ou prazo vencido sem resposta.
+export function surveyState(
+  status: string,
+  submittedAt: string | null | undefined,
+  hasResponse: boolean | undefined,
+  now: Date,
+): 'aguardando' | 'finalizada' | null {
+  if (!['em_analise', 'aguardando_evidencia'].includes(status)) return null;
+  if (hasResponse) return 'finalizada';
+  if (submittedAt && isWithinDeadline(new Date(submittedAt), now)) return 'aguardando';
+  return null;
 }
 
 export interface DimPct { instance_id: number; dimension: string; pct: number; }
@@ -39,6 +59,7 @@ export function buildAuditorDashboard(
   cycle: AuditorDashboardPayload['cycle'],
   instances: DashboardInstance[],
   dimPct: DimPct[],
+  now: Date = new Date(),
 ): AuditorDashboardPayload {
   const pairKey = (i: DashboardInstance) => `${i.provider_id}::${i.location_id ?? 'null'}`;
   const distinctPairs = new Set(instances.map(pairKey));
@@ -87,6 +108,7 @@ export function buildAuditorDashboard(
       ...i,
       dims,
       seguranca_pct: dims && dims['Segurança'] != null ? dims['Segurança'] : null,
+      survey_state: surveyState(i.status, i.submitted_at, i.has_survey_response, now),
     };
   });
 

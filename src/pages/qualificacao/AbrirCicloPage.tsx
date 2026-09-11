@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import {
   ArrowLeft, ChevronRight, AlertTriangle, Save, RotateCcw, Loader2, Play,
-  Users, ClipboardList, Layers,
+  Users, ClipboardList, Layers, UserMinus,
 } from 'lucide-react';
+import { fmtDataHora } from '../../lib/formatDate';
 
 interface GroupRow {
   provider_group: string;
@@ -25,6 +26,10 @@ interface InstanceRow {
   default_script_title: string | null;
   override_script_id: number | null;
   override_script_title: string | null;
+  excluded_id: number | null;
+  excluded_reason: string | null;
+  excluded_by: string | null;
+  excluded_at: string | null;
 }
 
 export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any; onClose: () => void; onDone: () => void }) {
@@ -38,6 +43,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const [err, setErr] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [overridesDirty, setOverridesDirty] = useState(false);
+  const [excluding, setExcluding] = useState<InstanceRow | null>(null);
 
   const loadPreview = async () => {
     setErr(null);
@@ -147,6 +153,35 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
     }
   };
 
+  const confirmarExclusao = async (row: InstanceRow, reason: string) => {
+    setSaving(true); setErr(null);
+    try {
+      await fetchApi(`/eval/cycles/${cycle.id}/exclusions`, {
+        method: 'POST',
+        body: JSON.stringify({ provider_id: row.provider_id, location_id: row.location_id, reason }),
+      });
+      setExcluding(null);
+      await loadPreview();
+    } catch (e: any) {
+      setErr(e?.message || 'Erro ao excluir do ciclo');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reincluir = async (row: InstanceRow) => {
+    if (!confirm(`Reincluir ${row.provider_name} (${row.location_label || 'local'}) no ciclo?`)) return;
+    setSaving(true); setErr(null);
+    try {
+      await fetchApi(`/eval/cycles/${cycle.id}/exclusions/${row.excluded_id}`, { method: 'DELETE' });
+      await loadPreview();
+    } catch (e: any) {
+      setErr(e?.message || 'Erro ao reincluir');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const toggleAuto = async (field: 'auto_open' | 'auto_close', value: boolean) => {
     setSaving(true); setErr(null);
     try {
@@ -163,7 +198,10 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   };
 
   const abrir = async () => {
-    if ((dirty || overridesDirty) && !confirm('Você tem alterações não salvas. Abrir usará a última versão salva. Continuar?')) return;
+    const partes = ['Abrir o ciclo agora?'];
+    if (excludedRows.length > 0) partes.push(`${excludedRows.length} prestador(es) excluído(s) manualmente — confira a seção "Excluídos deste ciclo".`);
+    if (dirty || overridesDirty) partes.push('Você tem alterações não salvas. Abrir usará a última versão salva.');
+    if (!confirm(partes.join('\n\n'))) return;
     setBusy(true); setErr(null);
     try {
       const res = await fetchApi(`/eval/cycles/${cycle.id}/abrir`, { method: 'POST' });
@@ -181,7 +219,9 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   // Filtra localmente pra refletir remoção de grupo ANTES do save. Depois do save
   // o backend já entrega só esses; antes do save a UI mostrava rows órfãos.
   const activeGroupNames = new Set(groups.map(g => g.provider_group));
-  const visibleInstances = instances.filter(i => activeGroupNames.has(i.provider_group));
+  const inCycle = instances.filter(i => activeGroupNames.has(i.provider_group));
+  const visibleInstances = inCycle.filter(i => i.excluded_id == null);
+  const excludedRows = inCycle.filter(i => i.excluded_id != null);
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#f4f4f4] lg:left-20">
@@ -418,13 +458,14 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                         <th className="p-3 font-semibold">Grupo</th>
                         <th className="p-3 font-semibold">Local</th>
                         <th className="p-3 font-semibold">Roteiro</th>
+                        <th className="p-3 w-10"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {(() => {
                         const filtered = groupFilter ? visibleInstances.filter(i => i.provider_group === groupFilter) : visibleInstances;
                         if (filtered.length === 0) {
-                          return <tr><td colSpan={4} className="p-8 text-center text-gray-500">Nenhum prestador nesse filtro.</td></tr>;
+                          return <tr><td colSpan={5} className="p-8 text-center text-gray-500">Nenhum prestador nesse filtro.</td></tr>;
                         }
                         return filtered.map(r => {
                           const effectiveSid = r.override_script_id ?? r.default_script_id ?? 0;
@@ -467,6 +508,18 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                                   );
                                 })()}
                               </td>
+                              <td className="p-3 text-right">
+                                {!readOnly && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setExcluding(r)}
+                                    title="Remover este prestador/local do ciclo"
+                                    className="rounded-md p-1 text-red-600 hover:bg-red-50"
+                                  >
+                                    <UserMinus className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </td>
                             </tr>
                           );
                         });
@@ -475,6 +528,63 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                   </table>
                 </div>
               </section>
+
+              {excludedRows.length > 0 && (
+                <section className="rounded-2xl border border-red-200 bg-white">
+                  <div className="border-b border-red-100 p-4">
+                    <h2 className="text-base font-bold text-secondary-900">Excluídos deste ciclo ({excludedRows.length})</h2>
+                    <p className="text-xs text-gray-500">
+                      {readOnly
+                        ? 'Prestadores que ficaram de fora quando o ciclo foi aberto.'
+                        : 'Não receberão instância na abertura. Reveja antes de confirmar — dá para reincluir até abrir.'}
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-red-50/50 text-xs uppercase text-gray-600">
+                        <tr>
+                          <th className="p-3 font-semibold">Prestador</th>
+                          <th className="p-3 font-semibold">Local</th>
+                          <th className="p-3 font-semibold">Motivo</th>
+                          <th className="p-3 font-semibold">Excluído por</th>
+                          <th className="p-3 w-24"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {excludedRows.map(r => (
+                          <tr key={`${r.provider_id}-${r.location_id}`} className="border-t border-gray-100">
+                            <td className="p-3">
+                              <p className="font-medium text-secondary-900">{r.provider_name}</p>
+                              {r.provider_code && <p className="text-[11px] text-gray-500">{r.provider_code}</p>}
+                            </td>
+                            <td className="p-3">
+                              <p className="text-secondary-900">{r.location_label || '—'}</p>
+                              {r.city && <p className="text-[11px] text-gray-500">{r.city}</p>}
+                            </td>
+                            <td className="p-3 text-xs text-secondary-900">{r.excluded_reason}</td>
+                            <td className="p-3 text-xs text-gray-600">
+                              {r.excluded_by || '—'}
+                              {r.excluded_at && <p className="text-[11px] text-gray-500">{fmtDataHora(r.excluded_at)}</p>}
+                            </td>
+                            <td className="p-3 text-right">
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => reincluir(r)}
+                                  disabled={saving}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                                >
+                                  <RotateCcw className="h-3 w-3" /> Reincluir
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
 
               {preview.excluded.providers_without_group.length > 0 && (
                 <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-secondary-900">
@@ -494,6 +604,66 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
               )}
             </>
           )}
+        </div>
+      </div>
+
+      {excluding && (
+        <ExcluirModal
+          row={excluding}
+          saving={saving}
+          onCancel={() => setExcluding(null)}
+          onConfirm={(reason) => confirmarExclusao(excluding, reason)}
+        />
+      )}
+    </div>
+  );
+}
+
+const MOTIVOS_RAPIDOS = ['Aposentadoria', 'Atendimento exclusivo CC/hospitalar'];
+
+function ExcluirModal({ row, saving, onCancel, onConfirm }: {
+  row: InstanceRow; saving: boolean; onCancel: () => void; onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-bold text-secondary-900">Remover do ciclo</h3>
+        <p className="mt-1 text-sm text-gray-600">
+          <strong>{row.provider_name}</strong>{row.location_label ? ` — ${row.location_label}` : ''} não receberá
+          instância neste ciclo. Informe o motivo (obrigatório):
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {MOTIVOS_RAPIDOS.map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setReason(m)}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${reason === m ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        <textarea
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          rows={2}
+          placeholder="Motivo da exclusão…"
+          className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={!reason.trim() || saving}
+            onClick={() => onConfirm(reason.trim())}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-40"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserMinus className="h-4 w-4" />} Excluir do ciclo
+          </button>
         </div>
       </div>
     </div>

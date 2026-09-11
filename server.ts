@@ -5226,10 +5226,11 @@ async function startServer() {
       if (!['em_analise', 'aguardando_evidencia'].includes(ans.instance_status)) {
         return res.status(409).json({ error: `instância em status ${ans.instance_status}, não aceita ação` });
       }
-      // Aprovar/reprovar critério em reanálise burla o fluxo: o auditor devolveu ao
-      // prestador e a bola está com ele. Só nova reanálise pode ajustar a orientação.
-      if (ans.evidence_status === 'aguardando_reanalise' && action !== 'solicitou_reanalise') {
-        return res.status(409).json({ error: 'critério aguardando reenvio do prestador — só é possível ajustar a orientação de reanálise' });
+      // Critério em reanálise: a bola está com o prestador — aprovar/N.A. burlaria o
+      // fluxo. REPROVAR é permitido (spec 2026-09-11): resposta válida, score 0, e
+      // destrava o parecer quando o prestador não responde.
+      if (ans.evidence_status === 'aguardando_reanalise' && !['solicitou_reanalise', 'reprovou'].includes(action)) {
+        return res.status(409).json({ error: 'critério aguardando reenvio do prestador — reprove ou ajuste a orientação de reanálise' });
       }
       // Revisão de decisão: se já havia veredito terminal, exigir justificativa em
       // qualquer nova ação — inclusive Aprovar. Trilha fica em eval_answer_iterations.
@@ -5409,7 +5410,9 @@ async function startServer() {
          WHERE ei.id = $1
       `, [id]);
       if (!inst) return res.status(404).json({ error: 'instance not found' });
-      if (inst.status !== 'em_analise') {
+      // aguardando_evidencia também emite (spec 2026-09-11): a trava real é "todos os
+      // critérios terminais" (abaixo) — decididos, nada resta editável pelo prestador.
+      if (!['em_analise', 'aguardando_evidencia'].includes(inst.status)) {
         return res.status(409).json({ error: `status ${inst.status} não permite parecer` });
       }
 

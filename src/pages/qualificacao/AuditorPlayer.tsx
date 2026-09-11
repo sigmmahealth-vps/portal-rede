@@ -802,8 +802,8 @@ export default function AuditorPlayer({
                                       </button>
                                       <button
                                         type="button"
-                                        disabled={busy || awaitingProvider}
-                                        title={awaitingProvider ? 'Aguardando o prestador reenviar a evidência.' : undefined}
+                                        disabled={busy}
+                                        title={awaitingProvider ? 'Reprovar sem aguardar o reenvio — o critério não pontua e libera o parecer.' : undefined}
                                         onClick={() => { setReasonPrompt({ answerId: a.id, action: 'reprovou' }); setReasonText(''); }}
                                         className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 shadow-sm transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                                       >
@@ -836,7 +836,7 @@ export default function AuditorPlayer({
                                         </button>
                                       )}
                                       {awaitingProvider && !isRevising && (
-                                        <span className="ml-2 text-xs text-amber-800">Aguardando reenvio do prestador.</span>
+                                        <span className="ml-2 text-xs text-amber-800">Aguardando reenvio do prestador — você pode reprovar ou ajustar a orientação.</span>
                                       )}
                                     </div>
                                   );

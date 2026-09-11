@@ -234,7 +234,7 @@ export default function RoteiroPlayer({
     if (!target) return;
     jumpedToReanalise.current = true;
     setStatusFilter('reanalise');
-    const sectionById = new Map(sections.map(s => [s.id, s] as const));
+    const sectionById = new Map<number, Section>(sections.map(s => [s.id, s]));
     let cur = sectionById.get(target.section_id);
     while (cur && cur.parent_section_id) cur = sectionById.get(cur.parent_section_id);
     if (cur) setActiveSectionId(cur.id);

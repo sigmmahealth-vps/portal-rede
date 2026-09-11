@@ -115,7 +115,7 @@ export default function PrestadorView({ user }: { user: any }) {
   const [locations, setLocations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('inicio');
-  const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean } | null>(null);
+  const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean, initialFilter?: 'reanalise' } | null>(null);
 
   const [survey, setSurvey] = useState<any>(null);
   const [plans, setPlans] = useState<any[]>([]);
@@ -165,6 +165,7 @@ export default function PrestadorView({ user }: { user: any }) {
         instanceId={activePlayer.instanceId}
         locationId={activePlayer.locationId}
         readOnly={activePlayer.readOnly}
+        initialFilter={activePlayer.initialFilter}
         providerId={user.provider_id}
         onClose={(opts) => {
           setActivePlayer(null);
@@ -220,7 +221,11 @@ export default function PrestadorView({ user }: { user: any }) {
     if (type === 'pesquisa') { setActiveTab('pesquisa'); return; }
     if (type === 'plano') { setActiveTab('planos'); return; }
     // corrigir / continuar / iniciar → abre o player do roteiro.
-    setActivePlayer({ scriptId: it.scriptId!, instanceId: it.instanceId, locationId: it.locationId ?? undefined, readOnly: false });
+    // "Corrigir" cai direto na aba Reanálise (pedido do cliente, 2026-09-11).
+    setActivePlayer({
+      scriptId: it.scriptId!, instanceId: it.instanceId, locationId: it.locationId ?? undefined,
+      readOnly: false, initialFilter: type === 'corrigir' ? 'reanalise' : undefined,
+    });
   };
 
   const inicioTab = (

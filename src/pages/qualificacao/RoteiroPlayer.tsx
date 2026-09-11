@@ -188,6 +188,7 @@ export default function RoteiroPlayer({
   onClose,
   providerId,
   readOnly = false,
+  initialFilter,
 }: {
   scriptId: number;
   instanceId?: number;
@@ -195,6 +196,7 @@ export default function RoteiroPlayer({
   onClose: (opts?: { submitted?: boolean; survey?: boolean }) => void;
   providerId: number;
   readOnly?: boolean;
+  initialFilter?: 'all' | 'pending' | 'reanalise' | 'done';
 }) {
   const [script, setScript] = useState<any>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -221,6 +223,22 @@ export default function RoteiroPlayer({
     const groups = computeStepGroups(sections, questions);
     setActiveSectionId(prev => (prev && groups.some(g => g.id === prev)) ? prev : (groups[0]?.id ?? null));
   }, [sections, questions]);
+
+  // Deep-link "Corrigir e reenviar" (Início): abre já na aba Reanálise, na primeira
+  // seção com critério devolvido. Só aplica se HÁ item devolvido — na devolução
+  // integral os critérios voltam como 'pendente' e a aba Reanálise ficaria vazia.
+  const jumpedToReanalise = useRef(false);
+  useEffect(() => {
+    if (jumpedToReanalise.current || initialFilter !== 'reanalise' || loading) return;
+    const target = questions.find(q => answers[q.id]?.evidence_status === 'aguardando_reanalise');
+    if (!target) return;
+    jumpedToReanalise.current = true;
+    setStatusFilter('reanalise');
+    const sectionById = new Map(sections.map(s => [s.id, s] as const));
+    let cur = sectionById.get(target.section_id);
+    while (cur && cur.parent_section_id) cur = sectionById.get(cur.parent_section_id);
+    if (cur) setActiveSectionId(cur.id);
+  }, [loading, questions, answers, sections, initialFilter]);
 
   const loadScript = async () => {
     setLoading(true);

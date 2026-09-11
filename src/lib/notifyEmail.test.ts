@@ -39,6 +39,13 @@ test('destaques por tipo: datas pt-BR e valores', () => {
   assert.ok(digest.html.includes('12'));
 });
 
+test('roteiro_enviado: e-mail do reenvio pós-reanálise tem banner e passos próprios', () => {
+  const e = renderNotificationEmail('roteiro_enviado', { provider_name: 'Clínica X', resubmission: true }, APP);
+  assert.ok(e.subject.includes('Reanálise respondida'), e.subject);
+  assert.ok(e.html.includes('reenviou'), 'corpo menciona reenvio');
+  assert.ok(e.html.toLowerCase().includes('critérios devolvidos'), 'passos apontam os devolvidos');
+});
+
 test('reanálise em lote: e-mail lista código e descrição de cada critério', () => {
   const e = renderNotificationEmail('reanalise_solicitada', {
     items: [

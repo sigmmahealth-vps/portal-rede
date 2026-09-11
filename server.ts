@@ -3870,7 +3870,8 @@ async function startServer() {
 
       void (async () => {
         const { rows: [pv] } = await query('SELECT name FROM providers WHERE id = $1', [instance.provider_id]);
-        await notifyEvent('roteiro_enviado', { provider_name: pv?.name ?? '' },
+        // resubmission: reenvio após reanálise/devolução — o auditor vê descrição própria.
+        await notifyEvent('roteiro_enviado', { provider_name: pv?.name ?? '', resubmission: !firstSubmission },
           await auditoriaRecipients(), { providerId: Number(instance.provider_id) });
       })().catch((e) => console.error('[notify] site roteiro_enviado:', e));
 

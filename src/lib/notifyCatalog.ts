@@ -40,8 +40,13 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       return { title: `Ciclo ${ctx.cycle_label ?? ''} reaberto — prazo prorrogado`.replace(/\s+/g, ' ').trim(),
                body: `O ciclo de qualificação foi reaberto e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link };
     case 'roteiro_enviado':
-      return { title: 'Roteiro enviado para análise',
-               body: `${ctx.provider_name ?? 'Um prestador'} enviou o roteiro de qualificação para análise.`, link };
+      // resubmission = reenvio após reanálise/devolução — descrição própria para o
+      // auditor distinguir do primeiro envio (feedback do cliente, 2026-09-11).
+      return ctx.resubmission
+        ? { title: 'Reanálise respondida — roteiro reenviado',
+            body: `${ctx.provider_name ?? 'Um prestador'} reenviou o roteiro de qualificação após a reanálise solicitada.`, link }
+        : { title: 'Roteiro enviado para análise',
+            body: `${ctx.provider_name ?? 'Um prestador'} enviou o roteiro de qualificação para análise.`, link };
     case 'reanalise_solicitada': {
       const prazoRe = ctx.end_date ? ` O prazo para reenvio termina em ${fmtDate(ctx.end_date)}.` : '';
       // Variante em lote (spec 2026-09-11): o auditor devolve todos os critérios de

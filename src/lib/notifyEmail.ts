@@ -180,12 +180,20 @@ export function notificationBlocks(
       };
       break;
     case 'roteiro_enviado':
-      b = {
-        banner: 'Roteiro enviado para análise',
-        paragraphs: [`**${ctx.provider_name ?? 'Um prestador'}** enviou o roteiro de qualificação para análise.`],
-        steps: 'acesse o painel do ciclo para analisar os critérios e as evidências enviadas.',
-        cta,
-      };
+      // resubmission = reenvio após reanálise/devolução (feedback do cliente, 2026-09-11).
+      b = ctx.resubmission
+        ? {
+            banner: 'Reanálise respondida — roteiro reenviado',
+            paragraphs: [`**${ctx.provider_name ?? 'Um prestador'}** reenviou o roteiro de qualificação após a reanálise solicitada.`],
+            steps: 'acesse o painel do ciclo para reanalisar os critérios devolvidos e as novas evidências.',
+            cta,
+          }
+        : {
+            banner: 'Roteiro enviado para análise',
+            paragraphs: [`**${ctx.provider_name ?? 'Um prestador'}** enviou o roteiro de qualificação para análise.`],
+            steps: 'acesse o painel do ciclo para analisar os critérios e as evidências enviadas.',
+            cta,
+          };
       break;
     case 'reanalise_solicitada':
       // Variante em lote (spec 2026-09-11): devolução única com a lista de critérios.

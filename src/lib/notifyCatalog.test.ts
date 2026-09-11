@@ -27,6 +27,15 @@ test('reanálise: integral vs por critério', () => {
   assert.ok(criterio.title.includes('1.1.4'));
 });
 
+test('roteiro_enviado: reenvio pós-reanálise tem texto próprio', () => {
+  const primeiro = renderNotification('roteiro_enviado', { provider_name: 'Clínica X' });
+  const reenvio = renderNotification('roteiro_enviado', { provider_name: 'Clínica X', resubmission: true });
+  assert.equal(primeiro.title, 'Roteiro enviado para análise');
+  assert.equal(reenvio.title, 'Reanálise respondida — roteiro reenviado');
+  assert.ok(reenvio.body.includes('reenviou'), reenvio.body);
+  assert.ok(reenvio.body.includes('reanálise'), reenvio.body);
+});
+
 test('reanálise em lote: uma notificação com a lista de critérios', () => {
   const n = renderNotification('reanalise_solicitada', {
     items: [

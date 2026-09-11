@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchApi } from '../../lib/api';
 import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
@@ -981,7 +982,8 @@ function PlanoAcaoModal(props: any) {
     return n;
   });
 
-  return (
+  // Portal: escapa do stacking context do overlay (z-20) pra cobrir o header (z-[25]).
+  return createPortal(
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <h2 className="mb-1 text-lg font-bold text-secondary-900">Plano de Ação será gerado</h2>
@@ -1052,6 +1054,7 @@ function PlanoAcaoModal(props: any) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

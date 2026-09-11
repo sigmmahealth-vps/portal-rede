@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchApi } from '../../lib/api';
 import { fmtData } from '../../lib/formatDate';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS, ITEM_STATUS_LABEL } from './planoStatus';
@@ -450,13 +451,15 @@ function FiveW2HFields({ form, setForm }: any) {
 }
 
 function ModalShell({ title, onClose, children }: any) {
-  return (
+  // Portal: escapa do stacking context do overlay (z-20) pra cobrir o header (z-[25]).
+  return createPortal(
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <h2 className="mb-4 text-lg font-bold text-secondary-900">{title}</h2>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

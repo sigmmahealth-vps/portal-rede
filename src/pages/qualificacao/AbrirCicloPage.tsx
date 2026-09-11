@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchApi } from '../../lib/api';
 import {
   ArrowLeft, ChevronRight, AlertTriangle, Save, RotateCcw, Loader2, Play,
@@ -625,7 +626,8 @@ function ExcluirModal({ row, saving, onCancel, onConfirm }: {
   row: InstanceRow; saving: boolean; onCancel: () => void; onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
-  return (
+  // Portal: escapa do stacking context do overlay (z-20) pra cobrir o header (z-[25]).
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-secondary-900">Remover do ciclo</h3>
@@ -666,7 +668,8 @@ function ExcluirModal({ row, saving, onCancel, onConfirm }: {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

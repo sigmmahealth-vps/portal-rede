@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchApi } from '../../lib/api';
 import { fmtPct } from '../../lib/formatDate';
 import { X, Loader2, AlertTriangle } from 'lucide-react';
@@ -28,7 +29,8 @@ export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceI
   const headlinePct = mem?.stored ? mem.stored.percentual : mem?.final_pct;
   const headlineSeal = mem?.stored ? mem.stored.seal : mem?.seal;
 
-  return (
+  // Portal: escapa do stacking context do overlay (z-20) pra cobrir o header (z-[25]).
+  return createPortal(
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
         <div className="mb-4 flex items-start justify-between">
@@ -117,6 +119,7 @@ export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceI
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

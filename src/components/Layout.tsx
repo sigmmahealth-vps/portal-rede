@@ -211,7 +211,9 @@ export default function Layout() {
       {/* Main content */}
       <div className={`flex flex-col flex-1 transition-all duration-300 ${isSidebarExpanded ? 'lg:pl-64' : 'lg:pl-20'}`}>
         {/* Top Header */}
-        <header className="sticky top-0 z-10 flex items-center justify-center h-16 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4] border-b border-gray-200">
+        {/* z-[25]: acima dos overlays de roteiro/plano (z-20) pra os dropdowns do header
+            aparecerem; abaixo da sidebar expandida (z-30) e do menu mobile (z-50). */}
+        <header className="sticky top-0 z-[25] flex items-center justify-center h-16 px-4 sm:px-6 lg:px-8 bg-[#f4f4f4] border-b border-gray-200">
           <div className="max-w-7xl w-full mx-auto flex items-center justify-between">
             <div className="flex items-center flex-1">
               <button

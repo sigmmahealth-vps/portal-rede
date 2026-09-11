@@ -104,6 +104,16 @@ export interface QuestionNode {
   isEliminatory: boolean;
   order: number;
 }
+/**
+ * Roteiro sem revisão no cabeçalho = documento original: revisão "00" e data
+ * herdada da Implantação (regra de negócio da recarga 2026-07-16; ex.: FOR-024,
+ * cujo cabeçalho traz "Revisão:" vazio). Usar em TODO importador — a validação
+ * de obrigatoriedade fica só sobre a data de implantação.
+ */
+export function effectiveRevision(p: Pick<ParsedScript, 'version' | 'revisaoDate' | 'implantacaoDate'>): { version: string; revisaoDate: string | null } {
+  return { version: p.version ?? '00', revisaoDate: p.revisaoDate ?? p.implantacaoDate };
+}
+
 export interface ParsedScript {
   sourceFile: string;
   opsCode: string;

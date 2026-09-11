@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from 'xlsx';
-import { parseWorkbook, num, extractDocumentType } from './roteiro-parser.js';
+import { parseWorkbook, num, extractDocumentType, effectiveRevision } from './roteiro-parser.js';
 
 /** Monta uma planilha mínima em memória no layout esperado pelo parser. */
 function buildBuffer(): Buffer {
@@ -194,6 +194,23 @@ test('Revisão em forma de data (sem número) não vira número de revisão', ()
   assert.equal(parsed.version, null);
   assert.equal(parsed.revisaoDate, null);
   assert.equal(parsed.implantacaoDate, '2025-09-30');
+});
+
+test('effectiveRevision — sem revisão vira "00" herdando a data de implantação', () => {
+  assert.deepEqual(
+    effectiveRevision({ version: null, revisaoDate: null, implantacaoDate: '2025-09-30' }),
+    { version: '00', revisaoDate: '2025-09-30' },
+  );
+  // revisão explícita não é alterada
+  assert.deepEqual(
+    effectiveRevision({ version: '02', revisaoDate: '2026-01-28', implantacaoDate: '2023-04-01' }),
+    { version: '02', revisaoDate: '2026-01-28' },
+  );
+  // sem nenhuma data: revisaoDate continua null (importadores rejeitam)
+  assert.deepEqual(
+    effectiveRevision({ version: null, revisaoDate: null, implantacaoDate: null }),
+    { version: '00', revisaoDate: null },
+  );
 });
 
 test('extractDocumentType — reconhece cada label da spec 5.4.2.3', () => {

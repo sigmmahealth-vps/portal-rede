@@ -7,7 +7,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { query, pool, withTransaction } from './db/db.js';
-import { parseWorkbook } from './db/roteiro-parser.js';
+import { parseWorkbook, effectiveRevision } from './db/roteiro-parser.js';
 import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS, isTestMasterOtp } from './auth/otp.js';
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
 import { isRateLimited, checkRateLimit, PASSWORD_MAX_FAILURES, PASSWORD_WINDOW_MS } from './auth/rateLimit.js';
@@ -3273,27 +3273,28 @@ async function startServer() {
       const noHeader = parsed.orphans.some((o) => o.startsWith('!!'));
       const blocked = parsed.questions.length === 0 || noHeader;
 
+      // sem revisão na planilha → revisão "00" com data da implantação (roteiro original)
+      const { version, revisaoDate } = effectiveRevision(parsed);
       const errors: string[] = [];
-      if (!parsed.version) errors.push('A planilha não informa o número da revisão.');
-      if (!parsed.revisaoDate) errors.push('A planilha não informa a data da revisão.');
+      if (!revisaoDate) errors.push('A planilha não informa a data da revisão.');
       if (!parsed.implantacaoDate) errors.push('A planilha não informa a data de implantação.');
-      if (parsed.version || parsed.revisaoDate) {
+      {
         const { rows: dupRows } = await query(
           'SELECT version, revisao_date FROM eval_scripts WHERE source_file = $1',
           [parsed.sourceFile],
         );
-        if (parsed.version && (dupRows as any[]).some((r) => String(r.version) === parsed.version)) {
-          errors.push(`Já existe uma versão com a revisão ${parsed.version} para este roteiro.`);
+        if ((dupRows as any[]).some((r) => String(r.version) === version)) {
+          errors.push(`Já existe uma versão com a revisão ${version} para este roteiro.`);
         }
-        if (parsed.revisaoDate && (dupRows as any[]).some((r) => String(r.revisao_date).slice(0, 10) === parsed.revisaoDate)) {
-          errors.push(`Já existe uma versão com a data de revisão ${isoToBR(parsed.revisaoDate)} para este roteiro.`);
+        if (revisaoDate && (dupRows as any[]).some((r) => String(r.revisao_date).slice(0, 10) === revisaoDate)) {
+          errors.push(`Já existe uma versão com a data de revisão ${isoToBR(revisaoDate)} para este roteiro.`);
         }
       }
 
       res.json({
         title: parsed.title,
-        version: parsed.version,
-        revisaoDate: parsed.revisaoDate,
+        version,
+        revisaoDate,
         implantacaoDate: parsed.implantacaoDate,
         sourceFile: parsed.sourceFile,
         sectionCount: parsed.sections.length,
@@ -3332,19 +3333,20 @@ async function startServer() {
       if (parsed.questions.length === 0 || noHeader) {
         return res.status(422).json({ error: 'Planilha sem critérios reconhecíveis ou cabeçalho inválido.' });
       }
-      if (!parsed.version) return res.status(422).json({ error: 'A planilha não informa o número da revisão.' });
-      if (!parsed.revisaoDate) return res.status(422).json({ error: 'A planilha não informa a data da revisão.' });
+      // sem revisão na planilha → revisão "00" com data da implantação (roteiro original)
+      const { version, revisaoDate } = effectiveRevision(parsed);
+      if (!revisaoDate) return res.status(422).json({ error: 'A planilha não informa a data da revisão.' });
       if (!parsed.implantacaoDate) return res.status(422).json({ error: 'A planilha não informa a data de implantação.' });
 
       const { rows: dupRows } = await query(
         'SELECT version, revisao_date FROM eval_scripts WHERE source_file = $1',
         [parsed.sourceFile],
       );
-      if ((dupRows as any[]).some((r) => String(r.version) === parsed.version)) {
-        return res.status(409).json({ error: `Já existe uma versão com a revisão ${parsed.version} para este roteiro.` });
+      if ((dupRows as any[]).some((r) => String(r.version) === version)) {
+        return res.status(409).json({ error: `Já existe uma versão com a revisão ${version} para este roteiro.` });
       }
-      if ((dupRows as any[]).some((r) => String(r.revisao_date).slice(0, 10) === parsed.revisaoDate)) {
-        return res.status(409).json({ error: `Já existe uma versão com a data de revisão ${isoToBR(parsed.revisaoDate)} para este roteiro.` });
+      if ((dupRows as any[]).some((r) => String(r.revisao_date).slice(0, 10) === revisaoDate)) {
+        return res.status(409).json({ error: `Já existe uma versão com a data de revisão ${isoToBR(revisaoDate)} para este roteiro.` });
       }
 
       try {
@@ -3352,7 +3354,7 @@ async function startServer() {
           const { rows: sr } = await client.query(
             `INSERT INTO eval_scripts (title, description, version, source_file, revisao_date, implantacao_date, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id`,
-            [parsed.title, parsed.description, parsed.version, parsed.sourceFile, parsed.revisaoDate, parsed.implantacaoDate],
+            [parsed.title, parsed.description, version, parsed.sourceFile, revisaoDate, parsed.implantacaoDate],
           );
           const scriptId = sr[0].id as number;
 

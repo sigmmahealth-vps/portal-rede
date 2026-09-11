@@ -19,6 +19,7 @@ import { hashIp } from './auth/ipHash.js';
 import { SESSION, isAbsoluteExpired, isRevoked } from './auth/session.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
+import { questionOnly } from './src/lib/questionText.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
@@ -3673,7 +3674,23 @@ async function startServer() {
          ORDER BY eai.answer_id, eai.iteration_number
       `, [req.params.id]);
 
-      res.json({ ...instance, answers, evidences, iterations });
+      // Reanálise em lote (spec 2026-09-11): enquanto a análise não é devolvida, o
+      // prestador não vê os rascunhos de reanálise — o item aparece como 'pendente',
+      // sem observação do auditor e sem a iteração de solicitação no histórico.
+      let visibleAnswers = answers;
+      let visibleIterations = iterations;
+      const isProviderViewer = viewerRole !== 'admin' && viewerRole !== 'auditoria';
+      if (isProviderViewer && instance.status === 'em_analise') {
+        const maskedIds = new Set(
+          (answers as any[]).filter(a => a.evidence_status === 'aguardando_reanalise').map(a => Number(a.id)));
+        visibleAnswers = (answers as any[]).map(a => maskedIds.has(Number(a.id))
+          ? { ...a, evidence_status: 'pendente', auditor_observation: null }
+          : a);
+        visibleIterations = (iterations as any[]).filter(
+          it => !(maskedIds.has(Number(it.answer_id)) && it.action === 'solicitou_reanalise'));
+      }
+
+      res.json({ ...instance, answers: visibleAnswers, evidences, iterations: visibleIterations });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -5228,12 +5245,8 @@ async function startServer() {
           VALUES ($1, $2, $3, 'auditor', $4, $5, $6, $7, $8)
         `, [answerId, n, req.user.id, action, newAnswerValue, newScore, ans.evidence_url, observation || null]);
 
-        if (action === 'solicitou_reanalise' && ans.instance_status === 'em_analise') {
-          await client.query(
-            `UPDATE eval_instances SET status = 'aguardando_evidencia' WHERE id = $1`,
-            [ans.instance_id]
-          );
-        }
+        // Reanálise agora é rascunho (spec 2026-09-11): o flip da instância e a
+        // notificação acontecem de uma vez no POST /instances/:id/enviar-reanalise.
       });
 
       await auditLog({
@@ -5247,16 +5260,6 @@ async function startServer() {
         ip: hashClientIp(req),
       });
 
-      if (action === 'solicitou_reanalise') {
-        void (async () => {
-          const { rows: [q] } = await query('SELECT code FROM eval_questions WHERE id = $1', [ans.question_id]);
-          await notifyEvent('reanalise_solicitada',
-            { question_code: q?.code ?? '', end_date: await instanceCycleEnd(Number(ans.instance_id)) },
-            await prestadorRecipients(Number(ans.provider_id), ans.location_id ?? null),
-            { providerId: Number(ans.provider_id) });
-        })().catch((e) => console.error('[notify] site reanalise_solicitada (auditorAction):', e));
-      }
-
       res.json({ success: true, evidence_status: newEvidenceStatus });
     } catch (err: any) {
       console.error(err);
@@ -5268,6 +5271,50 @@ async function startServer() {
   app.post('/api/eval/answers/:id/reprovar',             authenticate, (req, res) => auditorAction(req, res, 'reprovou', true));
   app.post('/api/eval/answers/:id/solicitar-reanalise',  authenticate, (req, res) => auditorAction(req, res, 'solicitou_reanalise', true));
   app.post('/api/eval/answers/:id/nao-aplica',           authenticate, (req, res) => auditorAction(req, res, 'marcou_na', true));
+
+  // Devolve ao prestador, DE UMA VEZ, todos os critérios marcados para reanálise
+  // (spec 2026-09-11): flipa a instância e envia uma única notificação com a lista.
+  app.post('/api/eval/instances/:id/enviar-reanalise', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const id = Number(req.params.id);
+      const { rows: [inst] } = await query(
+        'SELECT id, status, provider_id, location_id FROM eval_instances WHERE id = $1', [id]);
+      if (!inst) return res.status(404).json({ error: 'instance not found' });
+      if (inst.status !== 'em_analise') {
+        return res.status(409).json({ error: `status ${inst.status} não permite devolver para reanálise` });
+      }
+      const { rows: marked } = await query(`
+        SELECT eq.code, eq.text
+          FROM eval_answers ea
+          JOIN eval_questions eq ON eq.id = ea.question_id
+         WHERE ea.instance_id = $1 AND ea.evidence_status = 'aguardando_reanalise'
+         ORDER BY eq.code
+      `, [id]);
+      if (!marked.length) return res.status(409).json({ error: 'nenhum critério marcado para reanálise' });
+
+      await query(`UPDATE eval_instances SET status = 'aguardando_evidencia' WHERE id = $1`, [id]);
+
+      await auditLog({
+        query, userId: req.user.id, action: 'reanalise_enviada',
+        meta: { instance_id: id, provider_id: Number(inst.provider_id), location_id: inst.location_id ?? null, count: marked.length },
+        ip: hashClientIp(req),
+      });
+
+      void (async () => {
+        const items = marked.map((m: any) => ({ code: m.code, text: questionOnly(m.text ?? '') }));
+        await notifyEvent('reanalise_solicitada',
+          { items, end_date: await instanceCycleEnd(id) },
+          await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
+          { providerId: Number(inst.provider_id), dedupeRef: `reanalise-lote:${id}:${Date.now()}` });
+      })().catch((e) => console.error('[notify] site reanalise_solicitada (lote):', e));
+
+      res.json({ success: true, sent: marked.length });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Candidatos a plano de ação (não conformes) da instância — usado no modal do parecer
   app.get('/api/eval/instances/:id/plano-candidatos', authenticate, async (req: any, res) => {

@@ -222,7 +222,7 @@ export default function UsuariosTab() {
                       ? <div className="max-w-[220px] truncate" title={u.email}>{u.email}</div>
                       : <span className="italic text-gray-400">não definido</span>}
                   </td>
-                  <td className="p-3">{ROLE_LABEL[u.role] ?? u.role}</td>
+                  <td className="p-3 whitespace-nowrap">{ROLE_LABEL[u.role] ?? u.role}</td>
                   <td className="p-3"><span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
                   <td className="p-3 text-gray-500 text-sm whitespace-nowrap">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="p-3 relative">

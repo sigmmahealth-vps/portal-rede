@@ -1,7 +1,7 @@
 // Gera usuários de acesso a partir do cadastro (tela Equipe→Usuários).
 // 1 usuário por par (prestador, ENDEREÇO comercial) sem usuário: nome do
-// prestador, e-mail do próprio endereço, role por person_type (PF→cooperado,
-// PJ→prestador), sem senha e SEM enviar convite — o convite é ação manual do
+// prestador, e-mail do próprio endereço, role por deriveProviderRole (PF cooperado /
+// PF não médico / PJ→prestador), sem senha e SEM enviar convite — o convite é ação manual do
 // admin no menu da tela. Endereço sem e-mail utilizável (ausente, inválido ou
 // já em uso por outro usuário) TAMBÉM ganha usuário, com email NULL — aparece
 // como "Sem e-mail" na tela até o admin definir um. Idempotente.
@@ -9,6 +9,7 @@
 // Uso: [APP_ENV=dev] npm run db:provision-users [-- --commit]   (dry-run por padrão)
 import 'dotenv/config';
 import { query, pool } from './db.js';
+import { deriveProviderRole } from './provider-role.js';
 
 const COMMIT = process.argv.includes('--commit');
 const EMAIL_RE = String.raw`^[^@\s]+@[^@\s]+\.[^@\s]+$`;
@@ -23,7 +24,7 @@ async function main() {
 
   const { rows: candidates } = await query(`
     SELECT pl.id AS location_id, pl.provider_id, pl.label, pl.cidade,
-           p.name, p.person_type,
+           p.name, p.person_type, p.provider_group,
            CASE WHEN LOWER(TRIM(pl.email)) ~ '${EMAIL_RE}' THEN LOWER(TRIM(pl.email)) END AS email
       FROM provider_locations pl
       JOIN providers p ON p.id = pl.provider_id
@@ -47,7 +48,8 @@ async function main() {
   const semEmailUtilizavel = [...semEmail, ...emailEmUso];
 
   console.log(`[provision-users] endereços comerciais sem usuário: ${candidates.length}`);
-  console.log(`  → criar com e-mail: ${toCreate.length} (${toCreate.filter(c => c.person_type === 'PF').length} cooperado, ${toCreate.filter(c => c.person_type !== 'PF').length} prestador)`);
+  const byRole = (r: string) => toCreate.filter(c => deriveProviderRole(c.person_type, c.provider_group) === r).length;
+  console.log(`  → criar com e-mail: ${toCreate.length} (${byRole('cooperado')} cooperado, ${byRole('pf_nao_medico')} PF não médico, ${byRole('prestador')} prestador)`);
   console.log(`  → criar SEM e-mail (status "Sem e-mail" na tela): ${semEmailUtilizavel.length}`);
   console.log(`      sem e-mail válido no endereço: ${semEmail.length}`);
   console.log(`      e-mail já em uso/compartilhado: ${emailEmUso.length}`);
@@ -65,7 +67,7 @@ async function main() {
       const { rows } = await query(
         `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
          VALUES ($1, $2, NULL, $3, $4, true, 'pending') RETURNING id`,
-        [c.name, email, c.person_type === 'PF' ? 'cooperado' : 'prestador', c.provider_id]
+        [c.name, email, deriveProviderRole(c.person_type, c.provider_group), c.provider_id]
       );
       // user_locations é a única fonte de verdade do escopo (users.location_id foi dropado na 0037).
       await query(

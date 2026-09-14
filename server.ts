@@ -7,6 +7,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { query, pool, withTransaction } from './db/db.js';
+import { COOPERADO_GROUP_RE, deriveProviderRole } from './db/provider-role.js';
 import { parseWorkbook, effectiveRevision } from './db/roteiro-parser.js';
 import { generateOtpCode, hashOtp, verifyOtp, isOtpExpired, OTP_TTL_MS, OTP_MAX_ATTEMPTS, isTestMasterOtp } from './auth/otp.js';
 import { generateDeviceSecret, hashDeviceSecret, deviceLabelFromUserAgent, isTrustedDeviceValid, TRUSTED_DEVICE_TTL_MS } from './auth/trustedDevice.js';
@@ -257,7 +258,7 @@ async function startServer() {
     const { rows } = await query(
       `SELECT DISTINCT u.id AS user_id, u.email, u.name
          FROM user_locations ul JOIN users u ON u.id = ul.user_id
-        WHERE ul.provider_id = $1 AND u.is_active = true AND u.role IN ('prestador','cooperado')
+        WHERE ul.provider_id = $1 AND u.is_active = true AND u.role IN ('prestador','cooperado','pf_nao_medico')
           AND ($2::bigint IS NULL OR ul.location_id = ANY(ARRAY[$2]::bigint[]))`,
       [providerId, locationId]);
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
@@ -482,7 +483,7 @@ async function startServer() {
     }
     // Cooperado = grupo "MEDICOS COOPERADOS" (com ou sem sufixo ARARANGUA). Regra ancorada
     // no provider_group porque o provider_type "MÉDICO" cobre também psicólogos/nutris/etc.
-    const isCooperado = /^MEDICOS COOPERADOS(\s+ARARANGUA)?$/i.test(String(providerGroup ?? '').trim());
+    const isCooperado = COOPERADO_GROUP_RE.test(String(providerGroup ?? '').trim());
     // `sv` lido do banco (o `user` do login pode vir de um SELECT sem a coluna); `sa` = agora.
     const { rows: svRows } = await query('SELECT session_version FROM users WHERE id = $1', [user.id]);
     setSessionCookie(res, signSession(user, Number(svRows[0]?.session_version ?? 1), Date.now()));
@@ -1260,7 +1261,7 @@ async function startServer() {
       }
 
       if (typeof newRole !== 'undefined') {
-        if (newRole !== 'admin' && newRole !== 'auditoria' && newRole !== 'prestador' && newRole !== 'cooperado') {
+        if (newRole !== 'admin' && newRole !== 'auditoria' && newRole !== 'prestador' && newRole !== 'cooperado' && newRole !== 'pf_nao_medico') {
           return res.status(400).json({ error: 'Role inválida.' });
         }
         if (targetId === req.user.id && target.role === 'admin' && newRole !== 'admin') {
@@ -1814,7 +1815,7 @@ async function startServer() {
   // === Gestão de Acessos do prestador (Tela 4 da spec) — 1 acesso por UNIDADE ===
   // Desde a migration 0035 o acesso é do par (prestador, endereço): cada unidade
   // comercial tem seu próprio login, e o portal do prestador só mostra a dela.
-  const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado'];
+  const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado', 'pf_nao_medico'];
   const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
   // Unidades comerciais do prestador, cada uma com o seu acesso (ou null).
@@ -1888,13 +1889,13 @@ async function startServer() {
       if (password && password.length < 8) {
         return res.status(400).json({ error: 'A senha deve ter ao menos 8 caracteres.' });
       }
-      const { rows: provRows } = await query('SELECT id, name, person_type FROM providers WHERE id = $1', [providerId]);
+      const { rows: provRows } = await query('SELECT id, name, person_type, provider_group FROM providers WHERE id = $1', [providerId]);
       if (!provRows[0]) return res.status(404).json({ error: 'Prestador não encontrado' });
       const unit = await resolveUnit(providerId, req.body?.location_id);
       if (!unit) return res.status(400).json({ error: 'Informe a unidade (location_id) do acesso.' });
 
       const existing = unit.user;
-      const role = provRows[0].person_type === 'PF' ? 'cooperado' : 'prestador';
+      const role = deriveProviderRole(provRows[0].person_type, provRows[0].provider_group);
       try {
         if (existing) {
           if (password) {
@@ -2050,9 +2051,9 @@ async function startServer() {
     let deactivated: number[] = [];
     try {
       await withTransaction(async (c) => {
-        const { rows: p } = await c.query('SELECT name, person_type FROM providers WHERE id = $1', [providerId]);
+        const { rows: p } = await c.query('SELECT name, person_type, provider_group FROM providers WHERE id = $1', [providerId]);
         if (!p.length) throw { http: 404, msg: 'Prestador não encontrado' };
-        const role = p[0].person_type === 'PF' ? 'cooperado' : 'prestador';
+        const role = deriveProviderRole(p[0].person_type, p[0].provider_group);
         // 1) DESTACAR e capturar quem cobria essas unidades.
         const { rows: freed } = await c.query(
           `DELETE FROM user_locations WHERE provider_id = $1 AND location_id = ANY($2::bigint[]) RETURNING user_id`,
@@ -3454,7 +3455,7 @@ async function startServer() {
       // admin/auditoria gerenciam todos.
       // ponytail: filtra pelo eval_script_id fixado no match; se o roteiro for reversionado,
       // resolver p/ versão vigente por source_file. Hoje há 1 versão por roteiro.
-      const scripts = (role === 'prestador' || role === 'cooperado')
+      const scripts = (role === 'prestador' || role === 'cooperado' || role === 'pf_nao_medico')
         ? (await query(
             `SELECT s.* FROM eval_scripts s
              JOIN providers p ON p.eval_script_id = s.id
@@ -3725,7 +3726,7 @@ async function startServer() {
       const instanceId = req.params.id;
       const { answers } = req.body;
 
-      const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' ? 'prestador' : 'auditor';
+      const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' || req.user.role === 'pf_nao_medico' ? 'prestador' : 'auditor';
       const isProvider = actorRole === 'prestador';
       // D-04: prestador só escreve nos estados de edição. Fora disso (em_analise,
       // finalizado, etc.) rejeita — staff segue sem restrição.
@@ -3995,7 +3996,7 @@ async function startServer() {
 
       // D-04: prestador só anexa evidência em estado de edição e, na reanálise, só
       // no critério devolvido. Remove o upload órfão ao rejeitar. Staff sem restrição.
-      const isProvider = req.user.role === 'prestador' || req.user.role === 'cooperado';
+      const isProvider = req.user.role === 'prestador' || req.user.role === 'cooperado' || req.user.role === 'pf_nao_medico';
       if (isProvider) {
         const rejectUpload = (code: number, msg: string) => {
           try { fs.unlinkSync(req.file.path); } catch { /* arquivo já sumiu */ }

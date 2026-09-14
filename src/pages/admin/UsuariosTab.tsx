@@ -8,7 +8,7 @@ interface User {
   id: number;
   name: string;
   email: string | null;
-  role: 'admin' | 'auditoria' | 'prestador' | 'cooperado';
+  role: 'admin' | 'auditoria' | 'prestador' | 'cooperado' | 'pf_nao_medico';
   is_active: boolean;
   invite_status: 'pending' | 'accepted' | 'expired';
   last_login_at: string | null;
@@ -21,6 +21,10 @@ interface User {
 
 // Fronteira de conceito: Equipe interna (operadores) × Acessos de prestadores.
 const OPERATOR_ROLES = ['admin', 'auditoria'];
+const ROLE_LABEL: Record<User['role'], string> = {
+  admin: 'Admin', auditoria: 'Auditoria', prestador: 'Prestador',
+  cooperado: 'Cooperado', pf_nao_medico: 'PF não médico',
+};
 type Segment = 'equipe' | 'prestadores';
 
 const SEGMENTS: { id: Segment; label: string }[] = [
@@ -49,6 +53,7 @@ const ROLE_OPTIONS: Record<Segment, { value: string; label: string }[]> = {
   prestadores: [
     { value: 'prestador', label: 'Prestador' },
     { value: 'cooperado', label: 'Cooperado' },
+    { value: 'pf_nao_medico', label: 'PF não médico' },
   ],
 };
 
@@ -217,7 +222,7 @@ export default function UsuariosTab() {
                       ? <div className="max-w-[220px] truncate" title={u.email}>{u.email}</div>
                       : <span className="italic text-gray-400">não definido</span>}
                   </td>
-                  <td className="p-3 capitalize">{u.role}</td>
+                  <td className="p-3">{ROLE_LABEL[u.role] ?? u.role}</td>
                   <td className="p-3"><span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
                   <td className="p-3 text-gray-500 text-sm whitespace-nowrap">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="p-3 relative">

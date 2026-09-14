@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { query, pool } from './db.js';
 
 const TEST_SGU = '_TEST_ULA_';
-const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado'];
+const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado', 'pf_nao_medico'];
 
 // Cópia fiel da query reescrita em server.ts providerUnits (~1623).
 async function providerUnits(providerId: number) {

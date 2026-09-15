@@ -5545,6 +5545,23 @@ async function startServer() {
     }
   });
 
+  // Plano de ação de OUTRO ciclo (anterior/avulso) ainda aberto para o par
+  // prestador×local: aberto = não encerrado sem conclusão e com item não concluído.
+  // has_dl marca item de Documento Legal (inclui docs sanitários) — item 18 da
+  // homologação 09/2026: com DL pendente, o selo do ciclo seguinte trava em Bronze.
+  async function pendingPrevPlan(providerId: number, locationId: number | null, cycleId: number | null) {
+    const { rows: [r] } = await query(`
+      SELECT BOOL_OR(it.dimension = 'Documento Legal') AS has_dl
+        FROM eval_action_plans ap
+        JOIN eval_action_items it ON it.plan_id = ap.id AND it.status <> 'concluida'
+       WHERE ap.provider_id = $1
+         AND (ap.location_id IS NULL OR ap.location_id = $2)
+         AND ap.closed_without_completion = false
+         AND ap.cycle_id IS DISTINCT FROM $3
+    `, [providerId, locationId, cycleId]);
+    return { pending: r?.has_dl != null, hasDL: !!r?.has_dl };
+  }
+
   // Critérios recorrentes: question_codes com item de plano de ciclos anteriores do mesmo prestador
   app.get('/api/eval/instances/:id/recorrencias', authenticate, async (req: any, res) => {
     try {
@@ -5572,7 +5589,7 @@ async function startServer() {
       const id = Number(req.params.id);
 
       const { rows: [inst] } = await query(`
-        SELECT ei.id, ei.status, ei.provider_id, ei.location_id,
+        SELECT ei.id, ei.status, ei.provider_id, ei.location_id, ei.cycle_id,
                c.cert_valid_until
           FROM eval_instances ei
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
@@ -5626,7 +5643,12 @@ async function startServer() {
       const maxPossible = mem.totals.max;
       const hasEliminatoryFailed = mem.eliminatory_failed;
       const percentual = mem.final_pct;
-      const seal = mem.seal;
+      // Item 18 (homologação 09/2026): plano de ciclo anterior com item de
+      // Documento Legal/sanitário pendente trava o selo em Bronze.
+      const prevPlan = await pendingPrevPlan(
+        Number(inst.provider_id), inst.location_id != null ? Number(inst.location_id) : null,
+        inst.cycle_id != null ? Number(inst.cycle_id) : null);
+      const seal = prevPlan.hasDL ? 'Bronze' : mem.seal;
 
       // ---- Plano de Ação 5W2H (spec 5.4.4.1): leituras puras ANTES do UPDATE —
       // status ainda é 'em_analise' aqui, seguro ler. O resultado (chosen/origin)
@@ -5785,7 +5807,7 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
       const { rows: [inst] } = await query(
-        'SELECT id, status, script_id, percentual, seal FROM eval_instances WHERE id = $1', [id]);
+        'SELECT id, status, script_id, percentual, seal, provider_id, location_id, cycle_id FROM eval_instances WHERE id = $1', [id]);
       if (!inst) return res.status(404).json({ error: 'instance not found' });
 
       const { rows: [survey] } = await query(
@@ -5815,6 +5837,14 @@ async function startServer() {
 
       const CLOSED = ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'];
       const payload: any = { ...mem };
+      // Item 18: mesma trava do parecer — memória mostra o selo que será gravado.
+      const prevPlan = await pendingPrevPlan(
+        Number(inst.provider_id), inst.location_id != null ? Number(inst.location_id) : null,
+        inst.cycle_id != null ? Number(inst.cycle_id) : null);
+      if (prevPlan.hasDL && payload.seal !== 'Bronze') {
+        payload.seal = 'Bronze';
+        payload.seal_cap = 'plano_dl_ciclo_anterior';
+      }
       if (CLOSED.includes(inst.status)) {
         payload.stored = { percentual: Number(inst.percentual) || 0, seal: inst.seal };
       }
@@ -6642,12 +6672,24 @@ async function startServer() {
                (ec.id IS NOT NULL) AS has_certificate,
                ec.id AS certificate_id,
                ei.submitted_at,
-               (esr.id IS NOT NULL) AS has_survey_response
+               (esr.id IS NOT NULL) AS has_survey_response,
+               -- Item 18: plano de outro ciclo ainda aberto p/ o par (has_dl trava selo em Bronze).
+               (prev_plan.has_dl IS NOT NULL) AS prev_plan_pending,
+               COALESCE(prev_plan.has_dl, false) AS prev_plan_dl
           FROM eval_instances ei
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN eval_certificates ec ON ec.instance_id = ei.id
           LEFT JOIN eval_survey_responses esr ON esr.instance_id = ei.id
+          LEFT JOIN LATERAL (
+            SELECT BOOL_OR(it.dimension = 'Documento Legal') AS has_dl
+              FROM eval_action_plans ap
+              JOIN eval_action_items it ON it.plan_id = ap.id AND it.status <> 'concluida'
+             WHERE ap.provider_id = ei.provider_id
+               AND (ap.location_id IS NULL OR ap.location_id = ei.location_id)
+               AND ap.closed_without_completion = false
+               AND ap.cycle_id IS DISTINCT FROM ei.cycle_id
+          ) prev_plan ON true
           LEFT JOIN (
             SELECT ea.instance_id,
                    (SUM(CASE WHEN ${COUNTS_IN_SCORE_SQL} THEN COALESCE(ea.score_obtained, 0) ELSE 0 END)
@@ -6695,6 +6737,8 @@ async function startServer() {
           certificate_id: r.certificate_id != null ? Number(r.certificate_id) : null,
           submitted_at: r.submitted_at != null ? new Date(r.submitted_at).toISOString() : null,
           has_survey_response: !!r.has_survey_response,
+          prev_plan_pending: !!r.prev_plan_pending,
+          prev_plan_dl: !!r.prev_plan_dl,
         })),
         dimPct.map((r: any) => ({
           instance_id: Number(r.instance_id), dimension: r.dimension, pct: Number(r.pct) || 0,

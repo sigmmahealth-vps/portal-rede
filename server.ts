@@ -1551,14 +1551,15 @@ async function startServer() {
         const { rows: recentPendingDocs } = await query('SELECT d.*, p.name as provider_name FROM documents d JOIN providers p ON d.provider_id = p.id WHERE d.status = $1 ORDER BY d.id DESC LIMIT 5', ['pendente']);
         const { rows: recentOpenTickets } = await query('SELECT t.*, p.name as provider_name FROM tickets t JOIN providers p ON t.provider_id = p.id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 5', ['aberto']);
 
-        // Distribuição de selos: por prestador, considera a avaliação finalizada mais recente.
+        // Distribuição de selos: POR ENDEREÇO (conta oficial, spec 2026-09-15 —
+        // qualificação é por unidade desde a 0035), avaliação finalizada mais recente.
         const { rows: sealDistribution } = await query(
           `SELECT seal, COUNT(*)::int AS count
              FROM (
-               SELECT DISTINCT ON (provider_id) provider_id, seal
+               SELECT DISTINCT ON (provider_id, COALESCE(location_id, 0)) seal
                  FROM eval_instances
                 WHERE seal IS NOT NULL AND status IN ('finalizado','aprovado')
-                ORDER BY provider_id, completed_at DESC NULLS LAST, started_at DESC
+                ORDER BY provider_id, COALESCE(location_id, 0), completed_at DESC NULLS LAST, started_at DESC
              ) latest
             GROUP BY seal`
         );
@@ -6672,6 +6673,7 @@ async function startServer() {
                (ec.id IS NOT NULL) AS has_certificate,
                ec.id AS certificate_id,
                ei.submitted_at,
+               ei.completed_at,
                (esr.id IS NOT NULL) AS has_survey_response,
                -- Item 18: plano de outro ciclo ainda aberto p/ o par (has_dl trava selo em Bronze).
                (prev_plan.has_dl IS NOT NULL) AS prev_plan_pending,
@@ -6736,6 +6738,7 @@ async function startServer() {
           has_certificate: !!r.has_certificate,
           certificate_id: r.certificate_id != null ? Number(r.certificate_id) : null,
           submitted_at: r.submitted_at != null ? new Date(r.submitted_at).toISOString() : null,
+          completed_at: r.completed_at != null ? new Date(r.completed_at).toISOString() : null,
           has_survey_response: !!r.has_survey_response,
           prev_plan_pending: !!r.prev_plan_pending,
           prev_plan_dl: !!r.prev_plan_dl,

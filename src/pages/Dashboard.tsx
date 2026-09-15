@@ -420,7 +420,7 @@ export default function Dashboard() {
               <p className="text-sm text-gray-500 font-medium">Treinamentos</p>
               <div className="flex justify-between items-end">
                 <p className="text-2xl font-bold text-gray-800">
-                  {adminData?.trainings?.length || 0}
+                  {adminData?.trainings?.filter((t: any) => t.status !== 'concluido').length || 0}
                 </p>
                 <span className="bg-[#ff4d4f] text-white text-[10px] font-bold px-2 py-1 rounded-full">A concluir</span>
               </div>

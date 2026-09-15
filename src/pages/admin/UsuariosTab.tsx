@@ -155,6 +155,23 @@ export default function UsuariosTab() {
         ))}
       </div>
 
+      {/* Adoção dos acessos (spec 2026-09-15 — números por ator): a rede está entrando? */}
+      {segment === 'prestadores' && segmentUsers.length > 0 && (() => {
+        const by = (label: string) => segmentUsers.filter((u) => STATUS_BADGE(u).label === label).length;
+        const ativos = by('Ativo');
+        const adocao = Math.round((ativos / segmentUsers.length) * 100);
+        return (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <span className="text-sm text-gray-600"><span className="text-xl font-bold text-secondary-900">{adocao}%</span> de adoção</span>
+            <span className="text-sm text-gray-600"><span className="font-bold text-emerald-700">{ativos}</span> ativos</span>
+            <span className="text-sm text-gray-600"><span className="font-bold text-amber-700">{by('Pendente') + by('Expirado')}</span> convite pendente/expirado</span>
+            <span className="text-sm text-gray-600"><span className="font-bold text-orange-700">{by('Sem e-mail')}</span> sem e-mail</span>
+            <span className="text-sm text-gray-600"><span className="font-bold text-red-700">{by('Inativo')}</span> inativos</span>
+            <span className="text-xs text-gray-400">de {segmentUsers.length} acessos</span>
+          </div>
+        );
+      })()}
+
       <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />

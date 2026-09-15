@@ -17,6 +17,7 @@ export interface DashboardInstance {
   certificate_id?: number | null;
   seguranca_pct?: number | null;
   submitted_at?: string | null;
+  completed_at?: string | null;
   has_survey_response?: boolean;
   survey_state?: 'aguardando' | 'finalizada' | null;
   // Item 18 (homologação 09/2026): plano de outro ciclo ainda aberto p/ o par;
@@ -49,6 +50,9 @@ export interface AuditorDashboardPayload {
     sent: number; pending: number;
     in_review: number; awaiting_provider: number;
     avg_score: number;
+    // Tempo médio envio→parecer em dias (1 decimal), só instâncias com parecer;
+    // null sem nenhuma (spec 2026-09-15: números por ator).
+    avg_analysis_days: number | null;
     low_security_count: number;
     seal_distribution: Record<string, number>;
     group_distribution: { group: string; count: number }[];
@@ -92,6 +96,14 @@ export function buildAuditorDashboard(
 
   const avg_score = scores.length ? Math.round((scores.reduce((s, x) => s + x, 0) / scores.length) * 10) / 10 : 0;
 
+  const analysisDays = instances
+    .filter(i => ['aprovado', 'reprovado', 'finalizado'].includes(i.status) && i.submitted_at && i.completed_at)
+    .map(i => (new Date(i.completed_at!).getTime() - new Date(i.submitted_at!).getTime()) / 86_400_000)
+    .filter(d => d >= 0);
+  const avg_analysis_days = analysisDays.length
+    ? Math.round((analysisDays.reduce((s, x) => s + x, 0) / analysisDays.length) * 10) / 10
+    : null;
+
   // Agrupa todos os percentuais por dimensão de cada instância (Segurança já vem
   // consolidada com Documento Legal na query). Serve pro filtro < 60% e pras
   // mini-barras por dimensão ao lado do total.
@@ -120,5 +132,5 @@ export function buildAuditorDashboard(
     .map(([group, pairs]) => ({ group, count: pairs.size }))
     .sort((a, b) => b.count - a.count);
 
-  return { cycle, kpis: { total_locations, sent, pending, in_review, awaiting_provider, avg_score, low_security_count, seal_distribution, group_distribution }, instances: enriched };
+  return { cycle, kpis: { total_locations, sent, pending, in_review, awaiting_provider, avg_score, avg_analysis_days, low_security_count, seal_distribution, group_distribution }, instances: enriched };
 }

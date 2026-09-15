@@ -47,6 +47,17 @@ test('sent inclui em_analise/aguardando_evidencia/aprovado/reprovado/finalizado;
   assert.equal(r.kpis.awaiting_provider, 1);
 });
 
+test('avg_analysis_days: média envio→parecer só das concluídas; null sem parecer', () => {
+  const r = buildAuditorDashboard(cycle, [
+    inst({ id: 1, status: 'aprovado',   submitted_at: '2026-03-01T00:00:00Z', completed_at: '2026-03-05T00:00:00Z' }), // 4 dias
+    inst({ id: 2, status: 'finalizado', submitted_at: '2026-03-01T00:00:00Z', completed_at: '2026-03-03T00:00:00Z' }), // 2 dias
+    inst({ id: 3, status: 'em_analise', submitted_at: '2026-03-01T00:00:00Z' }),                                       // sem parecer: fora
+  ], []);
+  assert.equal(r.kpis.avg_analysis_days, 3);
+  const vazio = buildAuditorDashboard(cycle, [inst({ id: 1, status: 'em_analise' })], []);
+  assert.equal(vazio.kpis.avg_analysis_days, null);
+});
+
 test('avg_score ignora em_andamento', () => {
   const r = buildAuditorDashboard(cycle, [
     inst({ id: 1, status: 'em_andamento', percentual: 0 }),

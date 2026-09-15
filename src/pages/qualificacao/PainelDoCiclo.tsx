@@ -163,6 +163,8 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         <Card label="Em análise" value={k.in_review} />
         <Card label="Aguardando reanálise" value={k.awaiting_provider} />
         <Card label="Média geral" value={`${k.avg_score.toFixed(1)}%`} />
+        <Card label="Tempo médio de análise" value={k.avg_analysis_days == null ? '—' : `${k.avg_analysis_days} d`}
+          sub="do envio ao parecer" />
         <Card label="Segurança < 60%" value={k.low_security_count}
           valueClass={k.low_security_count > 0 ? 'text-red-600' : undefined} />
 
@@ -195,6 +197,21 @@ export default function PainelDoCiclo({ user }: { user: any }) {
           );
         })()}
         </div>
+
+        {/* Distribuição por grupo de prestador (spec 2026-09-15 — dado já vinha no payload). */}
+        {(k.group_distribution || []).length > 0 && (
+          <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm md:col-span-2 lg:col-span-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Locais por grupo de prestador</p>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
+              {k.group_distribution.map((g: any) => (
+                <span key={g.group} className="inline-flex items-baseline gap-1.5 text-sm text-gray-600">
+                  <span className="font-bold text-secondary-900">{g.count}</span>
+                  <span className="truncate" title={g.group}>{g.group}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

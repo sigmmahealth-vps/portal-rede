@@ -309,6 +309,51 @@ export default function GestorDashboard({ user }: { user: any }) {
               </div>
             </div>
           </div>
+
+          {/* Ranking + evolução (spec 2026-09-15: números por ator — já vinham no payload) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Top 10 — maiores notas</h3>
+              {(data.ranking || []).length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhuma avaliação concluída.</p>
+              ) : (
+                <ol className="space-y-2">
+                  {(data.ranking || []).map((r: any, idx: number) => (
+                    <li key={`${r.provider}-${idx}`} className="flex items-center gap-3">
+                      <span className="w-6 shrink-0 text-right text-sm font-bold tabular-nums text-gray-400">{idx + 1}º</span>
+                      {SEAL_IMG[r.seal]
+                        ? <img src={SEAL_IMG[r.seal]} alt={r.seal} title={r.seal} className="h-5 w-5 shrink-0 object-contain" />
+                        : <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: SEAL_COLORS[r.seal] || '#CBD5E1' }} />}
+                      <span className="min-w-0 flex-1 truncate text-sm text-gray-700" title={[r.provider, r.location_label].filter(Boolean).join(' · ')}>
+                        {r.provider}
+                        {r.location_label && <span className="text-xs text-gray-400"> · {r.location_label}</span>}
+                      </span>
+                      <span className="shrink-0 text-sm font-bold tabular-nums text-gray-900">{r.score}%</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Evolução do score médio</h3>
+              {(data.evolution || []).length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhum parecer emitido ainda.</p>
+              ) : (
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.evolution || []} margin={{ top: 10, right: 24, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                      <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} width={32} />
+                      <Tooltip cursor={{ fill: '#F3F4F6' }} formatter={(v: any) => [`${v}%`, 'Score médio']} />
+                      <Bar dataKey="media" fill="#2B5288" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </div>
         </>
       ) : (
         <div className="flex justify-center py-20">

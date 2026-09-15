@@ -3,7 +3,9 @@ export interface PasswordValidation {
   errors: string[];
 }
 
-const MIN_LENGTH = 10;
+// 8 por pedido da Unimed (homologação 09/2026): unificar com as senhas dos
+// demais sistemas deles. A complexidade (Aa/dígito/símbolo) continua exigida.
+const MIN_LENGTH = 8;
 const HAS_UPPER = /\p{Lu}/u;
 const HAS_LOWER = /\p{Ll}/u;
 const HAS_DIGIT = /\d/;

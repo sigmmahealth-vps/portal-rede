@@ -2,16 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validatePassword } from './passwordPolicy.js';
 
-test('senha forte válida (>=10 chars + Aa + 1 + símbolo)', () => {
-  const r = validatePassword('Unimed2026!');
+test('senha forte válida (>=8 chars + Aa + 1 + símbolo)', () => {
+  const r = validatePassword('Unimed26!');
   assert.equal(r.ok, true);
   assert.deepEqual(r.errors, []);
 });
 
-test('senha curta (< 10 chars)', () => {
+test('senha com exatamente 8 chars passa (pedido Unimed: unificar senhas)', () => {
+  const r = validatePassword('Unimd26!');
+  assert.equal(r.ok, true);
+});
+
+test('senha curta (< 8 chars)', () => {
   const r = validatePassword('Abc1!xx');
   assert.equal(r.ok, false);
-  assert.ok(r.errors.some(e => e.includes('10')));
+  assert.ok(r.errors.some(e => e.includes('8')));
 });
 
 test('senha sem maiúscula', () => {

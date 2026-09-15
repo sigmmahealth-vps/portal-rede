@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { fmtPct } from '../../lib/formatDate';
-import { Search, Download, Eye, Undo2, Award, AlertTriangle } from 'lucide-react';
+import { Search, Download, Eye, Undo2, Award, AlertTriangle, UserPlus, X } from 'lucide-react';
 import AuditorPlayer from './AuditorPlayer';
 import { statusLabel } from '../../lib/statusLabels';
 
@@ -55,6 +55,8 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [lowSecOnly, setLowSecOnly] = useState(false);
   const [evaluating, setEvaluating] = useState<any>(null);
+  const [inclusaoOpen, setInclusaoOpen] = useState(false);
+  const [candidateCount, setCandidateCount] = useState<number | null>(null);
 
   useEffect(() => { (async () => {
     const cs = await fetchApi('/eval/cycles');
@@ -63,14 +65,26 @@ export default function PainelDoCiclo({ user }: { user: any }) {
     if (active) setCycleId(active.id);
   })(); }, []);
 
+  const cycleIsActive = cycles.find((c: any) => c.id === cycleId)?.active === true;
+
+  const reloadPanel = async () => {
+    if (cycleId == null) return;
+    setData(await fetchApi(`/eval/dashboard/auditor?cycle_id=${cycleId}`));
+    if (cycleIsActive) {
+      const { rows } = await fetchApi(`/eval/cycles/${cycleId}/inclusion-candidates`);
+      setCandidateCount(rows.length);
+    }
+  };
+
   useEffect(() => {
     if (cycleId == null) return;
     (async () => {
       setLoading(true);
-      try { setData(await fetchApi(`/eval/dashboard/auditor?cycle_id=${cycleId}`)); }
+      setCandidateCount(null);
+      try { await reloadPanel(); }
       finally { setLoading(false); }
     })();
-  }, [cycleId]);
+  }, [cycleId, cycles]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -128,6 +142,18 @@ export default function PainelDoCiclo({ user }: { user: any }) {
           >
             <Download className="w-4 h-4" /> Exportar .xlsx
           </a>
+          {cycleIsActive && candidateCount != null && (
+            <button
+              onClick={() => setInclusaoOpen(true)}
+              title="Prestadores/unidades que entraram no cadastro depois da abertura do ciclo"
+              className="btn btn-outline flex items-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" /> Incluir no ciclo
+              {candidateCount > 0 && (
+                <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">{candidateCount}</span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -313,6 +339,145 @@ export default function PainelDoCiclo({ user }: { user: any }) {
           }}
         />
       )}
+
+      {inclusaoOpen && cycleId != null && (
+        <InclusaoAvulsaModal
+          cycleId={cycleId}
+          isAdmin={user?.role === 'admin'}
+          onClose={async () => { setInclusaoOpen(false); await reloadPanel(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Modal da inclusão avulsa (spec 2026-09-15): fila "Aguardando inclusão" (pares sem
+// instância no ciclo) + lista "Incluídos". Roteiro vem resolvido pela cascata no
+// backend; "pendente de roteiro" exige escolha manual. Só admin inclui.
+function InclusaoAvulsaModal({ cycleId, isAdmin, onClose }: { cycleId: number; isAdmin: boolean; onClose: () => void }) {
+  const [candidates, setCandidates] = useState<any[] | null>(null);
+  const [inclusions, setInclusions] = useState<any[]>([]);
+  const [scripts, setScripts] = useState<any[]>([]);
+  const [formFor, setFormFor] = useState<string | null>(null); // `${provider_id}:${location_id}`
+  const [reason, setReason] = useState('');
+  const [manualScript, setManualScript] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    const [cand, incl] = await Promise.all([
+      fetchApi(`/eval/cycles/${cycleId}/inclusion-candidates`),
+      fetchApi(`/eval/cycles/${cycleId}/inclusions`),
+    ]);
+    setCandidates(cand.rows);
+    setInclusions(incl.rows);
+    if (cand.rows.some((r: any) => r.resolved_script_id == null) && !scripts.length) {
+      const all = await fetchApi('/eval/scripts');
+      setScripts((all as any[]).filter((s) => s.is_current !== false));
+    }
+  };
+  useEffect(() => { load().catch((e) => setError(e.message)); }, [cycleId]);
+
+  const incluir = async (c: any) => {
+    setSaving(true); setError('');
+    try {
+      await fetchApi(`/eval/cycles/${cycleId}/inclusions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          provider_id: c.provider_id, location_id: c.location_id, reason: reason.trim(),
+          ...(c.resolved_script_id == null && manualScript ? { script_id: Number(manualScript) } : {}),
+        }),
+      });
+      setFormFor(null); setReason(''); setManualScript('');
+      await load();
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-gray-100 p-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Incluir no ciclo</h2>
+            <p className="text-sm text-gray-500">Prestadores/unidades que entraram no cadastro após a abertura.</p>
+          </div>
+          <button onClick={onClose} className="rounded p-1.5 text-gray-400 hover:bg-gray-100" aria-label="Fechar"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="flex-1 space-y-6 overflow-y-auto p-4">
+          {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          {candidates == null ? (
+            <p className="text-center text-sm text-gray-500">Carregando…</p>
+          ) : (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Aguardando inclusão ({candidates.length})</h3>
+              {candidates.length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhum prestador/unidade fora do ciclo.</p>
+              ) : candidates.map((c) => {
+                const key = `${c.provider_id}:${c.location_id}`;
+                const pendente = c.resolved_script_id == null;
+                return (
+                  <div key={key} className="border-b border-gray-50 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900">{c.provider_name}</p>
+                        <p className="truncate text-xs text-gray-500">
+                          {[c.provider_code, c.location_label, c.city].filter(Boolean).join(' · ')}
+                        </p>
+                        {pendente ? (
+                          <span className="mt-0.5 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Pendente de roteiro</span>
+                        ) : (
+                          <p className="text-xs text-gray-500">Roteiro: <span className="font-medium text-gray-700">{c.resolved_script_title}</span></p>
+                        )}
+                      </div>
+                      {isAdmin && formFor !== key && (
+                        <button onClick={() => { setFormFor(key); setReason(''); setManualScript(''); }}
+                          className="rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                          Incluir
+                        </button>
+                      )}
+                    </div>
+                    {formFor === key && (
+                      <div className="mt-2 space-y-2 rounded-lg bg-gray-50 p-3">
+                        {pendente && (
+                          <select value={manualScript} onChange={(e) => setManualScript(e.target.value)}
+                            className="w-full rounded-lg border-gray-200 text-sm">
+                            <option value="">Escolha o roteiro…</option>
+                            {scripts.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+                          </select>
+                        )}
+                        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+                          placeholder="Motivo da inclusão (obrigatório) — ex.: credenciamento em 10/09"
+                          className="w-full rounded-lg border-gray-200 text-sm" />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setFormFor(null)} className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
+                          <button onClick={() => incluir(c)} disabled={saving || !reason.trim() || (pendente && !manualScript)}
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                            {saving ? 'Incluindo…' : 'Confirmar inclusão'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+          )}
+          {inclusions.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">Incluídos neste ciclo ({inclusions.length})</h3>
+              {inclusions.map((i) => (
+                <div key={i.id} className="border-b border-gray-50 py-2 text-sm">
+                  <p className="font-medium text-gray-900">{i.provider_name} <span className="font-normal text-gray-500">· {i.location_label}</span></p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(i.created_at).toLocaleDateString('pt-BR')} · {i.created_by_name || 'sistema'} · {i.script_title || '—'} — “{i.reason}”
+                  </p>
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

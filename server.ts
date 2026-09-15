@@ -4875,6 +4875,174 @@ async function startServer() {
     }
   });
 
+  // === Inclusão avulsa no ciclo aberto (spec 2026-09-15) — espelho das exclusões ===
+  // Fila derivada: pares prestador×unidade comercial no guia médico SEM instância no
+  // ciclo e não excluídos, com roteiro resolvido pela cascata override → grupo do
+  // ciclo → match da carga (providers.eval_script_id). NULL = "pendente de roteiro".
+  app.get('/api/eval/cycles/:id/inclusion-candidates', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const cycleId = Number(req.params.id);
+      const { rows } = await query(`
+        SELECT p.id AS provider_id, p.name AS provider_name, p.sgu_code AS provider_code,
+               p.provider_group,
+               pl.id AS location_id,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
+               pl.cidade AS city,
+               COALESCE(ov.script_id, ecg.script_id, p.eval_script_id) AS resolved_script_id,
+               s.title AS resolved_script_title
+          FROM provider_locations pl
+          JOIN providers p ON p.id = pl.provider_id
+          LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
+          LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
+          LEFT JOIN eval_scripts s ON s.id = COALESCE(ov.script_id, ecg.script_id, p.eval_script_id)
+         WHERE pl.in_medical_guide = true
+           AND NOT EXISTS (SELECT 1 FROM eval_instances ei
+                            WHERE ei.cycle_id = $1 AND ei.provider_id = p.id AND ei.location_id = pl.id)
+           AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x
+                            WHERE x.cycle_id = $1 AND x.provider_id = p.id AND x.location_id = pl.id)
+         ORDER BY p.name, pl.id
+      `, [cycleId]);
+      res.json({ rows });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Atos de inclusão do ciclo (lista "Incluídos").
+  app.get('/api/eval/cycles/:id/inclusions', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const { rows } = await query(`
+        SELECT i.id, i.provider_id, i.location_id, i.instance_id, i.reason, i.created_at,
+               p.name AS provider_name, p.sgu_code AS provider_code,
+               COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
+               u.name AS created_by_name,
+               s.title AS script_title
+          FROM eval_cycle_inclusions i
+          JOIN providers p ON p.id = i.provider_id
+          JOIN provider_locations pl ON pl.id = i.location_id
+          LEFT JOIN users u ON u.id = i.created_by
+          LEFT JOIN eval_instances ei ON ei.id = i.instance_id
+          LEFT JOIN eval_scripts s ON s.id = ei.script_id
+         WHERE i.cycle_id = $1
+         ORDER BY i.created_at DESC
+      `, [Number(req.params.id)]);
+      res.json({ rows });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Inclui um prestador×local num ciclo JÁ ABERTO: cria a instância com o roteiro da
+  // cascata (body.script_id só cobre o caso "pendente de roteiro"), roda o DL bypass
+  // e registra o ato com motivo. Só admin (proposta da spec; auditoria só visualiza).
+  app.post('/api/eval/cycles/:id/inclusions', authenticate, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') return res.status(403).json({ error: 'Apenas administradores.' });
+      const cycleId = Number(req.params.id);
+      const providerId = Number(req.body?.provider_id);
+      const locationId = Number(req.body?.location_id);
+      const reason = String(req.body?.reason ?? '').trim();
+      if (!Number.isFinite(providerId) || !Number.isFinite(locationId) || !reason) {
+        return res.status(400).json({ error: 'provider_id, location_id e reason são obrigatórios' });
+      }
+      const { rows: cy } = await query('SELECT id, label, active, end_date FROM eval_cycles WHERE id = $1', [cycleId]);
+      if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      if (!cy[0].active) return res.status(400).json({ error: 'ciclo não está ativo' });
+      const { rows: opened } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [cycleId]);
+      if (!opened.length) return res.status(409).json({ error: 'ciclo ainda não foi aberto — inclua pela abertura' });
+
+      const { rows: pair } = await query(`
+        SELECT pl.in_medical_guide,
+               COALESCE(ov.script_id, ecg.script_id, p.eval_script_id) AS resolved_script_id,
+               EXISTS (SELECT 1 FROM eval_instances ei
+                        WHERE ei.cycle_id = $1 AND ei.provider_id = p.id AND ei.location_id = pl.id) AS has_instance,
+               EXISTS (SELECT 1 FROM eval_cycle_exclusions x
+                        WHERE x.cycle_id = $1 AND x.provider_id = p.id AND x.location_id = pl.id) AS is_excluded
+          FROM provider_locations pl
+          JOIN providers p ON p.id = pl.provider_id
+          LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
+          LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
+         WHERE p.id = $2 AND pl.id = $3
+      `, [cycleId, providerId, locationId]);
+      if (!pair.length) return res.status(404).json({ error: 'prestador/unidade não encontrado' });
+      if (!pair[0].in_medical_guide) return res.status(400).json({ error: 'unidade fora do guia médico' });
+      if (pair[0].has_instance) return res.status(409).json({ error: 'par já tem avaliação neste ciclo' });
+      if (pair[0].is_excluded) return res.status(409).json({ error: 'par foi excluído na abertura do ciclo' });
+
+      // Cascata: override → grupo do ciclo → match da carga → script_id manual do body.
+      let scriptId = pair[0].resolved_script_id != null ? Number(pair[0].resolved_script_id) : null;
+      if (scriptId == null && req.body?.script_id) {
+        const manual = Number(req.body.script_id);
+        const inactive = await findInactiveScriptIds([manual]);
+        if (inactive.length) return res.status(409).json({ error: `Roteiro não vigente: ${manual}` });
+        scriptId = manual;
+      }
+      if (scriptId == null) {
+        return res.status(422).json({ error: 'sem roteiro resolvido — informe script_id' });
+      }
+
+      const result = await withTransaction(async (c) => {
+        const { rows: inst } = await c.query(
+          `INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id, started_at)
+           VALUES ($1, $2, $3, 'pendente', $4, now()) RETURNING id`,
+          [scriptId, providerId, locationId, cycleId]);
+        const instanceId = Number(inst[0].id);
+
+        // DL bypass — mesma regra da abertura, restrita à instância criada.
+        const { rows: bypass } = await c.query(`
+          INSERT INTO eval_answers (instance_id, question_id, answer_value, score_obtained,
+                                    evidence_url, evidence_status, auditor_observation, is_non_compliant)
+          SELECT ei.id, eq.id, 'sim', eq.max_score, d.file_url, 'aprovado',
+                 'Aprovado via cadastro (DL bypass)', false
+            FROM eval_instances ei
+            JOIN eval_sections sc ON sc.script_id = ei.script_id
+            JOIN eval_questions eq ON eq.section_id = sc.id AND eq.document_type IS NOT NULL
+            JOIN LATERAL (
+              SELECT file_url FROM documents
+               WHERE provider_id = ei.provider_id AND type = eq.document_type
+                 AND status = 'valido'
+                 AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+               ORDER BY issue_date DESC NULLS LAST LIMIT 1
+            ) d ON true
+           WHERE ei.id = $1
+          RETURNING id, score_obtained, evidence_url
+        `, [instanceId]);
+        for (const a of bypass) {
+          await c.query(
+            `INSERT INTO eval_answer_iterations
+             (answer_id, iteration_number, actor_id, actor_role, action, answer_value, score_obtained, evidence_url, observation)
+             VALUES ($1, 1, NULL, 'auditor', 'aprovou', 'sim', $2, $3, 'Aprovado via cadastro (DL bypass)')`,
+            [a.id, a.score_obtained, a.evidence_url]);
+        }
+
+        const { rows: incl } = await c.query(
+          `INSERT INTO eval_cycle_inclusions (cycle_id, provider_id, location_id, instance_id, reason, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [cycleId, providerId, locationId, instanceId, reason, req.user.id]);
+        return { instanceId, inclusionId: Number(incl[0].id), dlBypass: bypass.length };
+      });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'cycle_inclusion_added',
+        meta: { cycle_id: cycleId, provider_id: providerId, location_id: locationId, instance_id: result.instanceId, reason },
+        ip: hashClientIp(req),
+      });
+      void (async () => {
+        await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label, end_date: cy[0].end_date },
+          await prestadorRecipients(providerId, locationId), { providerId });
+      })().catch((e) => console.error('[notify] inclusão avulsa:', e));
+
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Executa a abertura de um ciclo (mesma lógica do endpoint /abrir). Retorna
   // { ok, code, error?, created? } — reutilizada tanto pelo POST manual quanto pelo
   // job automático (5.4.1.1 abertura em data definida).

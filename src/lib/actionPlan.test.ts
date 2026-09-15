@@ -8,25 +8,25 @@ import {
 
 const D = (s: string) => new Date(s + 'T12:00:00Z');
 
-test('computeWindows: 3 janelas a +90/+180/+270 dias da criação', () => {
+test('computeWindows: 3 janelas a +30/+60/+90 dias da criação', () => {
   const w = computeWindows(D('2026-10-15'));
   assert.equal(w.length, 3);
-  assert.equal(w[0].toISOString().slice(0, 10), '2027-01-13');
-  assert.equal(w[1].toISOString().slice(0, 10), '2027-04-13');
-  assert.equal(w[2].toISOString().slice(0, 10), '2027-07-12');
+  assert.equal(w[0].toISOString().slice(0, 10), '2026-11-14');
+  assert.equal(w[1].toISOString().slice(0, 10), '2026-12-14');
+  assert.equal(w[2].toISOString().slice(0, 10), '2027-01-13');
 });
 
-test('computeWindows: próximo ciclo além de 9 meses não altera as janelas', () => {
+test('computeWindows: próximo ciclo além de 3 meses não altera as janelas', () => {
   const w = computeWindows(D('2026-10-15'), D('2028-01-01'));
-  assert.equal(w[2].toISOString().slice(0, 10), '2027-07-12');
+  assert.equal(w[2].toISOString().slice(0, 10), '2027-01-13');
 });
 
-test('computeWindows: próximo ciclo mais perto que 9 meses distribui por igual até o início dele', () => {
+test('computeWindows: próximo ciclo mais perto que 3 meses distribui por igual até o início dele', () => {
   const created = D('2026-10-15');
-  const next = D('2027-01-14'); // 91 dias depois
+  const next = D('2026-12-15'); // 61 dias depois
   const w = computeWindows(created, next);
   assert.ok(w[0] < w[1] && w[1] < w[2], '3 janelas distintas e crescentes');
-  assert.equal(w[2].toISOString().slice(0, 10), '2027-01-14'); // 3ª = início do próximo ciclo
+  assert.equal(w[2].toISOString().slice(0, 10), '2026-12-15'); // 3ª = início do próximo ciclo
 });
 
 test('computePlanStatus: plano sem interação e sem itens ativos = aberto', () => {
@@ -64,7 +64,7 @@ test('computePlanStatus: prazo expirado com item aberto = atrasado', () => {
 
 test(`computePlanStatus: a menos de ${DUE_SOON_DAYS} dias do prazo = a_vencer`, () => {
   const s = computePlanStatus({
-    items: [{ status: 'em_andamento', due_date: '2026-11-10' }],
+    items: [{ status: 'em_andamento', due_date: '2026-11-05' }],
     hasProviderInteraction: true,
     closedWithoutCompletion: false,
     now: D('2026-11-01'),

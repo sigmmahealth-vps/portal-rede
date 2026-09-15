@@ -153,7 +153,7 @@ export default function PlanoDetail({ planId, onClose }: { planId: number; onClo
   );
 }
 
-// --- Timeline das 3 janelas trimestrais --------------------------------------
+// --- Timeline das 3 janelas mensais (30/60/90) --------------------------------
 
 function WindowsTimeline({ windows }: { windows: string[] }) {
   if (!windows.length) return null;
@@ -429,7 +429,7 @@ function FiveW2HFields({ form, setForm }: any) {
             type="date" value={form.due_date} onChange={e => setField('due_date', e.target.value)}
             className="w-full rounded-lg border border-gray-300 p-2 text-sm text-secondary-900"
           />
-          <p className="mt-0.5 text-[11px] text-gray-400">Se em branco, sugerido automaticamente para +90 dias do início.</p>
+          <p className="mt-0.5 text-[11px] text-gray-400">Se em branco, sugerido automaticamente para +30 dias do início.</p>
         </div>
       </div>
       <div>

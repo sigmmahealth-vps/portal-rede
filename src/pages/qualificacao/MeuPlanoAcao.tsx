@@ -37,7 +37,7 @@ function Spinner() {
   );
 }
 
-// --- Timeline das 3 janelas trimestrais (copiado de PlanoDetail) ------------
+// --- Timeline das 3 janelas mensais 30/60/90 (copiado de PlanoDetail) -------
 
 function WindowsTimeline({ windows }: any) {
   if (!windows?.length) return null;

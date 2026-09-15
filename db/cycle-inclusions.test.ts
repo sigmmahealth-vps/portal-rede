@@ -39,7 +39,8 @@ test('inclusion-candidates: fila derivada + cascata de roteiro', async () => {
   const ids: { cycle?: number; script?: number; provs: number[] } = { provs: [] };
   try {
     const { rows: [sc] } = await query(
-      `INSERT INTO eval_scripts (title) VALUES ('_TEST_ROTEIRO_INC_') RETURNING id`);
+      `INSERT INTO eval_scripts (title, revisao_date, implantacao_date)
+       VALUES ('_TEST_ROTEIRO_INC_', CURRENT_DATE, CURRENT_DATE) RETURNING id`);
     ids.script = Number(sc.id);
     const { rows: [cy] } = await query(
       `INSERT INTO eval_cycles (label, start_date, end_date, active, cert_valid_until)

@@ -738,12 +738,6 @@ export default function RoteiroPlayer({
                                 {q.dimension}
                               </span>
                             )}
-                            {/* ponytail: badge DL acende quando o parser passar a emitir type='DL' (adiado). */}
-                            {q.type === 'DL' && (
-                              <span className="rounded border border-secondary-200 bg-secondary-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary-700">
-                                DL — Documentação Legal
-                              </span>
-                            )}
                             {q.is_eliminatory && (
                               <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-700">
                                 Eliminatório

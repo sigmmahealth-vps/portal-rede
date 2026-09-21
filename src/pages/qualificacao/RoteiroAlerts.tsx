@@ -8,6 +8,7 @@ interface AlertItem {
 interface Alerts {
   semEvidencia: AlertItem[];
   semPeso: AlertItem[];
+  semEliminatorio?: boolean;
 }
 
 export default function RoteiroAlerts({ alerts }: { alerts?: Alerts }) {
@@ -15,7 +16,8 @@ export default function RoteiroAlerts({ alerts }: { alerts?: Alerts }) {
   const panelId = useId();
   const semEvidencia = alerts?.semEvidencia ?? [];
   const semPeso = alerts?.semPeso ?? [];
-  const total = semEvidencia.length + semPeso.length;
+  const semEliminatorio = !!alerts?.semEliminatorio;
+  const total = semEvidencia.length + semPeso.length + (semEliminatorio ? 1 : 0);
   if (total === 0) return null;
 
   return (
@@ -34,6 +36,11 @@ export default function RoteiroAlerts({ alerts }: { alerts?: Alerts }) {
 
       {open && (
         <div id={panelId} className="mt-2 space-y-3 bg-amber-50/60 border border-amber-100 rounded-lg p-3">
+          {semEliminatorio && (
+            <p className="text-xs font-semibold text-amber-800">
+              Sem critérios eliminatórios — o selo deste roteiro depende só da nota.
+            </p>
+          )}
           {semEvidencia.length > 0 && (
             <AlertGroup title={`Sem evidência (${semEvidencia.length})`} items={semEvidencia} />
           )}

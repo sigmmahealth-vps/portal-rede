@@ -18,13 +18,18 @@ interface PreviewResult {
     noEvidence: number;
     noHeader: boolean;
   };
+  eliminatory?: {
+    hasPrevious: boolean;
+    inherited: number;
+    lost: { code: string | null; text: string }[];
+  };
   errors: string[];
   blocked: boolean;
 }
 
 interface Props {
   onClose: () => void;
-  onImported: () => void;
+  onImported: (scriptId?: number) => void;
 }
 
 type Stage = 'select' | 'review';
@@ -66,8 +71,8 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
     try {
       const form = new FormData();
       form.append('file', file);
-      await fetchApi('/eval/scripts/import', { method: 'POST', body: form });
-      onImported();
+      const data = await fetchApi('/eval/scripts/import', { method: 'POST', body: form });
+      onImported(data?.id != null ? Number(data.id) : undefined);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Falha ao importar o roteiro.');
@@ -136,6 +141,37 @@ export default function ImportRoteiroModal({ onClose, onImported }: Props) {
                   ))}
                 </div>
               </div>
+
+              {preview.eliminatory && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1">
+                  <p className="font-medium text-gray-800">Critérios eliminatórios</p>
+                  {preview.eliminatory.hasPrevious ? (
+                    <p className="text-gray-600">
+                      {preview.eliminatory.inherited} marcação(ões) herdada(s) da revisão vigente. Você poderá revisar na próxima tela.
+                    </p>
+                  ) : (
+                    <p className="text-gray-600">
+                      Roteiro novo: nenhum critério nasce eliminatório. Você escolherá os eliminatórios na próxima tela.
+                    </p>
+                  )}
+                  {preview.eliminatory.lost.length > 0 && (
+                    <div className="text-amber-800">
+                      <p className="font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-4 h-4" /> Revisar: {preview.eliminatory.lost.length} marcação(ões) não transportada(s)
+                      </p>
+                      <p className="text-xs">Critério removido, com texto alterado ou ambíguo na revisão vigente:</p>
+                      <ul className="mt-1 space-y-0.5 text-xs">
+                        {preview.eliminatory.lost.map((l, i) => (
+                          <li key={`${l.code ?? '-'}-${i}`} className="flex gap-1.5">
+                            {l.code && <span className="font-mono flex-shrink-0">{l.code}</span>}
+                            <span>{l.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {preview.errors && preview.errors.length > 0 && (
                 <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm space-y-1">

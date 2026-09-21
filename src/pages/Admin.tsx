@@ -1272,7 +1272,7 @@ export default function Admin() {
       {showImportModal && (
         <ImportRoteiroModal
           onClose={() => setShowImportModal(false)}
-          onImported={loadData}
+          onImported={(scriptId) => { loadData(); if (scriptId) setEliminatoriosTarget(scriptId); }}
         />
       )}
 

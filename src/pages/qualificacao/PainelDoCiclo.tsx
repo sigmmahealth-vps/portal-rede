@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import SemCiclo from './SemCiclo';
 import { fmtPct } from '../../lib/formatDate';
 import { Search, Download, Eye, Undo2, Award, AlertTriangle, UserPlus, X } from 'lucide-react';
 import AuditorPlayer from './AuditorPlayer';
@@ -63,6 +64,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
     setCycles(cs);
     const active = cs.find((c: any) => c.active) || cs[0];
     if (active) setCycleId(active.id);
+    else setLoading(false); // sem nenhum ciclo: o efeito de carga não roda, então o loading termina aqui
   })(); }, []);
 
   const cycleIsActive = cycles.find((c: any) => c.id === cycleId)?.active === true;
@@ -109,6 +111,8 @@ export default function PainelDoCiclo({ user }: { user: any }) {
     await fetchApi(`/eval/instances/${inst.id}/reopen`, { method: 'POST' });
     setData(await fetchApi(`/eval/dashboard/auditor?cycle_id=${cycleId}`));
   };
+
+  if (!loading && cycleId == null) return <SemCiclo />;
 
   if (loading || !data) {
     return <div className="p-8 text-center text-gray-500">Carregando painel...</div>;

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import SemCiclo from './SemCiclo';
 import { fmtData } from '../../lib/formatDate';
 import { Search, Plus, Filter, Calendar, ArrowUpCircle, MapPin } from 'lucide-react';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
@@ -51,6 +52,7 @@ export default function PlanosBoard() {
     setCycles(cs);
     const active = cs.find((c: any) => c.active) || cs[0];
     if (active) setCycleId(active.id);
+    else setLoading(false); // sem nenhum ciclo: o efeito de carga não roda, então o loading termina aqui
   })(); }, []);
 
   const loadPlans = async (id: number) => {
@@ -166,6 +168,8 @@ export default function PlanosBoard() {
       setSaving(false);
     }
   };
+
+  if (!loading && cycleId == null) return <SemCiclo />;
 
   if (loading && plans.length === 0) {
     return <div className="p-8 text-center text-gray-500">Carregando planos de ação...</div>;

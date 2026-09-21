@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
+import SemCiclo from './SemCiclo';
 import { fmtData } from '../../lib/formatDate';
 import { computeSurveyStats, SurveyRow } from '../../lib/surveyStats';
 import { Loader2, MessageSquare, Search, Download } from 'lucide-react';
@@ -124,6 +125,7 @@ export default function PesquisaDashboard({ user }: { user: any }) {
     setCycles(cs);
     const active = cs.find((c: any) => c.active) || cs[0];
     if (active) setCycleId(active.id);
+    else setLoading(false); // sem nenhum ciclo: o efeito de carga não roda, então o loading termina aqui
   })(); }, []);
 
   useEffect(() => {
@@ -190,14 +192,18 @@ export default function PesquisaDashboard({ user }: { user: any }) {
           <h1 className="text-2xl font-bold text-gray-900">Pesquisa de Satisfação</h1>
           <p className="text-sm text-gray-500">Indicadores da rede credenciada por ciclo</p>
         </div>
-        <select className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-          value={cycleId ?? ''} onChange={e => setCycleId(Number(e.target.value))}>
-          {cycles.map((c: any) => <option key={c.id} value={c.id}>{c.label}{c.active ? ' (ativo)' : ''}</option>)}
-        </select>
+        {cycles.length > 0 && (
+          <select className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+            value={cycleId ?? ''} onChange={e => setCycleId(Number(e.target.value))}>
+            {cycles.map((c: any) => <option key={c.id} value={c.id}>{c.label}{c.active ? ' (ativo)' : ''}</option>)}
+          </select>
+        )}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-emerald-600" /></div>
+      ) : cycleId == null ? (
+        <SemCiclo />
       ) : (summary?.enviados ?? 0) === 0 ? (
         <p className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-500">Nenhum roteiro enviado neste ciclo.</p>
       ) : (

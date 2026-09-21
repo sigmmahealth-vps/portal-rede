@@ -21,7 +21,7 @@ export interface DashboardInstance {
   has_survey_response?: boolean;
   survey_state?: 'aguardando' | 'finalizada' | null;
   // Item 18 (homologação 09/2026): plano de outro ciclo ainda aberto p/ o par;
-  // com item de Documento Legal pendente (prev_plan_dl) o selo trava em Bronze.
+  // com item de critério eliminatório pendente (prev_plan_dl) o selo trava em Bronze.
   prev_plan_pending?: boolean;
   prev_plan_dl?: boolean;
 }

@@ -5650,19 +5650,21 @@ async function startServer() {
 
   // Plano de ação de OUTRO ciclo (anterior/avulso) ainda aberto para o par
   // prestador×local: aberto = não encerrado sem conclusão e com item não concluído.
-  // has_dl marca item de Documento Legal (inclui docs sanitários) — item 18 da
-  // homologação 09/2026: com DL pendente, o selo do ciclo seguinte trava em Bronze.
+  // has_elim marca item de critério ELIMINATÓRIO (marcação atual do roteiro; sem
+  // answer_id cai em Documento Legal) — item 18 da homologação 09/2026 + spec
+  // 2026-09-21: com eliminatório pendente, o selo do ciclo seguinte trava em Bronze.
   async function pendingPrevPlan(providerId: number, locationId: number | null, cycleId: number | null) {
     const { rows: [r] } = await query(`
-      SELECT BOOL_OR(it.dimension = 'Documento Legal') AS has_dl
+      SELECT BOOL_OR(${PLAN_ITEM_ELIMINATORY_SQL}) AS has_elim
         FROM eval_action_plans ap
         JOIN eval_action_items it ON it.plan_id = ap.id AND it.status <> 'concluida'
+        ${PLAN_ITEM_QUESTION_JOIN_SQL}
        WHERE ap.provider_id = $1
          AND (ap.location_id IS NULL OR ap.location_id = $2)
          AND ap.closed_without_completion = false
          AND ap.cycle_id IS DISTINCT FROM $3
     `, [providerId, locationId, cycleId]);
-    return { pending: r?.has_dl != null, hasDL: !!r?.has_dl };
+    return { pending: r?.has_elim != null, hasEliminatory: !!r?.has_elim };
   }
 
   // Critérios recorrentes: question_codes com item de plano de ciclos anteriores do mesmo prestador
@@ -5751,7 +5753,7 @@ async function startServer() {
       const prevPlan = await pendingPrevPlan(
         Number(inst.provider_id), inst.location_id != null ? Number(inst.location_id) : null,
         inst.cycle_id != null ? Number(inst.cycle_id) : null);
-      const seal = prevPlan.hasDL ? 'Bronze' : mem.seal;
+      const seal = prevPlan.hasEliminatory ? 'Bronze' : mem.seal;
 
       // ---- Plano de Ação 5W2H (spec 5.4.4.1): leituras puras ANTES do UPDATE —
       // status ainda é 'em_analise' aqui, seguro ler. O resultado (chosen/origin)
@@ -5944,8 +5946,9 @@ async function startServer() {
       const prevPlan = await pendingPrevPlan(
         Number(inst.provider_id), inst.location_id != null ? Number(inst.location_id) : null,
         inst.cycle_id != null ? Number(inst.cycle_id) : null);
-      if (prevPlan.hasDL && payload.seal !== 'Bronze') {
+      if (prevPlan.hasEliminatory && payload.seal !== 'Bronze') {
         payload.seal = 'Bronze';
+        // ponytail: o identificador guarda "dl" por contrato com o front; hoje significa "eliminatório".
         payload.seal_cap = 'plano_dl_ciclo_anterior';
       }
       if (CLOSED.includes(inst.status)) {
@@ -6777,7 +6780,7 @@ async function startServer() {
                ei.submitted_at,
                ei.completed_at,
                (esr.id IS NOT NULL) AS has_survey_response,
-               -- Item 18: plano de outro ciclo ainda aberto p/ o par (has_dl trava selo em Bronze).
+               -- Item 18: plano de outro ciclo ainda aberto p/ o par (has_dl = item eliminatório pendente → trava selo em Bronze).
                (prev_plan.has_dl IS NOT NULL) AS prev_plan_pending,
                COALESCE(prev_plan.has_dl, false) AS prev_plan_dl
           FROM eval_instances ei
@@ -6786,9 +6789,10 @@ async function startServer() {
           LEFT JOIN eval_certificates ec ON ec.instance_id = ei.id
           LEFT JOIN eval_survey_responses esr ON esr.instance_id = ei.id
           LEFT JOIN LATERAL (
-            SELECT BOOL_OR(it.dimension = 'Documento Legal') AS has_dl
+            SELECT BOOL_OR(${PLAN_ITEM_ELIMINATORY_SQL}) AS has_dl
               FROM eval_action_plans ap
               JOIN eval_action_items it ON it.plan_id = ap.id AND it.status <> 'concluida'
+              ${PLAN_ITEM_QUESTION_JOIN_SQL}
              WHERE ap.provider_id = ei.provider_id
                AND (ap.location_id IS NULL OR ap.location_id = ei.location_id)
                AND ap.closed_without_completion = false

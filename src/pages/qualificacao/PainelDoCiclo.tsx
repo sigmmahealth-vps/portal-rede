@@ -293,10 +293,10 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                       <span
                         className={`mt-1 block w-fit whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${i.prev_plan_dl ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}
                         title={i.prev_plan_dl
-                          ? 'Plano de ação de ciclo anterior com item de Documento Legal/sanitário pendente — o selo deste ciclo fica limitado a Bronze até a conclusão.'
+                          ? 'Plano de ação de ciclo anterior com critério eliminatório pendente — o selo deste ciclo fica limitado a Bronze até a conclusão.'
                           : 'Plano de ação de ciclo anterior ainda em aberto.'}
                       >
-                        {i.prev_plan_dl ? 'Plano DL pendente — selo máx. Bronze' : 'Plano pendente do ciclo anterior'}
+                        {i.prev_plan_dl ? 'Eliminatório pendente — selo máx. Bronze' : 'Plano pendente do ciclo anterior'}
                       </span>
                     )}
                   </td>

@@ -1,19 +1,21 @@
-// Zera o módulo de Qualificação do banco de DEV para recomeçar do zero: roteiros,
+// Zera o módulo de Qualificação do banco de DEV ou HOMOLOG para recomeçar do zero: roteiros,
 // ciclos, avaliações (selos), respostas, certificados, pesquisas, planos de ação,
 // evidências e TODAS as notificações. Mantém prestadores, endereços, usuários,
 // auth, settings, access_logs e as tabelas legadas qualification_* (decisão 21/09/2026).
 //
-// Só roda com APP_ENV=dev e só grava com --commit (dry-run por padrão). Antes de
+// Só roda com APP_ENV=dev|homolog, em host liberado pelo assertReloadHost (prod é
+// recusado), e só grava com --commit (dry-run por padrão). Antes de
 // apagar, salva um backup JSON das tabelas afetadas em backups/.
 // Depois de reimportar os roteiros, rode com --relink para religar
 // providers.eval_script_id pelo roteiro_cod (FOR-XXX).
 //
-// Uso: npm run db:reset-qualificacao [-- --commit]
+// Uso: [APP_ENV=homolog] npm run db:reset-qualificacao [-- --commit]
 //      npm run db:reset-qualificacao -- --relink [--commit]
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { query, pool, withTransaction } from './db.js';
+import { assertReloadHost } from './import-tabela.js';
 
 const COMMIT = process.argv.includes('--commit');
 const RELINK = process.argv.includes('--relink');
@@ -72,10 +74,13 @@ async function main() {
   const env = (process.env.APP_ENV || '').toLowerCase();
   const url = new URL(process.env[`DATABASE_URL_${env.toUpperCase()}`] || process.env.DATABASE_URL || '');
   console.log(`[reset-qualificacao] APP_ENV=${env || '(vazio)'} host=${url.hostname}:${url.port} ${RELINK ? 'RELINK ' : ''}${COMMIT ? 'COMMIT' : 'DRY-RUN'}`);
-  if (env !== 'dev') {
-    console.error('[reset-qualificacao] RECUSADO: este script só roda com APP_ENV=dev.');
+  // Exige APP_ENV explícito E a URL do próprio ambiente (sem cair no fallback
+  // DATABASE_URL, que aponta para produção); o host ainda passa pela trava compartilhada.
+  if (!(env === 'dev' || env === 'homolog') || !process.env[`DATABASE_URL_${env.toUpperCase()}`]) {
+    console.error('[reset-qualificacao] RECUSADO: só roda com APP_ENV=dev|homolog e DATABASE_URL_<ENV> definida.');
     process.exit(1);
   }
+  assertReloadHost(url.toString());
   if (RELINK) return relink();
 
   const antes = await counts(AFFECTED);
@@ -95,7 +100,7 @@ async function main() {
   // Backup JSON antes de apagar (pg_dump não existe nesta máquina).
   // ponytail: carrega cada tabela inteira em memória — ok para dezenas de milhares
   // de linhas; trocar por COPY/stream se a base de dev crescer muito.
-  const dir = path.resolve('backups', `reset-qualificacao-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  const dir = path.resolve('backups', `reset-qualificacao-${env}-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   fs.mkdirSync(dir, { recursive: true });
   for (const t of AFFECTED) {
     const { rows } = await query(`SELECT * FROM ${t}`);

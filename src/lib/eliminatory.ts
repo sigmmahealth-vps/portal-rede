@@ -12,7 +12,7 @@ export type CurrentCriterion = { id: number; code: string | null; is_eliminatory
  */
 export function criterionKey(c: CriterionRef): string {
   const text = c.text
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   return `${c.code ?? ''}|${text}`;
 }

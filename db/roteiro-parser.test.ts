@@ -73,7 +73,7 @@ test('num converte células numéricas corretamente', () => {
   assert.equal(num(null), null);
 });
 
-/** Planilha extra para testar weight-fallback e isEliminatory. */
+/** Planilha extra para testar weight-fallback e dimensão DL. */
 function buildBuffer2(): Buffer {
   const aoa = [
     ['ROTEIRO PARA AVALIAÇÃO DE QUALIFICAÇÃO', 'OPS-REDS Revisão: 01'],
@@ -82,11 +82,11 @@ function buildBuffer2(): Buffer {
     ['SEÇÃO 2. Contratos'],
     // weight-fallback: colCons (col 3) is empty → weight should equal maxScore (col 2 = 20)
     ['2.1.1 Critério sem peso à considerar', '', '20', ''],
-    // isEliminatory: text in col A contains "eliminatório"
+    // texto com "eliminatório": não deve marcar nada
     ['2.1.2 Critério eliminatório do processo', '', '10', '10'],
-    // normal: isEliminatory should be false
+    // critério comum
     ['2.1.3 Critério comum', '', '5', '5'],
-    // DL: Documento Legal é eliminatório (reprovação rebaixa a Bronze)
+    // DL: só define a dimensão
     ['2.1.4 Possui alvará sanitário? "DL"', '', '10', '10'],
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -103,21 +103,16 @@ test('parseWorkbook: weight cai para maxScore quando PESO À CONSIDERAR está va
   assert.equal(q.weight, 20); // fallback: weight === maxScore
 });
 
-test('parseWorkbook: isEliminatory detecta "eliminatório" e normal = false', () => {
-  const parsed = parseWorkbook(buildBuffer2(), 'OPS-RED-FOR-099 - Extra.xlsx');
-  const elim = parsed.questions.find((q) => q.code === '2.1.2');
-  const normal = parsed.questions.find((q) => q.code === '2.1.3');
-  assert.ok(elim && normal, 'ambas as questões devem existir');
-  assert.equal(elim.isEliminatory, true);
-  assert.equal(normal.isEliminatory, false);
-});
-
-test('parseWorkbook: critério DL (Documento Legal) é eliminatório', () => {
+// Spec 2026-09-21: eliminatório é marcação feita por admin/auditoria na tela —
+// o parser não decide mais (nem por DL, nem por "eliminatório" no texto).
+test('parseWorkbook: parser não emite isEliminatory (nem para DL, nem pelo texto)', () => {
   const parsed = parseWorkbook(buildBuffer2(), 'OPS-RED-FOR-099 - Extra.xlsx');
   const dl = parsed.questions.find((q) => q.code === '2.1.4');
-  assert.ok(dl, 'questão 2.1.4 deve existir');
+  const elimNoTexto = parsed.questions.find((q) => q.code === '2.1.2');
+  assert.ok(dl && elimNoTexto, 'ambas as questões devem existir');
   assert.equal(dl.dimension, 'Documento Legal');
-  assert.equal(dl.isEliminatory, true);
+  assert.equal('isEliminatory' in dl, false);
+  assert.equal('isEliminatory' in elimNoTexto, false);
 });
 
 test('parseWorkbook extrai a data da revisão quando presente', () => {

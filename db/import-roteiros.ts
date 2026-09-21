@@ -20,6 +20,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseWorkbook, effectiveRevision, type ParsedScript } from './roteiro-parser.js';
+import { inheritEliminatory } from '../src/lib/eliminatory.js';
 
 // ---------------------------------------------------------------------------
 // localização dos arquivos
@@ -39,6 +40,18 @@ function parseFile(file: string): ParsedScript {
 async function commitScript(parsed: ParsedScript): Promise<number> {
   const { withTransaction } = await import('./db.js');
   return withTransaction(async (client) => {
+    // Marcações de eliminatório são manuais (tela do Admin): captura ANTES do DELETE
+    // para a recarga não as perder.
+    // ponytail: se houver mais de uma versão do arquivo, mistura todas; marcações
+    // divergentes viram "não herda". Upgrade: ler só a versão vigente.
+    const { rows: prev } = await client.query(
+      `SELECT eq.code, eq.text, eq.is_eliminatory
+         FROM eval_questions eq
+         JOIN eval_sections es ON es.id = eq.section_id
+         JOIN eval_scripts s ON s.id = es.script_id
+        WHERE s.source_file = $1`, [parsed.sourceFile]);
+    const { flags, lost } = inheritEliminatory(prev as any, parsed.questions);
+    if (lost.length) console.warn(`  ! ${parsed.sourceFile}: ${lost.length} marcação(ões) de eliminatório não transportada(s): ${lost.map(l => l.code ?? '(sem código)').join(', ')}`);
     // idempotência: recarrega substituindo a versão anterior do mesmo arquivo
     await client.query('DELETE FROM eval_scripts WHERE source_file = $1', [parsed.sourceFile]);
     const { version, revisaoDate } = effectiveRevision(parsed);
@@ -63,7 +76,7 @@ async function commitScript(parsed: ParsedScript): Promise<number> {
       idByTmp.set(s.tmp, sr[0].id);
     }
 
-    for (const q of parsed.questions) {
+    for (const [i, q] of parsed.questions.entries()) {
       const sectionId = q.sectionTmp != null ? idByTmp.get(q.sectionTmp) ?? null : null;
       if (sectionId == null) continue; // critério sem seção: ignora (não deveria ocorrer)
       await client.query(
@@ -73,7 +86,7 @@ async function commitScript(parsed: ParsedScript): Promise<number> {
          VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
-          q.dimension, q.documentType, q.guidance, q.evidenceRequired, q.isEliminatory, q.order,
+          q.dimension, q.documentType, q.guidance, q.evidenceRequired, flags[i], q.order,
         ],
       );
     }

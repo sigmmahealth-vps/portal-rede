@@ -101,7 +101,6 @@ export interface QuestionNode {
   weight: number;
   maxScore: number;
   evidenceRequired: boolean;
-  isEliminatory: boolean;
   order: number;
 }
 /**
@@ -223,7 +222,7 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
     if (/^IDENTIFICA|^Operadora/i.test(a)) break;
   }
 
-  const addQuestion = (code: string | null, text: string, row: string[], a: string): void => {
+  const addQuestion = (code: string | null, text: string, row: string[]): void => {
     if (isPesquisaSatisfacao(text)) return; // fora do roteiro (coletada pelo módulo de Pesquisa)
     const sectionTmp = stack.length ? stack[stack.length - 1].tmp : null;
     const guidance = clean(row[h.colEvid]) || null;
@@ -246,9 +245,6 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
       weight,
       maxScore,
       evidenceRequired: !!guidance,
-      // Critérios DL (Documento Legal) são eliminatórios: reprovação rebaixa a Bronze
-      // independentemente da pontuação (ver computeSeal).
-      isEliminatory: dimension === 'Documento Legal' || /mandat[óo]ri|eliminat[óo]ri/i.test(a),
       order: nextOrder(orderBySection, sectionTmp),
     });
   };
@@ -267,7 +263,7 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
       continue;
     }
     if (mQuestion) {
-      addQuestion(mQuestion[1], mQuestion[2].trim(), row, a);
+      addQuestion(mQuestion[1], mQuestion[2].trim(), row);
       continue;
     }
     if (mSub) {
@@ -284,7 +280,7 @@ export function parseWorkbook(buffer: Buffer, sourceFile: string): ParsedScript 
       a.length > 8 &&
       !RE_DATAENTRY.test(a)
     ) {
-      addQuestion(null, a, row, a);
+      addQuestion(null, a, row);
       continue;
     }
     if (a.length > 2) orphans.push(`r${i}: ${a.slice(0, 70)}`);

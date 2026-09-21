@@ -16,6 +16,7 @@ import { createMailer, type EmailSendOutcome } from './auth/mailer.js';
 import { generateToken, hashToken, verifyToken, expirationFor } from './auth/setupToken.js';
 import { validatePassword } from './auth/passwordPolicy.js';
 import { auditLog } from './auth/auditLog.js';
+import { inheritEliminatory, diffEliminatory, PLAN_ITEM_QUESTION_JOIN_SQL, PLAN_ITEM_ELIMINATORY_SQL, type PrevCriterion } from './src/lib/eliminatory.js';
 import { hashIp } from './auth/ipHash.js';
 import { SESSION, isAbsoluteExpired, isRevoked } from './auth/session.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
@@ -3253,6 +3254,19 @@ async function startServer() {
   // NEW EVAL (QUALIFICATION) ENGINE APIs
   // ---------------------------------------------------------
 
+  // Marcações de eliminatório da versão vigente (maior revisão) do mesmo arquivo —
+  // base da herança no import (spec 2026-09-21). Roteiro inédito → [].
+  async function vigenteEliminatory(sourceFile: string): Promise<PrevCriterion[]> {
+    const { rows: versions } = await query('SELECT id, version FROM eval_scripts WHERE source_file = $1', [sourceFile]);
+    if (!versions.length) return [];
+    const vigente = (versions as any[]).reduce((a, b) => (scriptVersionNum(b.version) > scriptVersionNum(a.version) ? b : a));
+    const { rows } = await query(
+      `SELECT eq.code, eq.text, eq.is_eliminatory
+         FROM eval_questions eq JOIN eval_sections es ON es.id = eq.section_id
+        WHERE es.script_id = $1`, [vigente.id]);
+    return rows as any;
+  }
+
   app.post('/api/eval/scripts/preview', authenticate, xlsxUpload, async (req: any, res) => {
     try {
       const { role } = req.user;
@@ -3294,6 +3308,9 @@ async function startServer() {
         }
       }
 
+      const prevElim = await vigenteEliminatory(parsed.sourceFile);
+      const inherit = inheritEliminatory(prevElim, parsed.questions);
+
       res.json({
         title: parsed.title,
         version,
@@ -3309,6 +3326,11 @@ async function startServer() {
           noWeight: parsed.questions.filter((q) => !q.maxScore).length,
           noEvidence: parsed.questions.filter((q) => !q.guidance).length,
           noHeader,
+        },
+        eliminatory: {
+          hasPrevious: prevElim.length > 0,
+          inherited: inherit.flags.filter(Boolean).length,
+          lost: inherit.lost,
         },
         errors,
         blocked: blocked || errors.length > 0,
@@ -3353,6 +3375,7 @@ async function startServer() {
       }
 
       try {
+        const { flags: elimFlags } = inheritEliminatory(await vigenteEliminatory(parsed.sourceFile), parsed.questions);
         const result = await withTransaction(async (client) => {
           const { rows: sr } = await client.query(
             `INSERT INTO eval_scripts (title, description, version, source_file, revisao_date, implantacao_date, created_at)
@@ -3371,7 +3394,7 @@ async function startServer() {
             );
             idByTmp.set(s.tmp, secRows[0].id);
           }
-          for (const q of parsed.questions) {
+          for (const [i, q] of parsed.questions.entries()) {
             const sectionId = q.sectionTmp != null ? idByTmp.get(q.sectionTmp) ?? null : null;
             if (sectionId == null) continue;
             // ponytail: type fixo em 'sim_nao' — todo roteiro atual é conformidade + evidência.
@@ -3382,10 +3405,16 @@ async function startServer() {
                   guidance, evidence_required, is_eliminatory, order_index)
                VALUES ($1,$2,$3,$4,'sim_nao',$5,$6,$7,$8,$9,$10,$11,$12)`,
               [sectionId, q.code, q.text, q.legislation, q.weight, q.maxScore,
-               q.dimension, q.documentType, q.guidance, q.evidenceRequired, q.isEliminatory, q.order],
+               q.dimension, q.documentType, q.guidance, q.evidenceRequired, elimFlags[i], q.order],
             );
           }
           return { id: scriptId, version: parsed.version };
+        });
+
+        await auditLog({
+          query, userId: req.user.id, action: 'eval_script_imported',
+          meta: { script_id: result.id, source_file: parsed.sourceFile, version, eliminatory_inherited: elimFlags.filter(Boolean).length },
+          ip: hashClientIp(req),
         });
 
         res.json({
@@ -3417,6 +3446,7 @@ async function startServer() {
       }
       try {
         const scriptId = req.params.id;
+        const { rows: [toDelete] } = await query('SELECT source_file, version FROM eval_scripts WHERE id = $1', [scriptId]);
         // Proteção: roteiro já usado em avaliações só pode ser excluído com
         // confirmação forte (frase "excluir roteiro"). Recalculamos no servidor —
         // nunca confiamos no frontend. A exclusão remove o histórico por cascade.
@@ -3438,6 +3468,11 @@ async function startServer() {
           }
           await client.query('DELETE FROM eval_sections WHERE script_id = $1', [scriptId]);
           await client.query('DELETE FROM eval_scripts WHERE id = $1', [scriptId]);
+        });
+        await auditLog({
+          query, userId: req.user.id, action: 'eval_script_deleted',
+          meta: { script_id: Number(scriptId), source_file: toDelete?.source_file ?? null, version: toDelete?.version ?? null, usage_count: usageCount },
+          ip: hashClientIp(req),
         });
         res.json({ success: true });
       } catch (err: any) {

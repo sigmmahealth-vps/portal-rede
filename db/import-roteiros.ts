@@ -42,14 +42,23 @@ async function commitScript(parsed: ParsedScript): Promise<number> {
   return withTransaction(async (client) => {
     // Marcações de eliminatório são manuais (tela do Admin): captura ANTES do DELETE
     // para a recarga não as perder.
-    // ponytail: se houver mais de uma versão do arquivo, mistura todas; marcações
-    // divergentes viram "não herda". Upgrade: ler só a versão vigente.
-    const { rows: prev } = await client.query(
-      `SELECT eq.code, eq.text, eq.is_eliminatory
-         FROM eval_questions eq
-         JOIN eval_sections es ON es.id = eq.section_id
-         JOIN eval_scripts s ON s.id = es.script_id
-        WHERE s.source_file = $1`, [parsed.sourceFile]);
+    // "vigente" = maior versão numérica, mesmo critério do server.ts (scriptVersionNum).
+    const scriptVersionNum = (v: unknown): number => {
+      const digits = String(v ?? '').replace(/[^0-9]/g, '');
+      return digits ? parseInt(digits, 10) : 0;
+    };
+    const { rows: versions } = await client.query(
+      `SELECT id, version FROM eval_scripts WHERE source_file = $1`, [parsed.sourceFile]);
+    const vigente = (versions as any[]).length
+      ? (versions as any[]).reduce((a, b) => (scriptVersionNum(b.version) > scriptVersionNum(a.version) ? b : a))
+      : null;
+    const { rows: prev } = vigente
+      ? await client.query(
+          `SELECT eq.code, eq.text, eq.is_eliminatory
+             FROM eval_questions eq
+             JOIN eval_sections es ON es.id = eq.section_id
+            WHERE es.script_id = $1`, [vigente.id])
+      : { rows: [] };
     const { flags, lost } = inheritEliminatory(prev as any, parsed.questions);
     if (lost.length) console.warn(`  ! ${parsed.sourceFile}: ${lost.length} marcação(ões) de eliminatório não transportada(s): ${lost.map(l => l.code ?? '(sem código)').join(', ')}`);
     // idempotência: recarrega substituindo a versão anterior do mesmo arquivo

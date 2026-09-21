@@ -5,6 +5,7 @@ import { fmtData } from '../lib/formatDate';
 import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
 import ConfirmDeleteRoteiroModal from './qualificacao/ConfirmDeleteRoteiroModal';
+import EliminatoriosModal from './qualificacao/EliminatoriosModal';
 import UsuariosTab from './admin/UsuariosTab';
 import EmailsTab from './admin/EmailsTab';
 import {
@@ -30,6 +31,7 @@ import {
   Trash2,
   Mail,
   ShieldCheck,
+  ShieldAlert,
   XCircle,
   LayoutGrid,
   List
@@ -119,6 +121,7 @@ export default function Admin() {
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [eliminatoriosTarget, setEliminatoriosTarget] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'lista'>(
     () => (localStorage.getItem('roteirosViewMode') as 'cards' | 'lista') || 'cards',
   );
@@ -670,13 +673,16 @@ export default function Admin() {
                   <div key={key} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                     <div className="flex justify-between items-start mb-3">
                       <h3 className="text-lg font-bold text-gray-900">{vigente.title}</h3>
-                      <button
-                        onClick={() => handleDeleteScript(vigente)}
-                        className="text-red-500 hover:text-red-700 p-1"
-                        title="Excluir roteiro"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <EliminatoriosButton onClick={() => setEliminatoriosTarget(Number(vigente.id))} />
+                        <button
+                          onClick={() => handleDeleteScript(vigente)}
+                          className="text-red-500 hover:text-red-700 p-1"
+                          title="Excluir roteiro"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1 items-start mb-4">
                       <RevisaoBadge script={vigente} />
@@ -718,13 +724,16 @@ export default function Admin() {
                                   Revisão {ant.version ?? '?'}
                                   {revDate ? ` — rev. ${revDate}` : ''}
                                 </span>
-                                <button
-                                  onClick={() => handleDeleteScript(ant)}
-                                  className="text-red-500 hover:text-red-700 p-1 flex-shrink-0"
-                                  title="Excluir revisão"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  <EliminatoriosButton small onClick={() => setEliminatoriosTarget(Number(ant.id))} />
+                                  <button
+                                    onClick={() => handleDeleteScript(ant)}
+                                    className="text-red-500 hover:text-red-700 p-1 flex-shrink-0"
+                                    title="Excluir revisão"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </li>
                               );
                             })}
@@ -776,9 +785,12 @@ export default function Admin() {
                           <td className="py-4 pr-4 align-top text-center text-gray-600">{vigente.items.length}</td>
                           <td className="py-4 pr-4 align-top"><RoteiroAlerts alerts={vigente.alerts} /></td>
                           <td className="py-4 align-top text-center">
-                            <button onClick={() => handleDeleteScript(vigente)} className="text-red-500 hover:text-red-700 p-1" title="Excluir roteiro">
-                              <Trash2 className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <EliminatoriosButton onClick={() => setEliminatoriosTarget(Number(vigente.id))} />
+                              <button onClick={() => handleDeleteScript(vigente)} className="text-red-500 hover:text-red-700 p-1" title="Excluir roteiro">
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {revisoesAbertas[key] && anteriores.map((ant: any) => (
@@ -794,9 +806,12 @@ export default function Admin() {
                             <td className="py-3 pr-4 align-top text-center">{ant.items.length}</td>
                             <td className="py-3 pr-4 align-top"><RoteiroAlerts alerts={ant.alerts} /></td>
                             <td className="py-3 align-top text-center">
-                              <button onClick={() => handleDeleteScript(ant)} className="text-red-500 hover:text-red-700 p-1" title="Excluir revisão">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center justify-center gap-1">
+                                <EliminatoriosButton small onClick={() => setEliminatoriosTarget(Number(ant.id))} />
+                                <button onClick={() => handleDeleteScript(ant)} className="text-red-500 hover:text-red-700 p-1" title="Excluir revisão">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1269,6 +1284,14 @@ export default function Admin() {
         />
       )}
 
+      {eliminatoriosTarget != null && (
+        <EliminatoriosModal
+          scriptId={eliminatoriosTarget}
+          onClose={() => setEliminatoriosTarget(null)}
+          onSaved={loadData}
+        />
+      )}
+
       {showTrainingModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
@@ -1570,6 +1593,20 @@ function RoteiroDatas({ script }: { script: any }) {
       {rev && <div>rev. {rev}</div>}
       {impl && <div>implantação: {impl}</div>}
     </div>
+  );
+}
+
+function EliminatoriosButton({ onClick, small }: { onClick: () => void; small?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-gray-500 hover:text-[#00995D] p-1 flex-shrink-0"
+      title="Critérios eliminatórios"
+      aria-label="Critérios eliminatórios"
+    >
+      <ShieldAlert className={small ? 'w-4 h-4' : 'w-5 h-5'} />
+    </button>
   );
 }
 

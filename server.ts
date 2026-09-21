@@ -5621,7 +5621,7 @@ async function startServer() {
 
       const { rows } = await query(`
         SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
-               eq.legislation, eq.dimension, eq.guidance,
+               eq.legislation, eq.dimension, eq.guidance, eq.is_eliminatory,
                ea.answer_value, ea.score_obtained, eq.max_score
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id
@@ -5759,7 +5759,7 @@ async function startServer() {
       // obrigatório se o parecer for aprovado mas a geração falhar.
       const { rows: candRows } = await query(`
         SELECT ea.id, eq.code AS question_code, eq.text AS question_text,
-               eq.legislation, eq.dimension, eq.guidance,
+               eq.legislation, eq.dimension, eq.guidance, eq.is_eliminatory,
                ea.answer_value, ea.score_obtained, eq.max_score
           FROM eval_answers ea
           JOIN eval_questions eq ON eq.id = ea.question_id

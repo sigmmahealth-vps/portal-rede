@@ -69,7 +69,7 @@ export function planColor(status: PlanStatus): 'verde' | 'azul' | 'laranja' | 'v
 
 export type AnswerForPlan = {
   id: number; question_code: string | null; question_text: string;
-  legislation: string | null; dimension: string | null;
+  legislation: string | null; dimension: string | null; is_eliminatory: boolean;
   answer_value: string | null; score_obtained: number | string; max_score: number | string;
   guidance: string | null;
 };
@@ -98,14 +98,15 @@ export function buildAutoItems(
   const nonCompliant = answers.filter(naoPontuou);
   const segMandatory = ctx.segurancaPct < 60;
   return nonCompliant.map(a => {
-    const isDL = a.dimension === 'Documento Legal';
-    const isSeg = a.dimension === 'Segurança';
+    // Obrigatório = critério eliminatório (marcação do roteiro, spec 2026-09-21) ou
+    // Segurança < 60%. Documento Legal consolida em Segurança (mesma base do segurancaPct).
+    const isSeg = a.dimension === 'Segurança' || a.dimension === 'Documento Legal';
     return {
       answer_id: Number(a.id), // pg retorna bigint como string; Number() evita Set.has() falso-negativo
       question_code: a.question_code,
       question_text: a.question_text,
       dimension: a.dimension,
-      is_mandatory: isDL || (isSeg && segMandatory),
+      is_mandatory: !!a.is_eliminatory || (isSeg && segMandatory),
       what: `Adequar o critério: ${a.question_text}`,
       why: a.legislation
         ? `Critério não atendido na avaliação. Embasamento: ${a.legislation}`

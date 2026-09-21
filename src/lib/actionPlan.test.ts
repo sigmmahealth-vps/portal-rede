@@ -102,16 +102,16 @@ test('planColor: mapeamento 5.4.4.5', () => {
   assert.equal(planColor('atrasado'), 'vermelho');
 });
 
-test('buildAutoItems: não pontuados viram itens; DL é obrigatório', () => {
+test('buildAutoItems: não pontuados viram itens; eliminatório é obrigatório', () => {
   const answers = [
     { id: 1, question_code: 'DL-01', question_text: 'Alvará sanitário vigente',
-      legislation: 'RDC 63/2011', dimension: 'Documento Legal',
+      legislation: 'RDC 63/2011', dimension: 'Documento Legal', is_eliminatory: true,
       answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: 'Anexar alvará' },
     { id: 2, question_code: 'S-04', question_text: 'Rotas de fuga sinalizadas',
-      legislation: 'RDC 50/2002', dimension: 'Segurança',
+      legislation: 'RDC 50/2002', dimension: 'Segurança', is_eliminatory: false,
       answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
     { id: 3, question_code: 'C-02', question_text: 'Sala de espera climatizada',
-      legislation: null, dimension: 'Conforto',
+      legislation: null, dimension: 'Conforto', is_eliminatory: false,
       answer_value: 'sim', score_obtained: 10, max_score: 10, guidance: null },
   ];
   const items = buildAutoItems(answers, { segurancaPct: 72 });
@@ -128,7 +128,7 @@ test('buildAutoItems: não pontuados viram itens; DL é obrigatório', () => {
 test('buildAutoItems: DL não enviada aprovada pelo auditor (score 0) gera item obrigatório', () => {
   const items = buildAutoItems([
     { id: 1921, question_code: 'DL-01', question_text: 'Alvará de Localização',
-      legislation: null, dimension: 'Documento Legal',
+      legislation: null, dimension: 'Documento Legal', is_eliminatory: true,
       answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
   ], { segurancaPct: 100 });
   assert.equal(items.length, 1);
@@ -138,7 +138,7 @@ test('buildAutoItems: DL não enviada aprovada pelo auditor (score 0) gera item 
 test('buildAutoItems: nota parcial (< máximo) também é não pontuado', () => {
   const items = buildAutoItems([
     { id: 5, question_code: 'C-09', question_text: 'Acessibilidade',
-      legislation: null, dimension: 'Conforto',
+      legislation: null, dimension: 'Conforto', is_eliminatory: false,
       answer_value: 'parcial', score_obtained: 5, max_score: 10, guidance: null },
   ], { segurancaPct: 100 });
   assert.equal(items.length, 1);
@@ -147,7 +147,7 @@ test('buildAutoItems: nota parcial (< máximo) também é não pontuado', () => 
 test('buildAutoItems: NA não entra no plano (não aplicável ≠ não pontuou)', () => {
   const items = buildAutoItems([
     { id: 6, question_code: 'C-10', question_text: 'Item não aplicável',
-      legislation: null, dimension: 'Conforto',
+      legislation: null, dimension: 'Conforto', is_eliminatory: false,
       answer_value: 'NA', score_obtained: 0, max_score: 10, guidance: null },
   ], { segurancaPct: 100 });
   assert.equal(items.length, 0);
@@ -156,7 +156,7 @@ test('buildAutoItems: NA não entra no plano (não aplicável ≠ não pontuou)'
 test('buildAutoItems: Segurança < 60% torna itens de Segurança obrigatórios', () => {
   const answers = [
     { id: 2, question_code: 'S-04', question_text: 'Rotas de fuga sinalizadas',
-      legislation: 'RDC 50/2002', dimension: 'Segurança',
+      legislation: 'RDC 50/2002', dimension: 'Segurança', is_eliminatory: false,
       answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
   ];
   const items = buildAutoItems(answers, { segurancaPct: 45 });
@@ -166,8 +166,37 @@ test('buildAutoItems: Segurança < 60% torna itens de Segurança obrigatórios',
 test('buildAutoItems: coage answer_id string (bigint do pg) para number', () => {
   const items = buildAutoItems([
     { id: '7' as any, question_code: 'S-01', question_text: 'X',
-      legislation: null, dimension: 'Segurança',
+      legislation: null, dimension: 'Segurança', is_eliminatory: false,
       answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
   ], { segurancaPct: 100 });
   assert.equal(items[0].answer_id, 7);
+});
+
+// Spec 2026-09-21: obrigatoriedade segue a MARCAÇÃO de eliminatório, não a dimensão.
+test('buildAutoItems: critério de Segurança marcado eliminatório é obrigatório mesmo com Segurança >= 60%', () => {
+  const items = buildAutoItems([
+    { id: 10, question_code: '1.1.1', question_text: 'Alvará de funcionamento (hospital)',
+      legislation: null, dimension: 'Segurança', is_eliminatory: true,
+      answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
+  ], { segurancaPct: 95 });
+  assert.equal(items[0].is_mandatory, true);
+});
+
+test('buildAutoItems: Documento Legal desmarcado não é obrigatório por si só', () => {
+  const items = buildAutoItems([
+    { id: 11, question_code: '1.1.5', question_text: 'CNES',
+      legislation: null, dimension: 'Documento Legal', is_eliminatory: false,
+      answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
+  ], { segurancaPct: 95 });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].is_mandatory, false);
+});
+
+test('buildAutoItems: DL desmarcado vira obrigatório com Segurança < 60% (DL consolida em Segurança)', () => {
+  const items = buildAutoItems([
+    { id: 12, question_code: '1.1.5', question_text: 'CNES',
+      legislation: null, dimension: 'Documento Legal', is_eliminatory: false,
+      answer_value: 'nao', score_obtained: 0, max_score: 10, guidance: null },
+  ], { segurancaPct: 45 });
+  assert.equal(items[0].is_mandatory, true);
 });

@@ -201,9 +201,6 @@ async function initData() {
     await query(insertAuditSql, [providerId, new Date(Date.now() + 86400000 * 15).toISOString(), 'programada', null]);
     await query(insertAuditSql, [providerId, new Date(Date.now() - 86400000 * 60).toISOString(), 'realizada', 'Aprovado com ressalvas']);
 
-    // Insert Qualifications
-    await query('INSERT INTO qualifications (provider_id, cycle, score, status, seal, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [providerId, '2024-2025', 92, 'concluida', 'Ouro', new Date().toISOString()]);
-
     // Insert Action Plans
     await query('INSERT INTO action_plans (provider_id, title, description, deadline, status, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [providerId, 'Melhoria no tempo de espera', 'Reduzir o tempo de espera na recepção para menos de 15 minutos.', new Date(Date.now() + 86400000 * 30).toISOString(), 'em_andamento', new Date().toISOString()]);
 
@@ -212,27 +209,6 @@ async function initData() {
     await query(insertPriceTableSql, [providerId, 'Tabela de Honorários Médicos', 'THM-2024', 'v1.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/thm-2024.pdf', new Date().toISOString()]);
     await query(insertPriceTableSql, [providerId, 'Tabela de Materiais e Medicamentos', 'TMM-2024', 'v1.2', 'vigente', new Date('2024-03-01').toISOString(), '/docs/tmm-2024.pdf', new Date().toISOString()]);
     await query(insertPriceTableSql, [null, 'Tabela TUSS Padrão', 'TUSS-2024', 'v2.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/tuss-2024.pdf', new Date().toISOString()]);
-  }
-
-  // Seed qualification cycle + items if empty
-  const { rows: cycleCountRows } = await query('SELECT COUNT(*) as count FROM qualification_cycles');
-  if (Number(cycleCountRows[0].count) === 0) {
-    const { rows: cycleRows } = await query(
-      'INSERT INTO qualification_cycles (title, description, active, created_at) VALUES ($1, $2, $3, $4) RETURNING id',
-      ['Qualificação Anual 2026', 'Ciclo de qualificação obrigatório para todos os prestadores da rede.', true, new Date().toISOString()]
-    );
-    const cycleId = cycleRows[0].id;
-
-    const insertItemSql = 'INSERT INTO qualification_items (cycle_id, title, description, is_required) VALUES ($1, $2, $3, $4)';
-    await query(insertItemSql, [cycleId, 'Alvará (Localização, Sanitário ou Bombeiros)', 'Cópia do alvará vigente.', true]);
-    await query(insertItemSql, [cycleId, 'CNES Ativo', 'Comprovante de inscrição no Cadastro Nacional de Estabelecimentos de Saúde.', true]);
-    await query(insertItemSql, [cycleId, 'Relação do Corpo Clínico', 'Lista atualizada dos profissionais com seus respectivos registros (CRM, COREN, etc).', true]);
-    await query(insertItemSql, [cycleId, 'PGRSS', 'Plano de Gerenciamento de Resíduos de Serviços de Saúde.', true]);
-    await query(insertItemSql, [cycleId, 'Certificado de Regularidade Técnica', 'Certificado emitido pelo conselho de classe.', true]);
-    await query(insertItemSql, [cycleId, 'ART - Anotação de Responsabilidade Técnica', 'Documento de Anotação de Responsabilidade Técnica (ART).', true]);
-    await query(insertItemSql, [cycleId, 'RQE', 'Registro de Qualificação de Especialista.', false]);
-    await query(insertItemSql, [cycleId, 'Certificados/diplomas', 'Cópias dos certificados ou diplomas.', false]);
-    await query(insertItemSql, [cycleId, 'Optante pelo Simples Nacional', 'Comprovante de opção pelo Simples Nacional (se aplicável).', false]);
   }
 
   // (Removido) O seed idempotente de "Dra. Ana Souza" (cooperado@unimed.com)
@@ -1750,16 +1726,6 @@ async function startServer() {
         'SELECT lower(status) AS status, COUNT(*)::int AS count FROM documents WHERE provider_id = $1 GROUP BY lower(status)',
         [providerId]
       );
-      const { rows: lastSubmissionRows } = await query(
-        `SELECT qs.id, qs.status, qs.created_at, qc.title AS cycle_title
-           FROM qualification_submissions qs
-           JOIN qualification_cycles qc ON qc.id = qs.cycle_id
-          WHERE qs.provider_id = $1
-          ORDER BY qs.created_at DESC
-          LIMIT 1`,
-        [providerId]
-      );
-
       const documentsTotal = docStatusRows.reduce((sum: number, r: any) => sum + r.count, 0);
       const documentsPending = docStatusRows.find((r: any) => r.status === 'pendente')?.count ?? 0;
       const documentsExpired = docStatusRows.find((r: any) => r.status === 'vencido')?.count ?? 0;
@@ -1773,14 +1739,6 @@ async function startServer() {
           documents_expired: documentsExpired,
           documents_total: documentsTotal,
           certifications_total: certifications.length,
-          last_qualification_submission: lastSubmissionRows[0]
-            ? {
-                id: lastSubmissionRows[0].id,
-                cycle_title: lastSubmissionRows[0].cycle_title,
-                status: lastSubmissionRows[0].status,
-                created_at: lastSubmissionRows[0].created_at,
-              }
-            : null,
         },
       });
     } catch (err: any) {
@@ -2166,60 +2124,6 @@ async function startServer() {
       res.json({ events });
     } catch (err: any) {
       console.error('GET /providers/:id/audit:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Qualification Scripts
-  app.get('/api/qualification-scripts', authenticate, async (req: any, res) => {
-    try {
-      const { rows: scripts } = await query('SELECT * FROM qualification_scripts ORDER BY created_at DESC');
-      res.json(scripts);
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/qualification-scripts', authenticate, async (req: any, res) => {
-    try {
-      const { role } = req.user;
-      if (role !== 'admin' && role !== 'auditoria') {
-        return res.status(403).json({ error: 'Unauthorized' });
-      }
-      const { title, items } = req.body;
-      if (!title || !items || !Array.isArray(items)) {
-        return res.status(400).json({ error: 'Title and items array are required' });
-      }
-      try {
-        const { rows } = await query(
-          'INSERT INTO qualification_scripts (title, items, created_at) VALUES ($1, $2, $3) RETURNING id',
-          [title, JSON.stringify(items), new Date().toISOString()]
-        );
-        res.json({ id: rows[0].id, title, items });
-      } catch (err: any) {
-        res.status(400).json({ error: err.message });
-      }
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete('/api/qualification-scripts/:id', authenticate, async (req: any, res) => {
-    try {
-      const { role } = req.user;
-      if (role !== 'admin' && role !== 'auditoria') {
-        return res.status(403).json({ error: 'Unauthorized' });
-      }
-      try {
-        await query('DELETE FROM qualification_scripts WHERE id = $1', [req.params.id]);
-        res.json({ success: true });
-      } catch (err: any) {
-        res.status(400).json({ error: err.message });
-      }
-    } catch (err: any) {
-      console.error(err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -2900,189 +2804,6 @@ async function startServer() {
 
       const filePath = path.join(process.cwd(), contract.file_url);
       res.download(filePath);
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Qualifications
-  app.get('/api/qualifications/cycles', authenticate, async (req: any, res) => {
-    try {
-      const { rows: cycles } = await query('SELECT * FROM qualification_cycles ORDER BY id DESC');
-      const { rows: items } = await query('SELECT * FROM qualification_items');
-
-      const cyclesWithItems = cycles.map((c: any) => ({
-        ...c,
-        items: items.filter((i: any) => i.cycle_id === c.id)
-      }));
-
-      res.json(cyclesWithItems);
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/qualifications/submissions', authenticate, async (req: any, res) => {
-    try {
-      const { provider_id, role } = req.user;
-      let submissions;
-
-      if (role === 'admin' || role === 'auditoria') {
-        const result = await query(`
-          SELECT s.*, p.name as provider_name, c.title as cycle_title
-          FROM qualification_submissions s
-          JOIN providers p ON s.provider_id = p.id
-          JOIN qualification_cycles c ON s.cycle_id = c.id
-          ORDER BY s.created_at DESC
-        `);
-        submissions = result.rows;
-      } else if (provider_id) {
-        const result = await query(`
-          SELECT s.*, c.title as cycle_title
-          FROM qualification_submissions s
-          JOIN qualification_cycles c ON s.cycle_id = c.id
-          WHERE s.provider_id = $1
-          ORDER BY s.created_at DESC
-        `, [provider_id]);
-        submissions = result.rows;
-      } else {
-        return res.json([]);
-      }
-
-      res.json(submissions);
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/qualifications/submissions/:id', authenticate, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { provider_id, role } = req.user;
-
-      const { rows: subRows } = await query(`
-        SELECT s.*, p.name as provider_name, c.title as cycle_title
-        FROM qualification_submissions s
-        JOIN providers p ON s.provider_id = p.id
-        JOIN qualification_cycles c ON s.cycle_id = c.id
-        WHERE s.id = $1
-      `, [id]);
-      const submission = subRows[0] as any;
-
-      if (!submission) return res.status(404).json({ error: 'Submission not found' });
-
-      if (role === 'prestador' && submission.provider_id !== provider_id) {
-        return res.status(403).json({ error: 'Unauthorized' });
-      }
-
-      const { rows: items } = await query(`
-        SELECT si.*, i.title, i.description, i.is_required
-        FROM qualification_submission_items si
-        JOIN qualification_items i ON si.item_id = i.id
-        WHERE si.submission_id = $1
-      `, [id]);
-
-      submission.items = items;
-      res.json(submission);
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/qualifications/submissions', authenticate, upload.any(), async (req: any, res) => {
-    try {
-      const { provider_id, role } = req.user;
-      const { cycle_id, items } = req.body; // items is a JSON string mapping item_id to details
-
-      const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
-
-      if (!targetProviderId) return res.status(400).json({ error: 'Provider ID required' });
-
-      const parsedItems = JSON.parse(items || '{}');
-      const files = req.files as Express.Multer.File[];
-
-      const submissionId = await withTransaction(async (client) => {
-        const { rows: subRows } = await client.query(
-          'INSERT INTO qualification_submissions (provider_id, cycle_id, status, submitted_at, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-          [targetProviderId, cycle_id, 'em_analise', new Date().toISOString(), new Date().toISOString()]
-        );
-        const subId = subRows[0].id;
-
-        for (const [itemIdStr, details] of Object.entries(parsedItems)) {
-          const itemId = parseInt(itemIdStr);
-          const itemDetails: any = details;
-          const file = files?.find(f => f.fieldname === `evidence_${itemId}`);
-          const fileUrl = file ? `/uploads/${file.filename}` : null;
-
-          await client.query(
-            'INSERT INTO qualification_submission_items (submission_id, item_id, is_compliant, evidence_url, auditor_status, text_answer, justification, is_na) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-            [
-              subId,
-              itemId,
-              itemDetails.is_compliant ? true : false,
-              fileUrl,
-              'pendente',
-              itemDetails.text_answer || null,
-              itemDetails.justification || null,
-              itemDetails.is_na ? true : false
-            ]
-          );
-        }
-
-        return subId;
-      });
-
-      await auditLog({
-        query, userId: req.user.id, action: 'qualification_submitted',
-        meta: { provider_id: Number(targetProviderId), submission_id: submissionId, cycle_id: Number(cycle_id) },
-        ip: hashClientIp(req),
-      });
-      res.json({ id: submissionId, message: 'Submission created successfully' });
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.put('/api/qualifications/submissions/:id/evaluate', authenticate, async (req: any, res) => {
-    try {
-      const { role, id: user_id } = req.user;
-      const { id } = req.params;
-      const { final_status, final_observations, item_evaluations } = req.body;
-
-      if (role !== 'admin' && role !== 'auditoria') {
-        return res.status(403).json({ error: 'Unauthorized' });
-      }
-
-      const subProviderId = await withTransaction(async (client) => {
-        const { rows: subRows } = await client.query(
-          'UPDATE qualification_submissions SET status = $1, evaluated_at = $2, evaluated_by = $3, final_observations = $4 WHERE id = $5 RETURNING provider_id',
-          [final_status, new Date().toISOString(), user_id, final_observations || null, id]
-        );
-
-        if (item_evaluations) {
-          for (const [itemIdStr, evalData] of Object.entries(item_evaluations as Record<string, any>)) {
-            await client.query(
-              'UPDATE qualification_submission_items SET auditor_status = $1, auditor_observation = $2 WHERE submission_id = $3 AND item_id = $4',
-              [evalData.status, evalData.observation || null, id, parseInt(itemIdStr)]
-            );
-          }
-        }
-        return subRows[0]?.provider_id ?? null;
-      });
-
-      if (subProviderId != null) {
-        await auditLog({
-          query, userId: user_id, action: 'qualification_evaluated',
-          meta: { provider_id: Number(subProviderId), submission_id: Number(id), final_status },
-          ip: hashClientIp(req),
-        });
-      }
-      res.json({ message: 'Evaluation saved successfully' });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

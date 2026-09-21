@@ -3267,6 +3267,15 @@ async function startServer() {
     return rows as any;
   }
 
+  // Trava (spec Q4): marcações não mudam com avaliação do roteiro em ciclo aberto.
+  async function eliminatoryLocked(scriptId: number | string): Promise<boolean> {
+    const { rows: [r] } = await query(
+      `SELECT EXISTS (
+         SELECT 1 FROM eval_instances i JOIN eval_cycles c ON c.id = i.cycle_id
+          WHERE i.script_id = $1 AND c.active) AS locked`, [scriptId]);
+    return !!r?.locked;
+  }
+
   app.post('/api/eval/scripts/preview', authenticate, xlsxUpload, async (req: any, res) => {
     try {
       const { role } = req.user;
@@ -3484,6 +3493,59 @@ async function startServer() {
     }
   });
 
+  // Marcação dos critérios eliminatórios do roteiro (spec 2026-09-21). Body traz o
+  // conjunto COMPLETO de ids marcados — idempotente; lista vazia é permitida.
+  app.patch('/api/eval/scripts/:id/eliminatory', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+      const scriptId = Number(req.params.id);
+      const raw = req.body?.question_ids;
+      if (!Number.isInteger(scriptId) || !Array.isArray(raw) || raw.some((v: any) => !Number.isInteger(Number(v)))) {
+        return res.status(400).json({ error: 'Envie question_ids como lista de ids de critérios.' });
+      }
+      const { rows: [script] } = await query('SELECT id, source_file, version FROM eval_scripts WHERE id = $1', [scriptId]);
+      if (!script) return res.status(404).json({ error: 'Roteiro não encontrado.' });
+      // ponytail: checagem fora da transação — corrida com "abrir ciclo" no mesmo
+      // instante é aceitável. Upgrade: SELECT ... FOR UPDATE no ciclo.
+      if (await eliminatoryLocked(scriptId)) {
+        return res.status(409).json({ error: 'Este roteiro tem avaliações em ciclo aberto. Os critérios eliminatórios só podem ser alterados com o ciclo encerrado.' });
+      }
+      const { rows: current } = await query(
+        `SELECT eq.id, eq.code, eq.is_eliminatory
+           FROM eval_questions eq JOIN eval_sections es ON es.id = eq.section_id
+          WHERE es.script_id = $1`, [scriptId]);
+      const diff = diffEliminatory(
+        (current as any[]).map((c) => ({ id: Number(c.id), code: c.code, is_eliminatory: !!c.is_eliminatory })),
+        raw.map(Number),
+      );
+      if (diff.unknownIds.length) {
+        return res.status(400).json({ error: 'Há critérios que não pertencem a este roteiro.' });
+      }
+      if (diff.toMark.length || diff.toUnmark.length) {
+        await withTransaction(async (client) => {
+          await client.query('UPDATE eval_questions SET is_eliminatory = true  WHERE id = ANY($1::bigint[])', [diff.toMark.map((c) => c.id)]);
+          await client.query('UPDATE eval_questions SET is_eliminatory = false WHERE id = ANY($1::bigint[])', [diff.toUnmark.map((c) => c.id)]);
+        });
+        await auditLog({
+          query, userId: req.user.id, action: 'eval_eliminatory_changed',
+          meta: {
+            script_id: scriptId, source_file: script.source_file, version: script.version,
+            marked: diff.toMark.map((c) => c.code ?? `#${c.id}`),
+            unmarked: diff.toUnmark.map((c) => c.code ?? `#${c.id}`),
+          },
+          ip: hashClientIp(req),
+        });
+      }
+      res.json({ success: true, marked: diff.toMark.length, unmarked: diff.toUnmark.length });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/eval/scripts', authenticate, async (req: any, res) => {
     try {
       const { role, provider_id } = req.user;
@@ -3510,7 +3572,7 @@ async function startServer() {
       const scriptsWithItems = [];
       for (const script of scripts as any[]) {
         const { rows: questions } = await query(`
-          SELECT eq.id, eq.text as title, eq.code, eq.evidence_required, eq.max_score
+          SELECT eq.id, eq.text as title, eq.code, eq.evidence_required, eq.max_score, eq.is_eliminatory
           FROM eval_questions eq
           JOIN eval_sections es ON eq.section_id = es.id
           WHERE es.script_id = $1
@@ -3522,11 +3584,16 @@ async function startServer() {
         const semPeso = (questions as any[])
           .filter((q) => !Number(q.max_score)) // numeric chega como string; "0"/null/NaN → sem peso
           .map((q) => ({ code: q.code, text: q.title }));
+        const semEliminatorio = !(questions as any[]).some((q) => q.is_eliminatory);
         const isCurrent = !script.source_file
           || scriptVersionNum(script.version) === maxBySource.get(script.source_file);
         const { rows: usage } = await query('SELECT count(*)::int AS n FROM eval_instances WHERE script_id = $1', [script.id]);
         const usageCount = (usage[0] as any)?.n ?? 0;
-        scriptsWithItems.push({ ...script, items: questions, is_current: isCurrent, alerts: { semEvidencia, semPeso }, usage_count: usageCount });
+        scriptsWithItems.push({
+          ...script, items: questions, is_current: isCurrent,
+          alerts: { semEvidencia, semPeso, semEliminatorio },
+          usage_count: usageCount, eliminatory_locked: await eliminatoryLocked(script.id),
+        });
       }
       res.json(scriptsWithItems);
     } catch (err: any) {
@@ -3550,7 +3617,7 @@ async function startServer() {
         ORDER BY eq.order_index ASC
       `, [req.params.id]);
 
-      res.json({ ...script, sections, questions });
+      res.json({ ...script, sections, questions, eliminatory_locked: await eliminatoryLocked(script.id) });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

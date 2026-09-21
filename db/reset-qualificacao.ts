@@ -19,20 +19,25 @@ import { assertReloadHost } from './import-tabela.js';
 
 const COMMIT = process.argv.includes('--commit');
 const RELINK = process.argv.includes('--relink');
+// --keep-scripts: mantém os roteiros e suas marcações (usado no homolog, que tem
+// roteiro sem .xlsx local para reimportar — FOR-025). Dispensa o --relink.
+const KEEP_SCRIPTS = process.argv.includes('--keep-scripts');
 
 // Ordem de DELETE respeita as FKs NO ACTION (planos antes de ciclos; ciclos antes de
 // roteiros). O resto cai por CASCADE — listado aqui só para contagem e backup.
 // Nunca TRUNCATE ... CASCADE: alcançaria users/providers (incidente do import-tabela).
-const DELETE_ORDER = ['notifications', 'documents', 'eval_action_plans', 'eval_instances', 'eval_cycles', 'eval_scripts'];
+const SCRIPT_TABLES = ['eval_questions', 'eval_sections', 'eval_scripts'];
+const DELETE_ORDER = ['notifications', 'documents', 'eval_action_plans', 'eval_instances', 'eval_cycles', 'eval_scripts']
+  .filter((t) => !(KEEP_SCRIPTS && t === 'eval_scripts'));
 const AFFECTED = [
   'notifications', 'documents',
   'eval_action_events', 'eval_action_items', 'eval_action_plans',
   'eval_answer_iterations', 'eval_answers', 'eval_certificates', 'eval_survey_responses', 'eval_instances',
   'eval_cycle_groups', 'eval_cycle_overrides', 'eval_cycle_exclusions', 'eval_cycle_inclusions', 'eval_cycles',
-  'eval_questions', 'eval_sections', 'eval_scripts',
-];
+  ...SCRIPT_TABLES,
+].filter((t) => !(KEEP_SCRIPTS && SCRIPT_TABLES.includes(t)));
 // access_logs fica de fora da checagem: o servidor de dev pode gravar nela durante a transação.
-const KEPT = ['providers', 'provider_locations', 'users', 'user_locations'];
+const KEPT = ['providers', 'provider_locations', 'users', 'user_locations', ...(KEEP_SCRIPTS ? SCRIPT_TABLES : [])];
 
 async function counts(tables: string[]): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
@@ -90,7 +95,8 @@ async function main() {
   console.log('\n  mantidas (não devem mudar):');
   for (const t of KEPT) console.log(`    ${t.padEnd(26)} ${mantidasAntes[t]}`);
   const { rows: [prov] } = await query(`SELECT count(*)::int AS n FROM providers WHERE eval_script_id IS NOT NULL`);
-  console.log(`\n  ${prov.n} prestadores perdem o vínculo com o roteiro (eval_script_id → NULL); roteiro_cod é preservado — religar com --relink após reimportar.`);
+  if (KEEP_SCRIPTS) console.log(`\n  --keep-scripts: roteiros e marcações ficam; os ${prov.n} vínculos prestador→roteiro são preservados.`);
+  else console.log(`\n  ${prov.n} prestadores perdem o vínculo com o roteiro (eval_script_id → NULL); roteiro_cod é preservado — religar com --relink após reimportar.`);
 
   if (!COMMIT) {
     console.log('\n[reset-qualificacao] dry-run: nada gravado. Use --commit para aplicar.');
@@ -126,7 +132,8 @@ async function main() {
     }
   });
 
-  console.log('\n[reset-qualificacao] concluído. Próximos passos: reimportar os roteiros, marcar os eliminatórios e rodar --relink --commit.');
+  if (KEEP_SCRIPTS) console.log('\n[reset-qualificacao] concluído (roteiros mantidos).');
+  else console.log('\n[reset-qualificacao] concluído. Próximos passos: reimportar os roteiros, marcar os eliminatórios e rodar --relink --commit.');
 }
 
 main().then(() => pool.end()).catch((err) => { console.error(err); process.exit(1); });

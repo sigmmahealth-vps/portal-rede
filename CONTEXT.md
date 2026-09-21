@@ -8,9 +8,16 @@ máximo um ciclo ativo por vez. Passa por dois momentos distintos: **criar** o
 ciclo (define seus parâmetros) e **abrir** o ciclo (gera as instâncias de
 avaliação e passa a aceitar emissão de certificados).
 
-## Critério eliminatório (documento legal)
+## Critério eliminatório
 Critério cuja **não conformidade** rebaixa o selo a Bronze independentemente da nota.
-São os documentos legais (dimensão "Documento Legal", `is_eliminatory`). **Não
+É uma **marcação do critério**, definida por roteiro pela equipe interna (admin ou
+auditoria) — não é sinônimo de **Documento Legal**, que é só uma dimensão:
+critério de qualquer dimensão pode ser marcado, e documento legal pode não ser.
+Um roteiro inédito nasce **sem nenhum** eliminatório (quem importa escolhe); a
+revisão de um roteiro herda as marcações da versão anterior. Além de rebaixar o selo, o
+eliminatório não conforme vira item **obrigatório** do plano de ação, e deixá-lo
+pendente num plano de ciclo anterior limita o selo do ciclo seguinte a Bronze.
+**Não
 conformidade** aqui = o critério entra no cálculo e não pontuou o máximo (por
 qualquer motivo: reprovado, respondido "não", ou N/A reprovado) — não é apenas o
 formalmente **reprovado** pelo auditor. Pontuação cheia ou N/A aprovado (não se

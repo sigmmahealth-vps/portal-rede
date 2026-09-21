@@ -57,14 +57,14 @@ test('pendingPrevPlan: eliminatório pendente (marcação atual) trava Bronze; f
       `INSERT INTO eval_action_plans (cycle_id, provider_id, origin) VALUES ($1, $2, 'manual') RETURNING id`,
       [c1, ids.prov]);
     ids.plan = Number(plan.id);
-    const item = async (dimension: string, status: string, answerId: number | null) => {
+    const item = async (dimension: string | null, status: string, answerId: number | null) => {
       const { rows: [it] } = await query(
         `INSERT INTO eval_action_items (plan_id, answer_id, dimension, what, status) VALUES ($1, $2, $3, 'x', $4) RETURNING id`,
         [ids.plan, answerId, dimension, status]);
       return Number(it.id);
     };
     const seg = await item('Segurança', 'em_andamento', Number(ans.id)); // ligado ao critério marcado
-    await item('Conforto', 'nao_iniciada', null);
+    const conforto = await item('Conforto', 'nao_iniciada', null);
 
     // Visto do ciclo 2: pendente e com eliminatório (Segurança marcada) → trava Bronze.
     assert.deepEqual(await pendingPrevPlan(ids.prov, null, c2), { pending: true, hasEliminatory: true });
@@ -81,6 +81,12 @@ test('pendingPrevPlan: eliminatório pendente (marcação atual) trava Bronze; f
 
     // Concluídos os dois, resta Conforto aberto: pendente sem trava de selo.
     await query(`UPDATE eval_action_items SET status = 'concluida' WHERE id = ANY($1::bigint[])`, [[seg, dlSolto]]);
+    assert.deepEqual(await pendingPrevPlan(ids.prov, null, c2), { pending: true, hasEliminatory: false });
+
+    // Fecha o Conforto também e insere item manual (sem answer_id e sem dimension).
+    await query(`UPDATE eval_action_items SET status = 'concluida' WHERE id = $1`, [conforto]);
+    await item(null, 'nao_iniciada', null);
+    // Item manual (sem answer_id e sem dimension) ainda sinaliza plano pendente — sem o "false" final do COALESCE o BOOL_OR daria NULL e pending viraria false.
     assert.deepEqual(await pendingPrevPlan(ids.prov, null, c2), { pending: true, hasEliminatory: false });
 
     // Encerrado sem conclusão: deixa de sinalizar.

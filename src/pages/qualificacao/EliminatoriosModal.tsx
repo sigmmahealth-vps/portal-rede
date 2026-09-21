@@ -88,7 +88,7 @@ export default function EliminatoriosModal({ scriptId, onClose, onSaved }: Props
               {script ? `${script.title} — revisão ${script.version ?? '—'}` : 'Carregando…'}
             </p>
           </div>
-          <button onClick={onClose} aria-label="Fechar" className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} disabled={saving} aria-label="Fechar" className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -176,7 +176,8 @@ export default function EliminatoriosModal({ scriptId, onClose, onSaved }: Props
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            disabled={saving}
+            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
             {locked ? 'Fechar' : 'Cancelar'}
           </button>

@@ -56,8 +56,12 @@ export function diffEliminatory(current: CurrentCriterion[], markedIds: number[]
 // ponytail: lê a flag da versão do roteiro usada naquele ciclo; desmarcar numa
 // revisão nova não alcança planos antigos (contorno: editar a versão anterior).
 // Upgrade: congelar is_eliminatory em eval_action_items na geração do plano.
+// O `false` final cobre item manual (sem answer_id e sem dimension): sem ele o
+// BOOL_OR daria NULL e o plano pendente deixaria de ser sinalizado.
+// ponytail: marcar um critério é retroativo sobre planos pendentes de ciclos
+// anteriores (passam a travar Bronze). Upgrade: o mesmo congelamento acima.
 export const PLAN_ITEM_QUESTION_JOIN_SQL = `
   LEFT JOIN eval_answers ea_it ON ea_it.id = it.answer_id
   LEFT JOIN eval_questions eq_it ON eq_it.id = ea_it.question_id`;
 export const PLAN_ITEM_ELIMINATORY_SQL =
-  `COALESCE(eq_it.is_eliminatory, it.dimension = 'Documento Legal')`;
+  `COALESCE(eq_it.is_eliminatory, it.dimension = 'Documento Legal', false)`;

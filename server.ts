@@ -3268,6 +3268,9 @@ async function startServer() {
   }
 
   // Trava (spec Q4): marcações não mudam com avaliação do roteiro em ciclo aberto.
+  // ponytail: cobre só avaliações ligadas a um ciclo ativo (leitura literal da spec Q4).
+  // Instância criada fora de ciclo (eval_instances.cycle_id NULL, em_andamento) NÃO trava.
+  // Upgrade: LEFT JOIN + (c.active OR (i.cycle_id IS NULL AND i.status = 'em_andamento')).
   async function eliminatoryLocked(scriptId: number | string): Promise<boolean> {
     const { rows: [r] } = await query(
       `SELECT EXISTS (
@@ -5749,7 +5752,7 @@ async function startServer() {
       const hasEliminatoryFailed = mem.eliminatory_failed;
       const percentual = mem.final_pct;
       // Item 18 (homologação 09/2026): plano de ciclo anterior com item de
-      // Documento Legal/sanitário pendente trava o selo em Bronze.
+      // critério eliminatório pendente trava o selo em Bronze.
       const prevPlan = await pendingPrevPlan(
         Number(inst.provider_id), inst.location_id != null ? Number(inst.location_id) : null,
         inst.cycle_id != null ? Number(inst.cycle_id) : null);

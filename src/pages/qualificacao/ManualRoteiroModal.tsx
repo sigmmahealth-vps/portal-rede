@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { fetchApi, manualHref } from '../../lib/api';
 import { fmtDataHora } from '../../lib/formatDate';
-import { X, Loader2, Upload, Download, Trash2, FileText } from 'lucide-react';
+import { X, Loader2, Upload, Download, Trash2, FileText, Paperclip } from 'lucide-react';
 
 const MAX_MB = 20;
 const fmtSize = (b: number) => b >= 1024 * 1024
@@ -70,16 +70,26 @@ export default function ManualRoteiroModal({ script, onClose, onChanged }: Props
           )}
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="manual-file">
+            <p className="text-sm font-semibold text-gray-700 mb-1">
               {has ? 'Substituir por outro PDF' : 'Enviar PDF'} <span className="font-normal text-gray-500">(até {MAX_MB} MB)</span>
-            </label>
-            <input
-              id="manual-file"
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={e => { setFile(e.target.files?.[0] ?? null); setError(null); }}
-              className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-semibold hover:file:bg-gray-200"
-            />
+            </p>
+            {/* Input nativo escondido: o texto dele ("Choose File") vem do idioma do navegador. */}
+            <div className="flex items-center gap-3">
+              <label
+                htmlFor="manual-file"
+                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-200 focus-within:ring-2 focus-within:ring-[#00995D]/40"
+              >
+                <Paperclip className="w-4 h-4" /> Anexar manual
+                <input
+                  id="manual-file"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={e => { setFile(e.target.files?.[0] ?? null); setError(null); }}
+                  className="sr-only"
+                />
+              </label>
+              <span className="min-w-0 truncate text-sm text-gray-600">{file ? file.name : 'Nenhum arquivo selecionado'}</span>
+            </div>
           </div>
 
           <p className="text-xs text-gray-500">

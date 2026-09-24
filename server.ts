@@ -235,7 +235,7 @@ async function startServer() {
     const { rows } = await query(
       `SELECT DISTINCT u.id AS user_id, u.email, u.name
          FROM user_locations ul JOIN users u ON u.id = ul.user_id
-        WHERE ul.provider_id = $1 AND u.is_active = true AND u.role IN ('prestador','cooperado','pf_nao_medico')
+        WHERE ul.provider_id = $1 AND u.is_active = true AND u.role IN ('prestador','cooperado','credenciado')
           AND ($2::bigint IS NULL OR ul.location_id = ANY(ARRAY[$2]::bigint[]))`,
       [providerId, locationId]);
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
@@ -1238,7 +1238,7 @@ async function startServer() {
       }
 
       if (typeof newRole !== 'undefined') {
-        if (newRole !== 'admin' && newRole !== 'auditoria' && newRole !== 'prestador' && newRole !== 'cooperado' && newRole !== 'pf_nao_medico') {
+        if (newRole !== 'admin' && newRole !== 'auditoria' && newRole !== 'prestador' && newRole !== 'cooperado' && newRole !== 'credenciado') {
           return res.status(400).json({ error: 'Role inválida.' });
         }
         if (targetId === req.user.id && target.role === 'admin' && newRole !== 'admin') {
@@ -1775,7 +1775,7 @@ async function startServer() {
   // === Gestão de Acessos do prestador (Tela 4 da spec) — 1 acesso por UNIDADE ===
   // Desde a migration 0035 o acesso é do par (prestador, endereço): cada unidade
   // comercial tem seu próprio login, e o portal do prestador só mostra a dela.
-  const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado', 'pf_nao_medico'];
+  const PROVIDER_ACCESS_ROLES = ['prestador', 'cooperado', 'credenciado'];
   const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
   // Unidades comerciais do prestador, cada uma com o seu acesso (ou null).
@@ -3277,7 +3277,7 @@ async function startServer() {
       // admin/auditoria gerenciam todos.
       // ponytail: filtra pelo eval_script_id fixado no match; se o roteiro for reversionado,
       // resolver p/ versão vigente por source_file. Hoje há 1 versão por roteiro.
-      const scripts = (role === 'prestador' || role === 'cooperado' || role === 'pf_nao_medico')
+      const scripts = (role === 'prestador' || role === 'cooperado' || role === 'credenciado')
         ? (await query(
             `SELECT s.* FROM eval_scripts s
              JOIN providers p ON p.eval_script_id = s.id
@@ -3553,7 +3553,7 @@ async function startServer() {
       const instanceId = req.params.id;
       const { answers } = req.body;
 
-      const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' || req.user.role === 'pf_nao_medico' ? 'prestador' : 'auditor';
+      const actorRole = req.user.role === 'prestador' || req.user.role === 'cooperado' || req.user.role === 'credenciado' ? 'prestador' : 'auditor';
       const isProvider = actorRole === 'prestador';
       // D-04: prestador só escreve nos estados de edição. Fora disso (em_analise,
       // finalizado, etc.) rejeita — staff segue sem restrição.
@@ -3823,7 +3823,7 @@ async function startServer() {
 
       // D-04: prestador só anexa evidência em estado de edição e, na reanálise, só
       // no critério devolvido. Remove o upload órfão ao rejeitar. Staff sem restrição.
-      const isProvider = req.user.role === 'prestador' || req.user.role === 'cooperado' || req.user.role === 'pf_nao_medico';
+      const isProvider = req.user.role === 'prestador' || req.user.role === 'cooperado' || req.user.role === 'credenciado';
       if (isProvider) {
         const rejectUpload = (code: number, msg: string) => {
           try { fs.unlinkSync(req.file.path); } catch { /* arquivo já sumiu */ }

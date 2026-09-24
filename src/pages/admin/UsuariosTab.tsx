@@ -8,7 +8,7 @@ interface User {
   id: number;
   name: string;
   email: string | null;
-  role: 'admin' | 'auditoria' | 'prestador' | 'cooperado' | 'pf_nao_medico';
+  role: 'admin' | 'auditoria' | 'prestador' | 'cooperado' | 'credenciado';
   is_active: boolean;
   invite_status: 'pending' | 'accepted' | 'expired';
   last_login_at: string | null;
@@ -23,7 +23,7 @@ interface User {
 const OPERATOR_ROLES = ['admin', 'auditoria'];
 const ROLE_LABEL: Record<User['role'], string> = {
   admin: 'Admin', auditoria: 'Auditoria', prestador: 'Prestador',
-  cooperado: 'Cooperado', pf_nao_medico: 'PF não médico',
+  cooperado: 'Cooperado', credenciado: 'Credenciado',
 };
 type Segment = 'equipe' | 'prestadores';
 
@@ -53,7 +53,7 @@ const ROLE_OPTIONS: Record<Segment, { value: string; label: string }[]> = {
   prestadores: [
     { value: 'prestador', label: 'Prestador' },
     { value: 'cooperado', label: 'Cooperado' },
-    { value: 'pf_nao_medico', label: 'PF não médico' },
+    { value: 'credenciado', label: 'Credenciado' },
   ],
 };
 

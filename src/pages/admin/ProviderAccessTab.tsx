@@ -111,7 +111,7 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
         <p className="text-sm leading-relaxed text-blue-900">
           <span className="font-semibold">Um acesso por unidade (padrão):</span> cada endereço comercial tem seu próprio login,
           com visão restrita às avaliações, planos e certificados daquela unidade — privacidade e aderência à LGPD.
-          Perfil padrão: <span className="font-semibold">Prestador / Cooperado / PF não médico</span>.{' '}
+          Perfil padrão: <span className="font-semibold">Prestador / Cooperado / Credenciado</span>.{' '}
           <span className="font-semibold">Precisa centralizar?</span> Quando o mesmo responsável cuida de várias unidades,
           você pode <span className="font-semibold">agrupar</span> unidades sob um único acesso (um e-mail só).
         </p>

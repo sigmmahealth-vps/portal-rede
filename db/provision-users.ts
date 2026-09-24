@@ -1,7 +1,7 @@
 // Gera usuários de acesso a partir do cadastro (tela Equipe→Usuários).
 // 1 usuário por par (prestador, ENDEREÇO comercial) sem usuário: nome do
 // prestador, e-mail do próprio endereço, role por deriveProviderRole (PF cooperado /
-// PF não médico / PJ→prestador), sem senha e SEM enviar convite — o convite é ação manual do
+// credenciado / PJ→prestador), sem senha e SEM enviar convite — o convite é ação manual do
 // admin no menu da tela. Endereço sem e-mail utilizável (ausente, inválido ou
 // já em uso por outro usuário) TAMBÉM ganha usuário, com email NULL — aparece
 // como "Sem e-mail" na tela até o admin definir um. Idempotente.
@@ -49,7 +49,7 @@ async function main() {
 
   console.log(`[provision-users] endereços comerciais sem usuário: ${candidates.length}`);
   const byRole = (r: string) => toCreate.filter(c => deriveProviderRole(c.person_type, c.provider_group) === r).length;
-  console.log(`  → criar com e-mail: ${toCreate.length} (${byRole('cooperado')} cooperado, ${byRole('pf_nao_medico')} PF não médico, ${byRole('prestador')} prestador)`);
+  console.log(`  → criar com e-mail: ${toCreate.length} (${byRole('cooperado')} cooperado, ${byRole('credenciado')} credenciado, ${byRole('prestador')} prestador)`);
   console.log(`  → criar SEM e-mail (status "Sem e-mail" na tela): ${semEmailUtilizavel.length}`);
   console.log(`      sem e-mail válido no endereço: ${semEmail.length}`);
   console.log(`      e-mail já em uso/compartilhado: ${emailEmUso.length}`);

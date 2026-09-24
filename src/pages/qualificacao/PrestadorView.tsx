@@ -98,8 +98,8 @@ const AlertGroupCard = ({ type, items, onRun, manualFor }: { key?: string; type:
                 {(() => {
                   const href = manualFor?.(it.scriptId);
                   return href && (
-                    <a href={href} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-secondary-900 hover:bg-gray-50">
-                      <FileText className="h-4 w-4" /> Manual
+                    <a href={href} className="inline-flex items-center gap-1.5 rounded-lg border-2 border-[#F47920] bg-[#FDF0E3] px-3 py-1.5 text-sm font-bold text-[#8A3A06] shadow-sm hover:bg-[#FBE1C7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F47920]/40">
+                      <FileText className="h-4 w-4" /> Baixar manual
                     </a>
                   );
                 })()}
@@ -364,7 +364,7 @@ export default function PrestadorView({ user }: { user: any }) {
                 {s.manual_filename && (
                   <a
                     href={manualHref(s.id)}
-                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-secondary-900 transition-colors hover:bg-gray-50"
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-[#F47920] bg-[#FDF0E3] px-4 py-2.5 text-sm font-bold text-[#8A3A06] shadow-sm transition-colors hover:bg-[#FBE1C7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F47920]/40"
                   >
                     <FileText className="h-4 w-4" /> Baixar manual do roteiro
                   </a>

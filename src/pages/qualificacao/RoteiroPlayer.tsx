@@ -633,7 +633,7 @@ export default function RoteiroPlayer({
                 <p className="text-xs text-gray-500">respondidos</p>
               </div>
               {script?.manual_filename && (
-                <a href={manualHref(scriptId)} className="ml-auto inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:underline">
+                <a href={manualHref(scriptId)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border-2 border-[#F47920] bg-[#FDF0E3] px-3 py-1.5 text-sm font-bold text-[#8A3A06] hover:bg-[#FBE1C7]">
                   <FileText className="h-4 w-4" /> Manual
                 </a>
               )}
@@ -990,9 +990,15 @@ export default function RoteiroPlayer({
             {script?.manual_filename && (
               <a
                 href={manualHref(scriptId)}
-                className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-secondary-900 transition-colors hover:bg-gray-50"
+                className="flex items-center gap-3 rounded-2xl border-2 border-[#F47920] bg-[#FDF0E3] px-4 py-3 text-sm font-bold text-[#8A3A06] shadow-sm transition-colors hover:bg-[#FBE1C7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F47920]/40"
               >
-                <FileText className="h-4 w-4 text-emerald-700" /> Baixar manual do roteiro
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#F47920] text-white">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <span>
+                  Baixar manual do roteiro
+                  <span className="block text-xs font-medium text-[#8A3A06]/80">Orientações para o preenchimento</span>
+                </span>
               </a>
             )}
             <div className="rounded-2xl border border-gray-200 bg-white p-5">

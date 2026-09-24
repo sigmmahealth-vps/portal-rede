@@ -17,7 +17,7 @@ const C = {
   muted: '#9CA3AF',
 };
 
-export const CONTACT_EMAIL = 'rededeprestadores@criciuma.unimedsc.com.br';
+export const CONTACT_EMAIL = 'prp@criciuma.unimedsc.com.br';
 
 // Unimed Sans via @font-face (clientes que suportam; os demais caem no Arial).
 const FONT = "font-family:'Unimed Sans',Arial,Helvetica,sans-serif;";
@@ -127,6 +127,9 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
       <table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 0;">
         <tr>
           <td width="4" style="background:${C.orange};border-radius:2px;"></td>
+          <td width="56" style="background:${C.lightOrange};padding:14px 0 14px 16px;vertical-align:middle;">
+            <img src="${escapeHtml(appUrl)}/suporte.png" alt="Suporte" width="40" height="40" style="display:block;width:40px;height:40px;">
+          </td>
           <td style="background:${C.lightOrange};padding:14px 16px;${FONT}font-size:14px;line-height:1.6;color:${C.text};">
             <strong>Dúvidas?</strong> Entre em contato pelo e-mail:<br>
             <a href="mailto:${CONTACT_EMAIL}" style="color:${C.orange};font-weight:bold;text-decoration:none;">${CONTACT_EMAIL}</a>
@@ -136,12 +139,11 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 16px;">
       <p style="margin:0;${FONT}font-size:14px;color:${C.green};font-weight:bold;">Atenciosamente,</p>
       <p style="margin:2px 0 0;${FONT}font-size:16px;font-weight:bold;color:#111827;">Rede de Prestadores</p>
-      <p style="margin:2px 0 0;${FONT}font-size:12px;color:${C.muted};">Unimed Criciúma — Programa de Qualificação da Rede</p>
     </td>
   </tr>
   <tr>
-    <td style="background:${C.darkGreen};padding:18px 28px;${FONT}text-align:center;">
-      <img src="${escapeHtml(appUrl)}/logo-unimed-criciuma.png" alt="Unimed Criciúma" height="34" style="display:inline-block;height:34px;width:auto;margin-bottom:10px;">
+    <td style="background:${C.darkGreen};padding:22px 28px;${FONT}text-align:center;">
+      <img src="${escapeHtml(appUrl)}/logo-unimed-email.png" alt="Unimed Criciúma" width="152" height="56" style="display:inline-block;width:152px;height:56px;margin-bottom:12px;">
       <div style="font-size:12px;color:#ffffff;"><strong style="color:#8FD3B6;">Unimed Criciúma</strong> · Cooperativa de Trabalho Médico</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:4px;">Este é um e-mail automático. Em caso de dúvidas, entre em contato com a equipe da Rede de Prestadores.</div>
     </td>
@@ -182,12 +184,13 @@ export function notificationBlocks(
       break;
     case 'ciclo_reaberto':
       b = {
+        // Título pedido pelo cliente (2026-09-24): "Ciclo Prorrogado".
         banner: ctx.prorrogado
-          ? `Ciclo ${ctx.cycle_label ?? ''} — prazo prorrogado`.replace(/\s+/g, ' ').trim()
+          ? 'Ciclo prorrogado'
           : `Ciclo ${ctx.cycle_label ?? ''} reaberto`.replace(/\s+/g, ' ').trim(),
         paragraphs: [
           ctx.prorrogado
-            ? `O prazo do ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi prorrogado e a sua avaliação voltou a ficar disponível no portal.`
+            ? `O prazo do ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi prorrogado até **${fmtDate(ctx.end_date) || '—'}**. A sua avaliação voltou a ficar disponível no portal e pode ser enviada até essa data.`
             : `O ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi reaberto e a sua avaliação voltou a ficar disponível no portal.`,
         ],
         highlight: { label: 'Novo prazo para envio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
@@ -352,10 +355,11 @@ export function notificationBlocks(
       break;
     case 'ciclo_encerrado_sem_avaliacao':
       b = {
-        banner: 'Ciclo de qualificação encerrado',
-        paragraphs: ['O ciclo de qualificação da Rede de Prestadores foi encerrado e a sua avaliação não foi concluída a tempo.'],
+        // Textos do cliente (2026-09-24).
+        banner: 'Ciclo encerrado - Avaliação não concluída',
+        paragraphs: ['O ciclo de qualificação da Rede de Prestadores foi encerrado e identificamos que sua avaliação não foi concluída dentro do prazo estabelecido. Por esse motivo, a avaliação deste ciclo permanecerá registrada como não concluída.'],
         highlight: { label: 'Ciclo encerrado', value: ctx.cycle_label ?? '—', iconImg: `${appUrl}/calendario.png` },
-        steps: 'aguarde a abertura do próximo ciclo de qualificação para retomar a sua avaliação.',
+        steps: 'não será possível concluir ou retomar esta avaliação após o encerramento do ciclo. A não conclusão ficará registrada no histórico de qualificação do prestador e poderá resultar na aplicação de penalidades nos próximos ciclos, conforme as regras do Programa de Qualificação da Rede.',
         cta,
       };
       break;

@@ -10,7 +10,7 @@ const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
 fs.mkdirSync(dest, { recursive: true });
 
 // Embute em base64 imagens e fontes que os modelos referenciam (abrem offline).
-const ASSETS = ['logo-prp-branco.png', 'logo-unimed-criciuma.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
+const ASSETS = ['logo-prp-branco.png', 'logo-unimed-email.png', 'suporte.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
 const FONTES = ['fonts/Unimed-Regular.woff2', 'fonts/Unimed-Bold.woff2'];
 const embed = (h: string) => {
   let out = h;
@@ -39,6 +39,8 @@ const APP = 'https://portal-unimed-criciuma.exemplo';
 const NOME = 'Clínica de Fisioterapia Reabilitar';
 
 const modelos: Array<[string, string, { subject: string; html: string }]> = [
+  ['00-ciclo-encerrado-nao-concluida', 'Ciclo encerrado — avaliação não concluída (Prestador sem roteiro enviado)', renderNotificationEmail('ciclo_encerrado_sem_avaliacao', { ...CTX, cycle_label: 'Teste 16.09' }, APP, NOME)],
+  ['00-ciclo-prorrogado', 'Ciclo prorrogado (Prestador com roteiro em aberto)', renderNotificationEmail('ciclo_reaberto', { ...CTX, prorrogado: true, end_date: '2026-10-31' }, APP, NOME)],
   ['01-abertura-ciclo-roteiro-disponivel', 'Abertura do ciclo + roteiro disponível (Prestador)', renderNotificationEmail('ciclo_aberto', CTX, APP, NOME)],
   ['02-roteiro-enviado-analise', 'Prestador enviou roteiro para análise (Auditor — hoje só portal)', renderNotificationEmail('roteiro_enviado', CTX, APP, 'Auditoria Unimed')],
   ['03-reanalise-criterio', 'Reanálise de critério solicitada (Prestador)', renderNotificationEmail('reanalise_solicitada', CTX, APP, NOME)],

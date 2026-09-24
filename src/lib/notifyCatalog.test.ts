@@ -60,8 +60,8 @@ test('reanálise em lote: lista longa é limitada a 15 itens', () => {
 
 test('ciclo_reaberto: prorrogação vs reabertura, ambos com o prazo', () => {
   const pr = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15', prorrogado: true });
-  assert.equal(pr.title, 'Ciclo Ciclo 2026 — prazo prorrogado');
-  assert.ok(pr.body.includes('prorrogado') && pr.body.includes('15/10/2026'), pr.body);
+  assert.equal(pr.title, 'Ciclo prorrogado — Ciclo 2026');
+  assert.ok(pr.body.includes('prorrogado até 15/10/2026'), pr.body);
   const re = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
   assert.equal(re.title, 'Ciclo Ciclo 2026 reaberto');
   assert.ok(!re.title.includes('prorrog') && re.body.includes('15/10/2026'), re.body);
@@ -71,8 +71,15 @@ test('ciclo_reaberto: prorrogação vs reabertura, ambos com o prazo', () => {
 test('ciclo_reaberto: e-mail tem banner próprio (não o tipo cru) e o prazo', () => {
   const e = renderNotificationEmail('ciclo_reaberto', { cycle_label: '2026', end_date: '2026-10-15', prorrogado: true }, 'https://x');
   assert.ok(!e.html.includes('CICLO_REABERTO'), 'banner cru');
-  assert.ok(e.subject.includes('prazo prorrogado'), e.subject);
-  assert.ok(e.html.includes('15/10/2026'));
+  assert.ok(e.subject.endsWith('Ciclo prorrogado'), e.subject);
+  assert.ok(e.html.includes('CICLO PRORROGADO'));
+  assert.ok(e.html.includes('prorrogado até <strong>15/10/2026</strong>'), 'corpo traz a data máxima');
+  // Card de dúvidas e assinatura (pedido do cliente, 2026-09-24).
+  assert.ok(e.html.includes('prp@criciuma.unimedsc.com.br'));
+  assert.ok(!e.html.includes('rededeprestadores@'));
+  assert.ok(e.html.includes('/suporte.png'));
+  assert.ok(!e.html.includes('Programa de Qualificação da Rede'));
+  assert.ok(e.html.includes('/logo-unimed-email.png'));
 });
 
 test('roteiro_pendente: individual vs resumo auditoria', () => {
@@ -102,11 +109,14 @@ test('roteiroReminderMarco: janelas por dias restantes', () => {
   assert.equal(roteiroReminderMarco(-3), 'fim');   // ciclo sem auto-close já passou
 });
 
-test('ciclo_encerrado_sem_avaliacao: título com o ciclo e orientação de próximo ciclo', () => {
+test('ciclo_encerrado_sem_avaliacao: textos do cliente (título, corpo e próximos passos)', () => {
   const c = renderNotification('ciclo_encerrado_sem_avaliacao', { cycle_label: '2026' });
-  assert.ok(c.title.includes('2026'), c.title);
-  assert.ok(c.title.toLowerCase().includes('não concluída'), c.title);
-  assert.ok(c.body.toLowerCase().includes('próximo ciclo'), c.body);
+  assert.equal(c.title, 'Ciclo encerrado - Avaliação não concluída (2026)');
+  assert.ok(c.body.includes('permanecerá registrada como não concluída'), c.body);
+  const e = renderNotificationEmail('ciclo_encerrado_sem_avaliacao', { cycle_label: '2026' }, 'https://x');
+  assert.ok(e.html.includes('CICLO ENCERRADO - AVALIAÇÃO NÃO CONCLUÍDA'));
+  assert.ok(e.html.includes('não será possível concluir ou retomar esta avaliação'));
+  assert.ok(!e.html.includes('aguarde a abertura do próximo ciclo'));
 });
 
 test('E-03: ciclo_aberto e reanálise mostram o prazo (fim do ciclo) quando há end_date', () => {

@@ -5143,6 +5143,9 @@ async function startServer() {
     }
   });
 
+  // Estados em que o prestador ainda precisa agir (= EDITABLE_STATES da PrestadorView).
+  const REOPEN_NOTIFY_STATES = ['pendente', 'em_andamento', 'aguardando_evidencia'];
+
   // Reabre/prorroga um ciclo encerrado (spec 2026-09-11). body.end_date = prorrogação.
   app.post('/api/eval/cycles/:id/reabrir', authenticate, async (req: any, res) => {
     try {
@@ -5164,7 +5167,9 @@ async function startServer() {
       });
       // Avisa os prestadores restaurados (fire-and-forget; dedupe por instância).
       void (async () => {
-        for (const inst of result.reopened ?? []) {
+        // Só quem ainda tem o roteiro em aberto (não enviado) — pedido do cliente, 2026-09-24.
+        // Instância restaurada em análise já foi enviada: prorrogação não muda nada para ela.
+        for (const inst of (result.reopened ?? []).filter(i => REOPEN_NOTIFY_STATES.includes(i.status))) {
           await notifyEvent('ciclo_reaberto', { cycle_label: result.label, end_date: result.endDate, prorrogado: !!newEndDate },
             await prestadorRecipients(inst.provider_id, inst.location_id),
             { providerId: inst.provider_id, dedupeRef: `reopen:${inst.id}:${result.endDate}` });
@@ -5226,7 +5231,10 @@ async function startServer() {
       SELECT ei.id, ei.provider_id, ei.location_id, c.label
         FROM eval_instances ei
         JOIN eval_cycles c ON c.id = ei.cycle_id
-       WHERE ei.cycle_id = $1 AND ei.status = 'ciclo_encerrado'`, [cycleId]);
+       WHERE ei.cycle_id = $1 AND ei.status = 'ciclo_encerrado'
+         -- Só quem não tinha enviado o roteiro (pedido do cliente, 2026-09-24): em análise no
+         -- encerramento já foi entregue, não é "avaliação não concluída".
+         AND ei.status_before_close = ANY($2::text[])`, [cycleId, REOPEN_NOTIFY_STATES]);
     for (const inst of rows) {
       await notifyEvent('ciclo_encerrado_sem_avaliacao', { cycle_label: inst.label },
         await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
@@ -5236,7 +5244,7 @@ async function startServer() {
 
   // Reabre um ciclo encerrado (spec 2026-09-11): reativa e restaura as instâncias
   // 'ciclo_encerrado' ao status anterior. newEndDate presente = prorrogação.
-  async function reopenCycleCore(cycleId: number, newEndDate: string | null): Promise<{ ok: boolean; code?: number; error?: string; restored?: number; endDate?: string; label?: string; reopened?: Array<{ id: number; provider_id: number; location_id: number | null }> }> {
+  async function reopenCycleCore(cycleId: number, newEndDate: string | null): Promise<{ ok: boolean; code?: number; error?: string; restored?: number; endDate?: string; label?: string; reopened?: Array<{ id: number; provider_id: number; location_id: number | null; status: string }> }> {
     const { rows: cy } = await query('SELECT id, label, active, start_date, end_date FROM eval_cycles WHERE id = $1', [cycleId]);
     if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado' };
     if (cy[0].active) return { ok: false, code: 409, error: 'ciclo já está ativo — para prorrogar, edite a data fim' };
@@ -5253,7 +5261,7 @@ async function startServer() {
       return { ok: false, code: 400, error: 'A nova data fim não pode ser anterior ao início do ciclo.' };
     }
 
-    let reopened: Array<{ id: number; provider_id: number; location_id: number | null }> = [];
+    let reopened: Array<{ id: number; provider_id: number; location_id: number | null; status: string }> = [];
     await withTransaction(async (c) => {
       await c.query('UPDATE eval_cycles SET active = true, end_date = COALESCE($2, end_date) WHERE id = $1', [cycleId, newEndDate]);
       const { rows } = await c.query(`
@@ -5267,8 +5275,8 @@ async function startServer() {
                status_before_close = NULL,
                completed_at = NULL
          WHERE ei.cycle_id = $1 AND ei.status = 'ciclo_encerrado'
-         RETURNING ei.id, ei.provider_id, ei.location_id`, [cycleId]);
-      reopened = rows.map((r: any) => ({ id: Number(r.id), provider_id: Number(r.provider_id), location_id: r.location_id ?? null }));
+         RETURNING ei.id, ei.provider_id, ei.location_id, ei.status`, [cycleId]);
+      reopened = rows.map((r: any) => ({ id: Number(r.id), provider_id: Number(r.provider_id), location_id: r.location_id ?? null, status: String(r.status) }));
 
       // Espelho do closeCycleCore: planos marcados 'encerrado sem conclusão' pelo
       // encerramento deste ciclo voltam ao acompanhamento normal.

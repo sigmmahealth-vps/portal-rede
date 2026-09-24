@@ -73,8 +73,8 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
     case 'ciclo_reaberto':
       // prorrogado = admin informou nova data de fim; senão é reabertura no mesmo prazo.
       return ctx.prorrogado
-        ? { title: `Ciclo ${ctx.cycle_label ?? ''} — prazo prorrogado`.replace(/\s+/g, ' ').trim(),
-            body: `O prazo do ciclo de qualificação foi prorrogado e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link }
+        ? { title: ctx.cycle_label ? `Ciclo prorrogado — ${ctx.cycle_label}` : 'Ciclo prorrogado',
+            body: `O prazo do ciclo de qualificação foi prorrogado até ${fmtDate(ctx.end_date)}. Conclua e envie sua avaliação até essa data.`, link }
         : { title: `Ciclo ${ctx.cycle_label ?? ''} reaberto`.replace(/\s+/g, ' ').trim(),
             body: `O ciclo de qualificação foi reaberto e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link };
     case 'roteiro_enviado':
@@ -146,8 +146,9 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       return { title: 'Certificado próximo do vencimento',
                body: `Seu certificado de qualificação vence em ${fmtDate(ctx.valid_until)}.`, link };
     case 'ciclo_encerrado_sem_avaliacao':
-      return { title: `Ciclo ${ctx.cycle_label ?? ''} encerrado — avaliação não concluída`.replace(/\s+/g, ' ').trim(),
-               body: 'O ciclo de qualificação foi encerrado e a sua avaliação não foi concluída a tempo. Aguarde a abertura do próximo ciclo para se qualificar.', link };
+      // Textos do cliente (2026-09-24).
+      return { title: `Ciclo encerrado - Avaliação não concluída${ctx.cycle_label ? ` (${ctx.cycle_label})` : ''}`,
+               body: 'O ciclo de qualificação da Rede de Prestadores foi encerrado e identificamos que sua avaliação não foi concluída dentro do prazo estabelecido. Por esse motivo, a avaliação deste ciclo permanecerá registrada como não concluída.', link };
     default:
       return { title: String(type), body: '', link };
   }

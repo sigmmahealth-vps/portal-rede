@@ -6,10 +6,11 @@ import ImportRoteiroModal from './qualificacao/ImportRoteiroModal';
 import RoteiroAlerts from './qualificacao/RoteiroAlerts';
 import ConfirmDeleteRoteiroModal from './qualificacao/ConfirmDeleteRoteiroModal';
 import EliminatoriosModal from './qualificacao/EliminatoriosModal';
+import ManualRoteiroModal from './qualificacao/ManualRoteiroModal';
 import UsuariosTab from './admin/UsuariosTab';
 import EmailsTab from './admin/EmailsTab';
 import {
-  Users, 
+  Users, FileText, FileCheck2,
   GraduationCap, 
   Megaphone, 
   Image as ImageIcon,
@@ -122,6 +123,7 @@ export default function Admin() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [eliminatoriosTarget, setEliminatoriosTarget] = useState<number | null>(null);
+  const [manualTarget, setManualTarget] = useState<any | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'lista'>(
     () => (localStorage.getItem('roteirosViewMode') as 'cards' | 'lista') || 'cards',
   );
@@ -674,6 +676,7 @@ export default function Admin() {
                     <div className="flex justify-between items-start mb-3">
                       <h3 className="text-lg font-bold text-gray-900">{vigente.title}</h3>
                       <div className="flex items-center gap-1 flex-shrink-0">
+                        <ManualButton has={!!vigente.manual_filename} onClick={() => setManualTarget(vigente)} />
                         <EliminatoriosButton onClick={() => setEliminatoriosTarget(Number(vigente.id))} />
                         <button
                           onClick={() => handleDeleteScript(vigente)}
@@ -786,7 +789,8 @@ export default function Admin() {
                           <td className="py-4 pr-4 align-top"><RoteiroAlerts alerts={vigente.alerts} /></td>
                           <td className="py-4 align-top text-center">
                             <div className="flex items-center justify-center gap-1">
-                              <EliminatoriosButton onClick={() => setEliminatoriosTarget(Number(vigente.id))} />
+                              <ManualButton has={!!vigente.manual_filename} onClick={() => setManualTarget(vigente)} />
+                        <EliminatoriosButton onClick={() => setEliminatoriosTarget(Number(vigente.id))} />
                               <button onClick={() => handleDeleteScript(vigente)} className="text-red-500 hover:text-red-700 p-1" title="Excluir roteiro">
                                 <Trash2 className="w-5 h-5" />
                               </button>
@@ -1284,6 +1288,10 @@ export default function Admin() {
         />
       )}
 
+      {manualTarget && (
+        <ManualRoteiroModal script={manualTarget} onClose={() => setManualTarget(null)} onChanged={loadData} />
+      )}
+
       {eliminatoriosTarget != null && (
         <EliminatoriosModal
           scriptId={eliminatoriosTarget}
@@ -1593,6 +1601,22 @@ function RoteiroDatas({ script }: { script: any }) {
       {rev && <div>rev. {rev}</div>}
       {impl && <div>implantação: {impl}</div>}
     </div>
+  );
+}
+
+// Manual (PDF) do roteiro: verde quando já há manual enviado.
+function ManualButton({ onClick, has }: { onClick: () => void; has: boolean }) {
+  const label = has ? 'Manual do roteiro (enviado)' : 'Enviar manual do roteiro';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`p-1 flex-shrink-0 ${has ? 'text-[#00995D] hover:text-[#007a4a]' : 'text-gray-500 hover:text-[#00995D]'}`}
+      title={label}
+      aria-label={label}
+    >
+      {has ? <FileCheck2 className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+    </button>
   );
 }
 

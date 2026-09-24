@@ -22,3 +22,6 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
   if (response.status === 204) return null;
   return response.json();
 };
+
+// Link de download do manual (PDF) do roteiro — autenticado pelo cookie de sessão.
+export const manualHref = (scriptId: number | string) => `${API_URL}/eval/scripts/${scriptId}/manual`;

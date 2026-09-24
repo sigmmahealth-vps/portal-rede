@@ -3431,7 +3431,7 @@ async function startServer() {
       const baseQuery = `
         SELECT ei.*, s.title as script_title, p.name as provider_name,
           COALESCE(NULLIF(pl.logradouro, ''), pl.label, pl.cidade) AS location_label,
-          pl.cidade AS location_cidade, pl.uf AS location_uf,
+          pl.cidade AS location_cidade, pl.uf AS location_uf, cy.label AS cycle_label,
           (SELECT count(*)::int FROM eval_questions eq
              JOIN eval_sections es ON eq.section_id = es.id
             WHERE es.script_id = ei.script_id) AS total_questions,
@@ -3441,6 +3441,7 @@ async function startServer() {
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id
         LEFT JOIN provider_locations pl ON pl.id = ei.location_id
+        LEFT JOIN eval_cycles cy ON cy.id = ei.cycle_id
       `;
       let instances;
       if (role === 'admin' || role === 'auditoria') {

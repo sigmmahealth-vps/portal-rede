@@ -276,6 +276,18 @@ export default function PrestadorView({ user }: { user: any }) {
   // Um par (script × unidade) é uma "linha" da aba Roteiros. Se houver >1 unidade
   // comercial, cada unidade tem sua própria instância; senão, comportamento antigo
   // (locationId undefined; o backend resolve auto quando há 1 unidade).
+  // Instância corrente do par (roteiro × unidade) — a que vira card em "Roteiros Disponíveis".
+  const currentInstance = (scriptId: number, loc: any) => instances.find(i =>
+    i.script_id === scriptId
+    && !OPEN_STATES.includes(i.status)
+    && (loc ? String(i.location_id) === String(loc.id) : true),
+  );
+  // O histórico não repete o que já está em "Disponíveis" (a avaliação reaberta/prorrogada
+  // continua sendo a mesma instância — aparecer nos dois lados parecia uma versão nova).
+  const shownIds = new Set(scriptsVigentes.flatMap(s =>
+    (locations.length > 1 ? locations : [null]).map((loc: any) => currentInstance(s.id, loc)?.id).filter(Boolean)));
+  const historyInstances = instances.filter(i => !shownIds.has(i.id));
+
   const roteirosTab = (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
       <div className="space-y-4">
@@ -289,11 +301,7 @@ export default function PrestadorView({ user }: { user: any }) {
             ? locations.map((loc: any) => ({ loc, key: `${s.id}-${loc.id}` }))
             : [{ loc: null, key: `${s.id}` }];
           return rows.map(({ loc, key }) => {
-            const existing = instances.find(i =>
-              i.script_id === s.id
-              && !OPEN_STATES.includes(i.status)
-              && (loc ? String(i.location_id) === String(loc.id) : true),
-            );
+            const existing = currentInstance(s.id, loc);
             // Sem instância corrente (admin não abriu ciclo pra esse local, ou o
             // ciclo já encerrou), o prestador não tem o que fazer — esconde o card.
             if (!existing) return null;
@@ -328,13 +336,16 @@ export default function PrestadorView({ user }: { user: any }) {
 
       <div className="space-y-4">
         <h2 className="border-b pb-2 text-lg font-bold text-secondary-900">Meu Histórico</h2>
-        {instances.length === 0 ? (
+        {historyInstances.length === 0 ? (
           <p className="text-sm text-gray-500">Nenhum histórico encontrado.</p>
-        ) : instances.map(inst => (
+        ) : historyInstances.map(inst => (
           <div key={inst.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold text-secondary-900">{inst.script_title}</h3>
+                {inst.cycle_label && (
+                  <p className="mt-0.5 text-xs font-semibold text-secondary-900">Ciclo {inst.cycle_label}</p>
+                )}
                 {inst.location_label && (
                   <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-emerald-700">
                     <MapPin className="h-3 w-3" />

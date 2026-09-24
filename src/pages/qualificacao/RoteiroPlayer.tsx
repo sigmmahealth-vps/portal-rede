@@ -788,7 +788,11 @@ export default function RoteiroPlayer({
                             )}
                           </div>
 
-                          {answered && !pending ? (
+                          {reanaliseSet.has(q.id) ? (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-800">
+                              <RotateCcw className="h-3.5 w-3.5" /> Em reanálise
+                            </span>
+                          ) : answered && !pending ? (
                             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                               <Check className="h-3.5 w-3.5" strokeWidth={3} /> Respondido
                             </span>

@@ -25,6 +25,7 @@ import { questionOnly } from './src/lib/questionText.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
+import { canDownloadManual, isPdf, MANUAL_MAX_BYTES } from './db/script-manual.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
@@ -86,6 +87,17 @@ const xlsxUpload = (req: any, res: any, next: any) => {
     if (err) {
       const isSize = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
       return res.status(400).json({ error: isSize ? 'Arquivo maior que 5 MB' : (err.message || 'Falha no upload') });
+    }
+    next();
+  });
+};
+
+// Upload do manual do roteiro (PDF, em memória → bytea). Tipo validado na rota (isPdf).
+const pdfUpload = (req: any, res: any, next: any) => {
+  multer({ storage: multer.memoryStorage(), limits: { fileSize: MANUAL_MAX_BYTES } }).single('file')(req, res, (err: any) => {
+    if (err) {
+      const isSize = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+      return res.status(400).json({ error: isSize ? 'Arquivo maior que 20 MB' : (err.message || 'Falha no upload') });
     }
     next();
   });
@@ -3282,11 +3294,16 @@ async function startServer() {
       // resolver p/ versão vigente por source_file. Hoje há 1 versão por roteiro.
       const scripts = (role === 'prestador' || role === 'cooperado' || role === 'credenciado')
         ? (await query(
-            `SELECT s.* FROM eval_scripts s
+            `SELECT s.*, m.filename AS manual_filename, m.size_bytes AS manual_size_bytes, m.uploaded_at AS manual_uploaded_at
+               FROM eval_scripts s
              JOIN providers p ON p.eval_script_id = s.id
+             LEFT JOIN eval_script_manuals m ON m.source_file = s.source_file
              WHERE p.id = $1
              ORDER BY s.created_at DESC`, [provider_id])).rows
-        : (await query('SELECT * FROM eval_scripts ORDER BY created_at DESC')).rows;
+        : (await query(
+            `SELECT s.*, m.filename AS manual_filename, m.size_bytes AS manual_size_bytes, m.uploaded_at AS manual_uploaded_at
+               FROM eval_scripts s LEFT JOIN eval_script_manuals m ON m.source_file = s.source_file
+              ORDER BY s.created_at DESC`)).rows;
 
       // Maior versão por source_file → define a vigência ("is_current").
       const maxBySource = new Map<string, number>();
@@ -3329,9 +3346,87 @@ async function startServer() {
     }
   });
 
+  // Manual (PDF) do roteiro — spec 2026-09-24. Chave = source_file (vale p/ todas as revisões).
+  const scriptSourceFile = async (id: number): Promise<string | null> =>
+    (await query('SELECT source_file FROM eval_scripts WHERE id = $1', [id])).rows[0]?.source_file ?? null;
+
+  app.put('/api/eval/scripts/:id/manual', authenticate, pdfUpload, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const sf = await scriptSourceFile(Number(req.params.id));
+      if (!sf) return res.status(404).json({ error: 'Roteiro não encontrado' });
+      if (!req.file) return res.status(400).json({ error: 'Envie o PDF no campo "file".' });
+      // multer decodifica originalname como latin1; reconstruir o UTF-8 do nome do arquivo
+      const name = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      if (!isPdf(name, req.file.buffer)) return res.status(400).json({ error: 'Apenas arquivos PDF são aceitos' });
+      await query(
+        `INSERT INTO eval_script_manuals (source_file, filename, size_bytes, content, uploaded_by)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (source_file) DO UPDATE SET filename = EXCLUDED.filename, size_bytes = EXCLUDED.size_bytes,
+           content = EXCLUDED.content, uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()`,
+        [sf, name, req.file.size, req.file.buffer, req.user.id]);
+      await auditLog({
+        query, userId: req.user.id, action: 'script_manual_uploaded',
+        meta: { script_id: Number(req.params.id), source_file: sf, filename: name, size: req.file.size },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true, filename: name, size_bytes: req.file.size });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/eval/scripts/:id/manual', authenticate, async (req: any, res) => {
+    try {
+      if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
+      const sf = await scriptSourceFile(Number(req.params.id));
+      if (!sf) return res.status(404).json({ error: 'Roteiro não encontrado' });
+      await query('DELETE FROM eval_script_manuals WHERE source_file = $1', [sf]);
+      await auditLog({
+        query, userId: req.user.id, action: 'script_manual_removed',
+        meta: { script_id: Number(req.params.id), source_file: sf },
+        ip: hashClientIp(req),
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Download só autenticado (sem link público). Prestador: só o manual do roteiro ligado a ele.
+  app.get('/api/eval/scripts/:id/manual', authenticate, async (req: any, res) => {
+    try {
+      const sf = await scriptSourceFile(Number(req.params.id));
+      let linked: string[] = [];
+      if (!isStaff(req.user.role) && req.user.provider_id) {
+        const { rows } = await query(
+          `SELECT DISTINCT s.source_file FROM eval_scripts s
+            WHERE s.source_file IS NOT NULL AND (
+              s.id = (SELECT eval_script_id FROM providers WHERE id = $1)
+              OR s.id IN (SELECT script_id FROM eval_instances WHERE provider_id = $1 AND location_id = ANY($2::bigint[])))`,
+          [req.user.provider_id, await userLocationIds(req)]);
+        linked = rows.map((r: any) => r.source_file);
+      }
+      if (!canDownloadManual(req.user.role, linked, sf)) return res.status(403).json({ error: 'Sem acesso a este manual' });
+      const { rows } = await query('SELECT filename, content FROM eval_script_manuals WHERE source_file = $1', [sf]);
+      if (!rows[0]) return res.status(404).json({ error: 'Este roteiro ainda não tem manual.' });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(rows[0].filename)}`);
+      res.send(rows[0].content);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/eval/scripts/:id', authenticate, async (req: any, res) => {
     try {
-      const { rows: scriptRows } = await query('SELECT * FROM eval_scripts WHERE id = $1', [req.params.id]);
+      const { rows: scriptRows } = await query(
+        `SELECT s.*, m.filename AS manual_filename, m.size_bytes AS manual_size_bytes, m.uploaded_at AS manual_uploaded_at
+           FROM eval_scripts s LEFT JOIN eval_script_manuals m ON m.source_file = s.source_file
+          WHERE s.id = $1`, [req.params.id]);
       const script = scriptRows[0] as any;
       if (!script) return res.status(404).json({ error: 'Script not found' });
 

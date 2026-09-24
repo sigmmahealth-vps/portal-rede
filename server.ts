@@ -231,11 +231,14 @@ async function startServer() {
   // aquela unidade (via user_locations — migration 0036). Vínculo perdido (unidade
   // sem responsável) NÃO recebe mais nada por fallback — fail-closed; a lista
   // "precisa responsável" do admin é responsabilidade da Fatia 4.
+  // Só quem ativou a conta (invite_status 'accepted') recebe avisos — sininho e e-mail.
+  // Acesso 'Pendente' nunca entrou no portal; o canal dele é o convite (pedido do cliente, 2026-09-24).
   async function prestadorRecipients(providerId: number, locationId: number | null = null): Promise<NotifyRecipient[]> {
     const { rows } = await query(
       `SELECT DISTINCT u.id AS user_id, u.email, u.name
          FROM user_locations ul JOIN users u ON u.id = ul.user_id
-        WHERE ul.provider_id = $1 AND u.is_active = true AND u.role IN ('prestador','cooperado','credenciado')
+        WHERE ul.provider_id = $1 AND u.is_active = true AND u.invite_status = 'accepted'
+          AND u.role IN ('prestador','cooperado','credenciado')
           AND ($2::bigint IS NULL OR ul.location_id = ANY(ARRAY[$2]::bigint[]))`,
       [providerId, locationId]);
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
@@ -243,7 +246,7 @@ async function startServer() {
 
   async function auditoriaRecipients(): Promise<NotifyRecipient[]> {
     const { rows } = await query(
-      `SELECT id AS user_id, email, name FROM users WHERE role = 'auditoria' AND is_active = true`);
+      `SELECT id AS user_id, email, name FROM users WHERE role = 'auditoria' AND is_active = true AND invite_status = 'accepted'`);
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
   }
 

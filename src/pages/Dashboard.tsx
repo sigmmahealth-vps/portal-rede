@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { welcomeLine } from '../lib/greeting';
-import WhatsAppIcon from '../components/WhatsAppIcon';
 import { 
   UploadCloud, 
   FileText, 
@@ -60,27 +59,6 @@ export default function Dashboard() {
   const getSeal = (name: string) => {
     const count = Number(sealRows.find(r => r.seal === name)?.count || 0);
     return { count, pct: sealTotal > 0 ? (count / sealTotal) * 100 : 0 };
-  };
-
-  // Qualificação individual do prestador — avaliação finalizada mais recente.
-  const myEvaluation = adminData?.latestEvaluation || null;
-  const myPercentual = myEvaluation && myEvaluation.percentual != null ? Number(myEvaluation.percentual) : null;
-  const mySeal: string | null = myEvaluation?.seal || null;
-
-  // Tempo de casa (anos) a partir do cadastro do prestador no portal.
-  const providerCreatedAt = adminData?.provider?.created_at;
-  const yearsAsProvider = providerCreatedAt
-    ? Math.floor((Date.now() - new Date(providerCreatedAt).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-    : null;
-
-  // Estilo do selo (cor de fundo, texto e rótulo) por nível.
-  const sealStyle = (seal: string | null) => {
-    switch (seal) {
-      case 'Ouro': return { bg: 'bg-[#FFD700]', border: 'border-yellow-200', text: 'text-yellow-800', label: 'SELO\nOURO' };
-      case 'Prata': return { bg: 'bg-gray-300', border: 'border-gray-200', text: 'text-gray-700', label: 'SELO\nPRATA' };
-      case 'Bronze': return { bg: 'bg-orange-300', border: 'border-orange-200', text: 'text-orange-900', label: 'SELO\nBRONZE' };
-      default: return { bg: 'bg-gray-100', border: 'border-gray-200', text: 'text-gray-400', label: 'SEM\nSELO' };
-    }
   };
 
   if (loading) {
@@ -324,8 +302,6 @@ export default function Dashboard() {
         <p className="text-sm text-gray-500">Último acesso: {lastAccess}</p>
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-6">
-        {/* Main Content Column */}
         <div className="flex-1 space-y-6">
           
           {/* Acesso Rápido */}
@@ -411,60 +387,6 @@ export default function Dashboard() {
           </div>
 
         </div>
-
-        {/* Right Sidebar */}
-        <div className="w-full xl:w-80 space-y-6">
-          
-          {/* Qualificação */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center text-center">
-            <div className={`w-24 h-24 ${sealStyle(mySeal).bg} rounded-full flex items-center justify-center mb-4 shadow-inner border-4 ${sealStyle(mySeal).border}`}>
-              <span className={`text-xl font-black ${sealStyle(mySeal).text} tracking-tighter leading-none`}>
-                {sealStyle(mySeal).label.split('\n').map((line, i) => (
-                  <React.Fragment key={i}>{i > 0 && <br />}{line}</React.Fragment>
-                ))}
-              </span>
-            </div>
-            <h3 className="text-sm font-bold text-gray-800">Sua qualificação na rede</h3>
-            <p className="text-4xl font-black text-[#00995D] my-2">{myPercentual != null ? `${formatPct(myPercentual)}%` : '—'}</p>
-            <Link to="/qualificacao" className="mt-2 px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-colors">
-              {myEvaluation ? 'Ver detalhes da sua avaliação' : 'Responder roteiro'}
-            </Link>
-          </div>
-
-          {/* Tempo de casa */}
-          {yearsAsProvider != null && yearsAsProvider >= 1 && (
-            <div className="bg-[#e6f4ea] rounded-xl shadow-sm border border-[#cce8d6] p-5 relative overflow-hidden">
-              <Award className="absolute -right-4 -bottom-4 h-24 w-24 text-[#00995D] opacity-10" />
-              <h3 className="text-sm font-bold text-[#00995D] mb-2">Obrigado por fazer parte!</h3>
-              <p className="text-xs text-gray-700 leading-relaxed">
-                Você já integra a rede da <strong>Unimed Criciúma</strong> há <strong className="text-[#00995D]">{yearsAsProvider} {yearsAsProvider === 1 ? 'ano' : 'anos'}</strong>. Obrigado por fazer parte!
-              </p>
-            </div>
-          )}
-
-          {/* Precisa de ajuda */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <img src="/ajuda-suporte.webp" alt="Atendente do suporte Unimed com headset" className="w-full h-36 object-cover object-[center_30%]" />
-            <div className="p-5">
-              <h3 className="text-sm font-bold text-gray-800 mb-2">Precisa de ajuda?</h3>
-              <p className="text-xs text-gray-500 mb-4">Nossa equipe de suporte está pronta para te auxiliar com qualquer dúvida.</p>
-              <a href="https://wa.me/5548999999999" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
-                <WhatsAppIcon className="h-4 w-4 text-[#25D366]" /> Falar no WhatsApp
-              </a>
-            </div>
-          </div>
-
-          {/* Atualizações */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-sm font-bold text-gray-800 mb-4">Atualizações</h3>
-            <div className="text-center py-6 text-gray-400 text-xs">
-              <Clock className="h-6 w-6 mx-auto mb-2 opacity-50" />
-              Em breve — seu histórico de atualizações aparecerá aqui.
-            </div>
-          </div>
-
-        </div>
-      </div>
     </div>
   );
 }

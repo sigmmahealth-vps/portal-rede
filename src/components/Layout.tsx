@@ -315,18 +315,15 @@ export default function Layout() {
         </header>
 
         <main className="flex-1 overflow-y-auto bg-[#f4f4f4] p-4 sm:p-6 lg:p-8">
-          {location.pathname === '/dashboard' ? (
-            <Outlet />
-          ) : (
-            <div className="max-w-7xl mx-auto flex flex-col xl:flex-row gap-6 pb-10">
-              {/* min-w-0 (não overflow-hidden): contém a largura do flex sem virar
-                  contexto de clipping, o que quebraria position: sticky dos filhos. */}
-              <div className="flex-1 min-w-0">
-                <Outlet />
-              </div>
-              <RightSidebar />
+          {/* Barra direita única em todas as páginas, inclusive o Dashboard (cliente, 2026-09-24). */}
+          <div className="max-w-7xl mx-auto flex flex-col xl:flex-row gap-6 pb-10">
+            {/* min-w-0 (não overflow-hidden): contém a largura do flex sem virar
+                contexto de clipping, o que quebraria position: sticky dos filhos. */}
+            <div className="flex-1 min-w-0">
+              <Outlet />
             </div>
-          )}
+            <RightSidebar />
+          </div>
         </main>
       </div>
     </div>

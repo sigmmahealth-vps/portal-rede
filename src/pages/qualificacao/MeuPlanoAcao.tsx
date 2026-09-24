@@ -3,7 +3,7 @@ import { fetchApi } from '../../lib/api';
 import { fmtData, fmtDataHora } from '../../lib/formatDate';
 import { PLAN_STATUS_LABEL, PLAN_COLOR_CLASS } from './planoStatus';
 import ItemHistorico from './ItemHistorico';
-import { Loader2, Paperclip, UploadCloud, Trash2, MapPin, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Loader2, Paperclip, UploadCloud, Trash2, MapPin, ArrowRight, ArrowLeft, Target } from 'lucide-react';
 
 function fmtDate(d?: string | null): string {
   return d ? (fmtData(d) || d) : '—';
@@ -290,8 +290,15 @@ export default function MeuPlanoAcao() {
 
   if (!plans.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-20 text-center text-sm text-gray-500">
-        Nenhum plano de ação para o seu estabelecimento.
+      // Mesmo formato do vazio de Certificados (coerência visual, pedido 2026-09-24).
+      <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-20 text-center">
+        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600">
+          <Target className="h-7 w-7" />
+        </div>
+        <h3 className="text-lg font-bold text-secondary-900">Nenhum plano de ação para o seu estabelecimento</h3>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">
+          O plano de ação é gerado quando a análise da sua avaliação identifica pontos a melhorar.
+        </p>
       </div>
     );
   }

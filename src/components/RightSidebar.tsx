@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { FileText, GraduationCap, FileSignature, Award, MessageSquare, Library } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import WhatsAppIcon from './WhatsAppIcon';
 
 export default function RightSidebar() {
   const [user, setUser] = useState<any>(null);
@@ -18,12 +19,12 @@ export default function RightSidebar() {
     <div className="w-full xl:w-80 space-y-6 flex-shrink-0">
       {/* Precisa de ajuda */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <img src="https://picsum.photos/seed/support/400/200" alt="Suporte" className="w-full h-32 object-cover" referrerPolicy="no-referrer" />
+        <img src="/ajuda-suporte.webp" alt="Atendente do suporte Unimed com headset" className="w-full h-36 object-cover object-[center_30%]" />
         <div className="p-5">
           <h3 className="text-sm font-bold text-gray-800 mb-2">Precisa de ajuda?</h3>
           <p className="text-xs text-gray-500 mb-4">Nossa equipe de suporte está pronta para te auxiliar com qualquer dúvida.</p>
-          <a href="https://wa.me/5548999999999" target="_blank" rel="noreferrer" className="block text-center w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
-            Falar no WhatsApp
+          <a href="https://wa.me/5548999999999" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+            <WhatsAppIcon className="h-4 w-4 text-[#25D366]" /> Falar no WhatsApp
           </a>
         </div>
       </div>

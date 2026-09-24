@@ -2,29 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { welcomeLine } from '../lib/greeting';
+import WhatsAppIcon from '../components/WhatsAppIcon';
 import { 
   UploadCloud, 
-  Monitor, 
   FileText, 
-  Search, 
   DownloadCloud, 
   CreditCard, 
   Award, 
   File,
-  Briefcase,
-  Pill,
-  TrendingUp,
-  LineChart,
   Calendar,
-  Grid,
   AlertCircle,
   Clock,
-  BookOpen,
   Video,
   Users,
   ArrowRight,
-  X,
-  Download,
   ClipboardCheck
 } from 'lucide-react';
 
@@ -32,15 +23,8 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [adminData, setAdminData] = useState<any>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
   
-  // Modal states
-  const [showExtratoModal, setShowExtratoModal] = useState(false);
-  const [extratoMonth, setExtratoMonth] = useState('');
-  const [extratoYear, setExtratoYear] = useState('');
-  const [isDownloading, setIsDownloading] = useState(false);
-
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -50,12 +34,10 @@ export default function Dashboard() {
       Promise.all([
         fetchApi('/dashboard').catch(() => null),
         fetchApi('/announcements').catch(() => []),
-        fetchApi('/settings').catch(() => ({}))
       ])
-        .then(([dashboardData, announcementsData, settingsData]) => {
+        .then(([dashboardData, announcementsData]) => {
           if (dashboardData) setAdminData(dashboardData);
           setAnnouncements(announcementsData || []);
-          setSettings(settingsData || {});
         })
         .catch(err => console.error(err))
         .finally(() => setLoading(false));
@@ -63,21 +45,6 @@ export default function Dashboard() {
       setLoading(false);
     }
   }, []);
-
-  const handleEmitirExtrato = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!extratoMonth || !extratoYear) return alert('Preencha o mês e o ano.');
-    
-    setIsDownloading(true);
-    // Simula o tempo de geração do PDF
-    setTimeout(() => {
-      setIsDownloading(false);
-      setShowExtratoModal(false);
-      alert(`Extrato de ${extratoMonth}/${extratoYear} gerado e baixado com sucesso!`);
-      setExtratoMonth('');
-      setExtratoYear('');
-    }, 1500);
-  };
 
   const greeting = welcomeLine(user?.last_login_at);
   const lastAccess = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
@@ -280,8 +247,6 @@ export default function Dashboard() {
   }
 
   if (isCooperado) {
-    const openTickets = adminData?.tickets?.filter((t: any) => t.status !== 'encerrado').length || 0;
-    const pendingTrainings = adminData?.trainings?.filter((t: any) => t.status !== 'concluido').length || 0;
     return (
       <div className="max-w-7xl mx-auto pb-10">
         <div className="mb-6">
@@ -300,20 +265,6 @@ export default function Dashboard() {
               <p className="text-base font-bold text-gray-800">Responder roteiro</p>
             </div>
           </Link>
-          <Link to="/treinamentos" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all">
-            <p className="text-sm text-gray-500 font-medium">Treinamentos a concluir</p>
-            <div className="flex justify-between items-end">
-              <p className="text-2xl font-bold text-gray-800">{pendingTrainings}</p>
-              <span className="bg-[#ff4d4f] text-white text-[10px] font-bold px-2 py-1 rounded-full">Pendentes</span>
-            </div>
-          </Link>
-          <Link to="/chamados" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all">
-            <p className="text-sm text-gray-500 font-medium">Chamados Abertos</p>
-            <div className="flex justify-between items-end">
-              <p className="text-2xl font-bold text-gray-800">{openTickets}</p>
-              <span className="bg-[#c2d82e] text-gray-800 text-[10px] font-bold px-2 py-1 rounded-full">Em andamento</span>
-            </div>
-          </Link>
         </div>
 
         {/* Acesso Rápido (cooperado) */}
@@ -325,17 +276,9 @@ export default function Dashboard() {
               <Award className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
               <span className="text-xs font-medium text-gray-600 text-center">Minha Qualificação</span>
             </Link>
-            <Link to="/chamados" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
-              <Monitor className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-              <span className="text-xs font-medium text-gray-600 text-center">Abrir Chamado</span>
-            </Link>
             <Link to="/treinamentos" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
               <Video className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
               <span className="text-xs font-medium text-gray-600 text-center">Treinamentos</span>
-            </Link>
-            <Link to="/biblioteca" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all">
-              <BookOpen className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-              <span className="text-xs font-medium text-gray-600 text-center">Biblioteca Técnica</span>
             </Link>
           </div>
         </div>
@@ -385,48 +328,6 @@ export default function Dashboard() {
         {/* Main Content Column */}
         <div className="flex-1 space-y-6">
           
-          {/* Top Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link to="/em-construcao" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all cursor-pointer">
-              <div className="flex justify-between items-start">
-                <p className="text-sm text-gray-500 font-medium">Competência</p>
-                {settings.payment_date && (
-                  <span className="bg-green-50 text-[#00995D] text-[10px] font-bold px-2 py-1 rounded-full">
-                    Pagamento: {new Date(settings.payment_date + 'T12:00:00Z').toLocaleDateString('pt-BR')}
-                  </span>
-                )}
-              </div>
-              <div className="flex justify-between items-end">
-                <p className="text-2xl font-bold text-gray-800">
-                  {settings.current_competence 
-                    ? (() => {
-                        const [year, month] = settings.current_competence.split('-');
-                        return `${month}/${year}`;
-                      })()
-                    : '--/----'}
-                </p>
-              </div>
-            </Link>
-            <Link to="/chamados" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all cursor-pointer">
-              <p className="text-sm text-gray-500 font-medium">Chamados Abertos</p>
-              <div className="flex justify-between items-end">
-                <p className="text-2xl font-bold text-gray-800">
-                  {adminData?.tickets?.filter((t: any) => t.status !== 'encerrado').length || 0}
-                </p>
-                <span className="bg-[#c2d82e] text-gray-800 text-[10px] font-bold px-2 py-1 rounded-full">Em andamento</span>
-              </div>
-            </Link>
-            <Link to="/treinamentos" className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-28 hover:border-[#00995D] hover:shadow-md transition-all cursor-pointer">
-              <p className="text-sm text-gray-500 font-medium">Treinamentos</p>
-              <div className="flex justify-between items-end">
-                <p className="text-2xl font-bold text-gray-800">
-                  {adminData?.trainings?.filter((t: any) => t.status !== 'concluido').length || 0}
-                </p>
-                <span className="bg-[#ff4d4f] text-white text-[10px] font-bold px-2 py-1 rounded-full">A concluir</span>
-              </div>
-            </Link>
-          </div>
-
           {/* Acesso Rápido */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-1">Acesso Rápido</h3>
@@ -439,18 +340,6 @@ export default function Dashboard() {
                   <span className="text-xs font-medium text-gray-600 text-center">Enviar NF-e</span>
                 </Link>
               )}
-              <Link to="/chamados" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <Monitor className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Abrir Chamado</span>
-              </Link>
-              <button onClick={() => setShowExtratoModal(true)} className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group w-full">
-                <FileText className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Emitir Extrato</span>
-              </button>
-              <Link to="/em-construcao" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <Search className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Consultar Glosas</span>
-              </Link>
               <a href="https://app-agendamento-hml.criciuma.unimedsc.com.br/login" target="_blank" rel="noreferrer" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
                 <DownloadCloud className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
                 <span className="text-xs font-medium text-gray-600 text-center">Consulta Já</span>
@@ -521,42 +410,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Ferramentas Operacionais */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Ferramentas Operacionais</h3>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Link to="/biblioteca" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <BookOpen className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Biblioteca Técnica</span>
-              </Link>
-              <Link to="/ferramentas" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <Briefcase className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Caixa de Ferramentas</span>
-              </Link>
-              <Link to="/medicacoes" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <Pill className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Medicações</span>
-              </Link>
-              <Link to="/em-construcao" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <TrendingUp className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Indicadores</span>
-              </Link>
-              <Link to="/producao" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <LineChart className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Produção</span>
-              </Link>
-              <Link to="/agenda" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <Calendar className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Agenda de Visitas</span>
-              </Link>
-              <Link to="/tabelas" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <Grid className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Tabelas de Preço</span>
-              </Link>
-            </div>
-          </div>
-
         </div>
 
         {/* Right Sidebar */}
@@ -591,26 +444,14 @@ export default function Dashboard() {
 
           {/* Precisa de ajuda */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <img src="https://picsum.photos/seed/support/400/200" alt="Suporte" className="w-full h-32 object-cover" referrerPolicy="no-referrer" />
+            <img src="/ajuda-suporte.webp" alt="Atendente do suporte Unimed com headset" className="w-full h-36 object-cover object-[center_30%]" />
             <div className="p-5">
               <h3 className="text-sm font-bold text-gray-800 mb-2">Precisa de ajuda?</h3>
               <p className="text-xs text-gray-500 mb-4">Nossa equipe de suporte está pronta para te auxiliar com qualquer dúvida.</p>
-              <a href="https://wa.me/5548999999999" target="_blank" rel="noreferrer" className="block text-center w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
-                Falar no WhatsApp
+              <a href="https://wa.me/5548999999999" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+                <WhatsAppIcon className="h-4 w-4 text-[#25D366]" /> Falar no WhatsApp
               </a>
             </div>
-          </div>
-
-          {/* Área de Inovação */}
-          <div className="bg-gradient-to-br from-[#00995D] to-[#007A4A] rounded-xl shadow-sm p-6 text-white relative overflow-hidden">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-white opacity-10 rounded-full"></div>
-            <h3 className="text-sm font-bold mb-2">Inovação Unimed</h3>
-            <p className="text-xs text-white/90 mb-4 leading-relaxed">
-              Descubra as novas tendências em saúde e tecnologia. Assista aos nossos vídeos institucionais.
-            </p>
-            <button className="px-4 py-2 bg-white text-[#00995D] text-xs font-bold rounded-lg hover:bg-gray-50 transition-colors">
-              Explorar Novidades
-            </button>
           </div>
 
           {/* Atualizações */}
@@ -624,85 +465,6 @@ export default function Dashboard() {
 
         </div>
       </div>
-
-      {/* Emitir Extrato Modal */}
-      {showExtratoModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Emitir Extrato</h3>
-              <button onClick={() => setShowExtratoModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <form onSubmit={handleEmitirExtrato} className="p-6 space-y-4">
-              <p className="text-sm text-gray-600 mb-4">Selecione o período para gerar o extrato de faturamento.</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
-                  <select 
-                    className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
-                    value={extratoMonth}
-                    onChange={(e) => setExtratoMonth(e.target.value)}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    <option value="01">Janeiro</option>
-                    <option value="02">Fevereiro</option>
-                    <option value="03">Março</option>
-                    <option value="04">Abril</option>
-                    <option value="05">Maio</option>
-                    <option value="06">Junho</option>
-                    <option value="07">Julho</option>
-                    <option value="08">Agosto</option>
-                    <option value="09">Setembro</option>
-                    <option value="10">Outubro</option>
-                    <option value="11">Novembro</option>
-                    <option value="12">Dezembro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
-                  <select 
-                    className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-[#00995D] focus:border-[#00995D]"
-                    value={extratoYear}
-                    onChange={(e) => setExtratoYear(e.target.value)}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    <option value="2025">2025</option>
-                    <option value="2024">2024</option>
-                    <option value="2023">2023</option>
-                  </select>
-                </div>
-              </div>
-              <div className="pt-4 flex justify-end space-x-3">
-                <button 
-                  type="button" 
-                  onClick={() => setShowExtratoModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={isDownloading}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-[#00995D] hover:bg-[#007A4A] rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {isDownloading ? (
-                    'Gerando...'
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      Baixar PDF
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

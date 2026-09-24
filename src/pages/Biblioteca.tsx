@@ -20,7 +20,7 @@ export default function Biblioteca() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Biblioteca Digital</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Caixa de Ferramentas</h1>
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">

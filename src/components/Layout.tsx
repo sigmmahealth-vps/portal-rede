@@ -3,8 +3,6 @@ import {
   LayoutDashboard, 
   FileText, 
   GraduationCap, 
-  DollarSign, 
-  BarChart3, 
   MessageSquare, 
   Library, 
   FileSignature,
@@ -32,11 +30,8 @@ const navigation = [
   { name: 'Equipe / Profissionais', href: '/equipe', icon: Users },
   { name: 'Credenciamento', href: '/credenciamento', icon: ClipboardCheck },
   { name: 'Treinamentos', href: '/treinamentos', icon: GraduationCap },
-  { name: 'Financeiro', href: '/em-construcao', icon: DollarSign, standby: true },
-  { name: 'Indicadores', href: '/em-construcao', icon: BarChart3, standby: true },
   { name: 'Chamados', href: '/chamados', icon: MessageSquare },
   { name: 'Contratos', href: '/contratos', icon: FileSignature },
-  { name: 'Agenda de Auditorias', href: '/em-construcao', icon: ClipboardCheck, standby: true },
   { name: 'Administração', href: '/admin', icon: Shield }, // Admin should probably be kept for user management, but let's see.
 ];
 
@@ -51,7 +46,7 @@ export default function Layout() {
   const isCooperado = user?.is_cooperado === true;
 
   // Módulos de pessoa jurídica que não se aplicam ao médico cooperado.
-  const COOPERADO_HIDDEN = ['Gestão Documental', 'Contratos', 'Financeiro'];
+  const COOPERADO_HIDDEN = ['Gestão Documental', 'Contratos'];
 
   const filteredNavigation = navigation.filter(item => {
     if ((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin) return false;
@@ -140,14 +135,11 @@ export default function Layout() {
                   to={item.href}
                   className={`flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors ${
                     isActive ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
-                  } ${item.standby ? 'opacity-50' : ''}`}
+                  }`}
                   onClick={() => setSidebarOpen(false)}
                 >
                   <item.icon className={`mr-3 flex-shrink-0 h-5 w-5 ${isActive ? 'text-white' : 'text-white/70'}`} />
                   <span className="flex-1">{item.name}</span>
-                  {item.standby && (
-                    <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded text-white ml-2">Em breve</span>
-                  )}
                 </Link>
               );
             })}
@@ -182,14 +174,11 @@ export default function Layout() {
                 to={item.href}
                 className={`flex items-center h-12 rounded-xl transition-all px-3 ${
                   isActive ? 'bg-white/20 text-white shadow-inner' : 'text-white/70 hover:bg-white/10 hover:text-white'
-                } ${item.standby ? 'opacity-50' : ''}`}
+                }`}
               >
                 <item.icon className="h-6 w-6 flex-shrink-0" strokeWidth={isActive ? 2.5 : 2} />
                 <span className={`ml-3 font-medium whitespace-nowrap transition-opacity duration-300 flex-1 flex items-center justify-between ${isSidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>
                   {item.name}
-                  {item.standby && (
-                    <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded text-white ml-2">Em breve</span>
-                  )}
                 </span>
               </Link>
             );

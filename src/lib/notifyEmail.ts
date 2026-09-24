@@ -179,6 +179,21 @@ export function notificationBlocks(
         cta,
       };
       break;
+    case 'ciclo_reaberto':
+      b = {
+        banner: ctx.prorrogado
+          ? `Ciclo ${ctx.cycle_label ?? ''} — prazo prorrogado`.replace(/\s+/g, ' ').trim()
+          : `Ciclo ${ctx.cycle_label ?? ''} reaberto`.replace(/\s+/g, ' ').trim(),
+        paragraphs: [
+          ctx.prorrogado
+            ? `O prazo do ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi prorrogado e a sua avaliação voltou a ficar disponível no portal.`
+            : `O ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi reaberto e a sua avaliação voltou a ficar disponível no portal.`,
+        ],
+        highlight: { label: 'Novo prazo para envio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
+        steps: 'acesse o portal, conclua o preenchimento do roteiro com as evidências e envie para análise antes do novo prazo.',
+        cta,
+      };
+      break;
     case 'roteiro_enviado':
       // resubmission = reenvio após reanálise/devolução (feedback do cliente, 2026-09-11).
       b = ctx.resubmission

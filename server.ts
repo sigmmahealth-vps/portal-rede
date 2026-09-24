@@ -5055,7 +5055,7 @@ async function startServer() {
       // Avisa os prestadores restaurados (fire-and-forget; dedupe por instância).
       void (async () => {
         for (const inst of result.reopened ?? []) {
-          await notifyEvent('ciclo_reaberto', { cycle_label: result.label, end_date: result.endDate },
+          await notifyEvent('ciclo_reaberto', { cycle_label: result.label, end_date: result.endDate, prorrogado: !!newEndDate },
             await prestadorRecipients(inst.provider_id, inst.location_id),
             { providerId: inst.provider_id, dedupeRef: `reopen:${inst.id}:${result.endDate}` });
         }

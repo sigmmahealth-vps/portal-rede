@@ -37,8 +37,12 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       return { title: `Ciclo de qualificação ${ctx.cycle_label ?? ''} aberto`.replace(/\s+/g, ' ').trim(),
                body: `Seu roteiro de qualificação está disponível para preenchimento no portal.${ctx.end_date ? ` O prazo para envio termina em ${fmtDate(ctx.end_date)}.` : ''}`, link };
     case 'ciclo_reaberto':
-      return { title: `Ciclo ${ctx.cycle_label ?? ''} reaberto — prazo prorrogado`.replace(/\s+/g, ' ').trim(),
-               body: `O ciclo de qualificação foi reaberto e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link };
+      // prorrogado = admin informou nova data de fim; senão é reabertura no mesmo prazo.
+      return ctx.prorrogado
+        ? { title: `Ciclo ${ctx.cycle_label ?? ''} — prazo prorrogado`.replace(/\s+/g, ' ').trim(),
+            body: `O prazo do ciclo de qualificação foi prorrogado e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link }
+        : { title: `Ciclo ${ctx.cycle_label ?? ''} reaberto`.replace(/\s+/g, ' ').trim(),
+            body: `O ciclo de qualificação foi reaberto e você pode concluir sua avaliação até ${fmtDate(ctx.end_date)}.`, link };
     case 'roteiro_enviado':
       // resubmission = reenvio após reanálise/devolução — descrição própria para o
       // auditor distinguir do primeiro envio (feedback do cliente, 2026-09-11).

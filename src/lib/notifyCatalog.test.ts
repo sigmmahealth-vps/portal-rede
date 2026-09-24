@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderNotification, dedupeKey, roteiroReminderMarco, NOTIFY_TYPES } from './notifyCatalog.js';
+import { renderNotificationEmail } from './notifyEmail.js';
 
 test('todos os tipos renderizam título, corpo e link', () => {
   for (const t of NOTIFY_TYPES) {
@@ -57,11 +58,21 @@ test('reanálise em lote: lista longa é limitada a 15 itens', () => {
   assert.ok(!n.body.includes('Critério 19'), n.body);
 });
 
-test('ciclo_reaberto: título com label e corpo com o novo prazo', () => {
-  const n = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
-  assert.equal(n.title, 'Ciclo Ciclo 2026 reaberto — prazo prorrogado');
-  assert.ok(n.body.includes('15/10/2026'), n.body);
-  assert.equal(n.link, '/qualificacao');
+test('ciclo_reaberto: prorrogação vs reabertura, ambos com o prazo', () => {
+  const pr = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15', prorrogado: true });
+  assert.equal(pr.title, 'Ciclo Ciclo 2026 — prazo prorrogado');
+  assert.ok(pr.body.includes('prorrogado') && pr.body.includes('15/10/2026'), pr.body);
+  const re = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
+  assert.equal(re.title, 'Ciclo Ciclo 2026 reaberto');
+  assert.ok(!re.title.includes('prorrog') && re.body.includes('15/10/2026'), re.body);
+  assert.equal(re.link, '/qualificacao');
+});
+
+test('ciclo_reaberto: e-mail tem banner próprio (não o tipo cru) e o prazo', () => {
+  const e = renderNotificationEmail('ciclo_reaberto', { cycle_label: '2026', end_date: '2026-10-15', prorrogado: true }, 'https://x');
+  assert.ok(!e.html.includes('CICLO_REABERTO'), 'banner cru');
+  assert.ok(e.subject.includes('prazo prorrogado'), e.subject);
+  assert.ok(e.html.includes('15/10/2026'));
 });
 
 test('roteiro_pendente: individual vs resumo auditoria', () => {

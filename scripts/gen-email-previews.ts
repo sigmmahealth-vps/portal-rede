@@ -10,7 +10,7 @@ const dest = process.argv[2] ?? path.resolve(process.cwd(), '..', 'S5');
 fs.mkdirSync(dest, { recursive: true });
 
 // Embute em base64 imagens e fontes que os modelos referenciam (abrem offline).
-const ASSETS = ['logo-prp-branco.png', 'logo-unimed-email.png', 'suporte.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
+const ASSETS = ['logo-prp-branco.png', 'logo-unimed-email.png', 'suporte.png', 'icone-status.png', 'icone-certificado.png', 'icone-validade.png', 'selos/ouro.png', 'selos/prata.png', 'selos/bronze.png', 'calendario.png', 'codigo.png'];
 const FONTES = ['fonts/Unimed-Regular.woff2', 'fonts/Unimed-Bold.woff2'];
 const embed = (h: string) => {
   let out = h;
@@ -40,15 +40,16 @@ const NOME = 'Clínica de Fisioterapia Reabilitar';
 
 const modelos: Array<[string, string, { subject: string; html: string }]> = [
   ['00-ciclo-encerrado-nao-concluida', 'Ciclo encerrado — avaliação não concluída (Prestador sem roteiro enviado)', renderNotificationEmail('ciclo_encerrado_sem_avaliacao', { ...CTX, cycle_label: 'Teste 16.09' }, APP, NOME)],
+  ['00-certificado-emitido', 'Certificado emitido (Prestador)', renderNotificationEmail('certificado_emitido', { ...CTX, valid_until: '2026-10-10' }, APP, NOME)],
   ['00-ciclo-prorrogado', 'Ciclo prorrogado (Prestador com roteiro em aberto)', renderNotificationEmail('ciclo_reaberto', { ...CTX, prorrogado: true, end_date: '2026-10-31' }, APP, NOME)],
   ['01-abertura-ciclo-roteiro-disponivel', 'Abertura do ciclo + roteiro disponível (Prestador)', renderNotificationEmail('ciclo_aberto', CTX, APP, NOME)],
   ['02-roteiro-enviado-analise', 'Prestador enviou roteiro para análise (Auditor — hoje só portal)', renderNotificationEmail('roteiro_enviado', CTX, APP, 'Auditoria Unimed')],
   ['03-reanalise-criterio', 'Reanálise de critério solicitada (Prestador)', renderNotificationEmail('reanalise_solicitada', CTX, APP, NOME)],
   ['04-devolucao-integral', 'Avaliação devolvida integralmente (Prestador)', renderNotificationEmail('reanalise_solicitada', { ...CTX, integral: true }, APP, NOME)],
-  ['05-roteiro-aprovado', 'Roteiro aprovado (Prestador)', renderNotificationEmail('parecer_aprovado', CTX, APP, NOME)],
+  ['05-roteiro-aprovado', 'Roteiro aprovado (Prestador)', renderNotificationEmail('parecer_aprovado', { ...CTX, percentual: 92.2, has_certificate: true }, APP, NOME)],
   // Reprovado e certificado emitido ficaram fora do canal e-mail (rodada de
   // aprovação de 2026-08-19) — os eventos seguem como notificação no portal.
-  ['06-plano-acao-gerado', 'Plano de ação gerado (Prestador + Auditor)', renderNotificationEmail('plano_gerado', CTX, APP, NOME)],
+  ['06-plano-acao-gerado', 'Plano de ação gerado (Prestador + Auditor)', renderNotificationEmail('plano_gerado', { ...CTX, audience: 'prestador' }, APP, NOME)],
   ['07-acao-aguardando-validacao', 'Ação concluída aguardando validação (Auditor — hoje só portal)', renderNotificationEmail('acao_aguardando_validacao', CTX, APP, 'Auditoria Unimed')],
   ['08-acao-proxima-vencimento', 'Ação próxima do vencimento — 15 dias (Prestador)', renderNotificationEmail('acao_vencendo', CTX, APP, NOME)],
   ['09-acao-em-atraso', 'Ação em atraso (Prestador + Auditor)', renderNotificationEmail('acao_atrasada', CTX, APP, NOME)],
@@ -56,8 +57,8 @@ const modelos: Array<[string, string, { subject: string; html: string }]> = [
   ['11-roteiros-pendentes-resumo-auditoria', 'Roteiros pendentes — resumo por ciclo (Auditor)', renderNotificationEmail('roteiro_pendente', { ...CTX, digest: true }, APP, 'Auditoria Unimed')],
   ['12-certificado-proximo-vencimento', 'Certificado próximo do vencimento (Prestador)', renderNotificationEmail('certificado_vencendo', CTX, APP, NOME)],
   ['13-convite-de-acesso', 'Convite de acesso — definir senha', { subject: 'Bem-vindo ao Portal Unimed Criciúma', html: inviteEmailHtml(NOME, `${APP}/definir-senha?token=exemplo`) }],
-  ['14-codigo-de-acesso-otp', 'Código de acesso (OTP do login)', { subject: 'Seu código de acesso ao Portal Unimed: 483920', html: otpEmailHtml('483920') }],
-  ['15-redefinicao-de-senha', 'Redefinição de senha', { subject: 'Redefinição de senha — Portal Unimed', html: resetEmailHtml(`${APP}/definir-senha?token=exemplo`) }],
+  ['14-codigo-de-acesso-otp', 'Código de acesso (OTP do login)', { subject: 'Seu código de acesso ao Portal Unimed: 483920', html: otpEmailHtml('483920', 'DANIELA FIDELIS') }],
+  ['15-redefinicao-de-senha', 'Redefinição de senha', { subject: 'Redefinição de senha — Portal Unimed', html: resetEmailHtml(`${APP}/definir-senha?token=exemplo`, 'DANIELA FIDELIS') }],
 ];
 
 for (const [file, , e] of modelos) fs.writeFileSync(path.join(dest, `${file}.html`), embed(e.html));

@@ -108,15 +108,18 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
             body: `O auditor solicitou reanálise de um critério da sua avaliação. Ajuste a evidência e reenvie.${prazoRe}`, link };
     }
     case 'parecer_aprovado':
-      return { title: `Avaliação aprovada — selo ${ctx.seal ?? ''}`.trim(),
-               body: `Sua avaliação de qualificação foi aprovada com ${fmtPct(ctx.percentual ?? 0)} de atingimento. Veja o parecer no portal.`, link };
+      return { title: `Resultado da sua qualificação — Selo ${ctx.seal ?? ''}`.trim(),
+               body: `Sua avaliação de qualificação foi concluída: Selo ${ctx.seal ?? ''}, com ${fmtPct(ctx.percentual ?? 0)} de atingimento. Confira o resultado no portal.`, link };
     case 'parecer_reprovado':
       return { title: 'Avaliação concluída — não qualificado',
                body: 'Sua avaliação foi concluída sem atingir os requisitos do selo. Veja o parecer e o plano de ação no portal.', link };
     case 'certificado_emitido':
       return { title: 'Certificado de qualificação emitido',
-               body: `Seu certificado está disponível no portal. Validade: ${fmtDate(ctx.valid_until)}.`, link };
+               body: `Seu certificado está disponível no portal. Validade: ${fmtDate(ctx.valid_until)}. Parabéns por esta conquista! Nos encontramos novamente no próximo ciclo de qualificação.`, link };
     case 'plano_gerado':
+      if (ctx.audience === 'prestador')
+        return { title: 'Seu Plano de Ação está disponível',
+                 body: 'Sua qualificação ainda tem próximos passos. Um Plano de Ação está disponível no PRP com os pontos identificados a partir da sua avaliação. Acesse para conferir e dar continuidade às tratativas.', link };
       return { title: `Plano de ação gerado${ctx.provider_name ? ` — ${ctx.provider_name}` : ''}`,
                body: ctx.items
                  ? `Um plano de ação com ${ctx.items} ação(ões) foi gerado. Acompanhe os prazos no portal.`
@@ -134,17 +137,19 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       if (ctx.digest)
         return { title: `${ctx.count ?? 0} roteiro(s) pendente(s) — ciclo ${ctx.cycle_label ?? ''} encerra em ${fmtDate(ctx.end_date)}`,
                  body: 'Há prestadores que ainda não enviaram o roteiro de qualificação. Veja o painel do ciclo.', link };
+      // Data fora do título (cliente, 2026-09-24: "não está de fácil visualização") —
+      // vai no corpo e, no e-mail, no card "Encerramento do ciclo".
       if (ctx.marco === 'fim')
-        return { title: `Último dia — o ciclo encerra hoje (${fmtDate(ctx.end_date)})`,
-                 body: 'Hoje é o último dia para enviar seu roteiro de qualificação. Após o encerramento do ciclo não será mais possível enviar.', link };
+        return { title: 'Último dia para enviar o roteiro',
+                 body: `Hoje (${fmtDate(ctx.end_date)}) é o último dia para enviar seu roteiro de qualificação. Após o encerramento do ciclo não será mais possível enviar.`, link };
       if (ctx.marco === '7')
-        return { title: `Roteiro pendente — faltam 7 dias (ciclo encerra em ${fmtDate(ctx.end_date)})`,
-                 body: 'Faltam 7 dias para o encerramento do ciclo e você ainda não enviou seu roteiro de qualificação.', link };
-      return { title: `Roteiro pendente — o ciclo encerra em ${fmtDate(ctx.end_date)}`,
-               body: 'Você ainda não enviou seu roteiro de qualificação. O prazo termina junto com o ciclo.', link };
+        return { title: 'Roteiro pendente — faltam 7 dias',
+                 body: `Faltam 7 dias para o encerramento do ciclo (${fmtDate(ctx.end_date)}) e você ainda não enviou seu roteiro de qualificação.`, link };
+      return { title: 'Roteiro pendente de resposta',
+               body: `Você ainda não enviou seu roteiro de qualificação. O ciclo encerra em ${fmtDate(ctx.end_date)}.`, link };
     case 'certificado_vencendo':
       return { title: 'Certificado próximo do vencimento',
-               body: `Seu certificado de qualificação vence em ${fmtDate(ctx.valid_until)}.`, link };
+               body: `Seu Certificado de Qualificação é válido até ${fmtDate(ctx.valid_until)}. O próximo ciclo está chegando! Aproveite para revisar e manter suas documentações e evidências atualizadas.`, link };
     case 'ciclo_encerrado_sem_avaliacao':
       // Textos do cliente (2026-09-24).
       return { title: `Ciclo encerrado - Avaliação não concluída${ctx.cycle_label ? ` (${ctx.cycle_label})` : ''}`,

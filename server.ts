@@ -24,7 +24,7 @@ import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/prov
 import { questionOnly } from './src/lib/questionText.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
-import { renderNotificationEmail, renderEmailHtml } from './src/lib/notifyEmail.js';
+import { renderNotificationEmail } from './src/lib/notifyEmail.js';
 import { canDownloadManual, isPdf, MANUAL_MAX_BYTES } from './db/script-manual.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 
@@ -277,6 +277,11 @@ async function startServer() {
   // "claim": incrementa attempts atomicamente e some da fila se outro tick pegou.
   // force=true: reenvio manual (staff) — ignora o teto de 3 e o filtro de status do
   // retry automático, mas SEMPRE incrementa email_attempts (o contador acumula, nunca zera).
+  // Nome do destinatário p/ "Olá, Fulano." ao remontar um e-mail (retry/reenviar). Aviso só
+  // por e-mail (portal:false) grava user_id NULL → cai no usuário com o mesmo e-mail.
+  const RECIPIENT_NAME_SQL =
+    `COALESCE(u.name, (SELECT u2.name FROM users u2 WHERE LOWER(u2.email) = LOWER(n.email_to) ORDER BY u2.id LIMIT 1))`;
+
   async function sendNotificationEmail(rowId: number, to: string, subject: string, text: string, html?: string, force = false) {
     try {
       const guard = force ? '' : "AND email_attempts < 3 AND email_status IN ('pendente','falhou')";
@@ -531,7 +536,7 @@ async function startServer() {
       'INSERT INTO otp_codes (user_id, code_hash, expires_at, ip) VALUES ($1, $2, $3, $4) RETURNING id',
       [user.id, hashOtp(code), expiresAt, req.ip],
     );
-    await sendTransactionalEmail(user.email, 'otp', 'Código de acesso ao Portal', () => mailer.sendOtp(user.email, code), { userId: user.id });
+    await sendTransactionalEmail(user.email, 'otp', 'Código de acesso ao Portal', () => mailer.sendOtp(user.email, code, user.name), { userId: user.id });
     return rows[0].id;
   };
 
@@ -681,7 +686,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
       const { rows: [n] } = await query(
-        `SELECT n.id, n.type, n.ctx, n.email_to, n.body, n.link, u.name AS user_name
+        `SELECT n.id, n.type, n.ctx, n.email_to, n.body, n.link, ${RECIPIENT_NAME_SQL} AS user_name
            FROM notifications n LEFT JOIN users u ON u.id = n.user_id WHERE n.id = $1`, [id]);
       if (!n) return res.status(404).json({ error: 'not found' });
       if (!n.email_to) return res.status(409).json({ error: 'notificação sem e-mail' });
@@ -842,7 +847,7 @@ async function startServer() {
       if (countRows[0].n >= 6) {
         return res.status(429).json({ error: 'Limite de códigos por hora atingido. Tente mais tarde.' });
       }
-      const { rows: userRows } = await query('SELECT email FROM users WHERE id = $1', [challenge.user_id]);
+      const { rows: userRows } = await query('SELECT id, email, name FROM users WHERE id = $1', [challenge.user_id]);
       const user = userRows[0] as any;
       if (!user) {
         return res.status(400).json({ error: 'Usuário não encontrado.' });
@@ -862,7 +867,7 @@ async function startServer() {
         return res.status(429).json({ error: 'Aguarde alguns segundos antes de pedir um novo código.' });
       }
       try {
-        await sendTransactionalEmail(user.email, 'otp', 'Código de acesso ao Portal', () => mailer.sendOtp(user.email, code), { userId: user.id });
+        await sendTransactionalEmail(user.email, 'otp', 'Código de acesso ao Portal', () => mailer.sendOtp(user.email, code, user.name), { userId: user.id });
       } catch (mailErr: any) {
         console.error('Falha ao reenviar OTP:', mailErr);
         return res.status(502).json({ error: 'Não foi possível reenviar o código. Tente novamente.' });
@@ -888,7 +893,7 @@ async function startServer() {
       if (!ipOk || !emailOk) return res.json({ ok: true });
 
       const { rows } = await query(
-        'SELECT id, email FROM users WHERE LOWER(email) = $1 AND is_active = true',
+        'SELECT id, email, name FROM users WHERE LOWER(email) = $1 AND is_active = true',
         [emailLc],
       );
       const user = rows[0] as any;
@@ -918,7 +923,7 @@ async function startServer() {
 
       const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
       const link = `${appUrl}/definir-senha?token=${token}`;
-      await sendTransactionalEmail(user.email, 'reset_senha', 'Redefinição de senha', () => mailer.sendPasswordReset(user.email, link), { userId: user.id });
+      await sendTransactionalEmail(user.email, 'reset_senha', 'Redefinição de senha', () => mailer.sendPasswordReset(user.email, link, user.name), { userId: user.id });
 
       res.json({ ok: true });
     } catch (err: any) {
@@ -2108,7 +2113,7 @@ async function startServer() {
       const expiresAt = expirationFor('reset');
       await query(`INSERT INTO password_setup_tokens (user_id, token_hash, kind, expires_at) VALUES ($1, $2, 'reset', $3)`, [user.id, tokenHash, expiresAt]);
       const appUrl = process.env.APP_URL ?? `${req.protocol}://${req.get('host')}`;
-      await sendTransactionalEmail(user.email, 'reset_senha', 'Redefinição de senha', () => mailer.sendPasswordReset(user.email, `${appUrl}/definir-senha?token=${token}`), { userId: user.id });
+      await sendTransactionalEmail(user.email, 'reset_senha', 'Redefinição de senha', () => mailer.sendPasswordReset(user.email, `${appUrl}/definir-senha?token=${token}`, user.name), { userId: user.id });
       await auditLog({
         query, userId: req.user.id, action: 'password_reset_requested',
         meta: { provider_id: Number(req.params.id), location_id: unit!.location_id, user_id: user.id, by_admin: true },
@@ -5727,16 +5732,19 @@ async function startServer() {
         const { rows: [pvName] } = await query('SELECT name FROM providers WHERE id = $1', [inst.provider_id]);
         // Decisão da rodada de aprovação dos modelos (2026-08-19): reprovado e
         // certificado emitido não vão por e-mail — só notificação no portal.
-        await notifyEvent(seal ? 'parecer_aprovado' : 'parecer_reprovado', { seal, percentual },
+        await notifyEvent(seal ? 'parecer_aprovado' : 'parecer_reprovado',
+          { seal, percentual, has_certificate: !!certificateId, valid_until: certificateId ? validUntil : null },
           provRecipients, { providerId: Number(inst.provider_id), email: !!seal });
         if (certificateId) {
           await notifyEvent('certificado_emitido', { valid_until: validUntil },
             provRecipients, { providerId: Number(inst.provider_id) });
         }
         if (planId) {
-          await notifyEvent('plano_gerado',
-            { provider_name: pvName?.name ?? '', items: chosen.length },
-            [...provRecipients, ...await auditoriaRecipients()],
+          const planoCtx = { provider_name: pvName?.name ?? '', items: chosen.length };
+          // Prestador recebe a versão dele (texto do cliente); auditoria, a genérica com o nome.
+          await notifyEvent('plano_gerado', { ...planoCtx, audience: 'prestador' }, provRecipients,
+            { providerId: Number(inst.provider_id) });
+          await notifyEvent('plano_gerado', planoCtx, await auditoriaRecipients(),
             { providerId: Number(inst.provider_id) });
         }
       })().catch((e) => console.error('[notify] site parecer:', e));
@@ -5968,9 +5976,10 @@ async function startServer() {
         ip: hashClientIp(req) });
       void (async () => {
         const { rows: [pvManual] } = await query('SELECT name FROM providers WHERE id = $1', [provider_id]);
+        await notifyEvent('plano_gerado', { provider_name: pvManual?.name ?? '', audience: 'prestador' },
+          await prestadorRecipients(Number(provider_id), locationId ?? null), { providerId: Number(provider_id) });
         await notifyEvent('plano_gerado', { provider_name: pvManual?.name ?? '' },
-          [...await prestadorRecipients(Number(provider_id), locationId ?? null), ...await auditoriaRecipients()],
-          { providerId: Number(provider_id) });
+          await auditoriaRecipients(), { providerId: Number(provider_id) });
       })().catch((e) => console.error('[notify] site plano_gerado (manual):', e));
       res.status(201).json(plan);
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
@@ -6922,20 +6931,17 @@ async function startServer() {
 
       // 5) Retry do outbox de e-mail (o claim em sendNotificationEmail evita corrida).
       const { rows: retry } = await query(`
-        SELECT id, email_to, title, body, link FROM notifications
-         WHERE email_status IN ('pendente','falhou') AND email_attempts < 3 AND email_to IS NOT NULL
-         ORDER BY id LIMIT 50`);
+        SELECT n.id, n.type, n.ctx, n.email_to, n.body, n.link, ${RECIPIENT_NAME_SQL} AS user_name
+          FROM notifications n LEFT JOIN users u ON u.id = n.user_id
+         WHERE n.email_status IN ('pendente','falhou') AND n.email_attempts < 3 AND n.email_to IS NOT NULL
+         ORDER BY n.id LIMIT 50`);
       for (const n of retry) {
-        // Retry não tem mais o ctx original — remonta o e-mail no shell da marca
-        // a partir do que está na linha (sem o card de destaque, que é do 1º envio).
+        // Remonta o e-mail completo (card, próximos passos, nome) a partir do ctx gravado —
+        // antes o retry usava só título/corpo e saía sem nome e com a data no título.
         const appUrl = notifyAppUrl();
         const link = n.link ?? '/qualificacao';
-        const html = renderEmailHtml({
-          banner: n.title,
-          paragraphs: n.body ? [n.body] : [],
-          cta: { label: 'Acessar o portal', url: `${appUrl}${link}` },
-        }, appUrl);
-        await sendNotificationEmail(Number(n.id), n.email_to, `Portal Unimed — ${n.title}`,
+        const { subject, html } = renderNotificationEmail(n.type, n.ctx ?? {}, appUrl, n.user_name ?? undefined);
+        await sendNotificationEmail(Number(n.id), n.email_to, subject,
           `${n.body ?? ''}\n\nAcesse: ${appUrl}${link}`, html);
       }
     } catch (e) {

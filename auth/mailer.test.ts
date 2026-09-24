@@ -69,3 +69,9 @@ test('allowlist por sufixo: padrão homolog, domínio e exato; vazia libera tudo
   assert.equal(emailAllowed('qualquer@um.com', []), true);
   assert.equal(emailAllowed('x@sigmma.health.evil.com', list), false);
 });
+
+test('OTP e redefinição de senha saúdam pelo nome quando informado', () => {
+  assert.ok(otpEmailHtml('123456', 'DANIELA FIDELIS').includes('Olá, <strong>DANIELA FIDELIS</strong>'));
+  assert.ok(resetEmailHtml('https://x/r', 'DANIELA').includes('Olá, <strong>DANIELA</strong>'));
+  assert.ok(otpEmailHtml('123456').includes('Olá.'), 'sem nome mantém a saudação genérica');
+});

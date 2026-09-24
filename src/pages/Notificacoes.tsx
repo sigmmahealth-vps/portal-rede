@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, ChevronLeft, Search } from 'lucide-react';
+import { Bell, CheckCheck, ChevronLeft, Search, CheckCircle2, FileText, CalendarDays } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 import { notificationBlocks } from '../lib/notifyEmail';
 import { NOTIFY_TYPES, type NotifyType } from '../lib/notifyCatalog';
@@ -221,6 +221,35 @@ export default function Notificacoes() {
                 {(blocks ? blocks.paragraphs : [selected.body ?? '']).filter(Boolean).map((p, i) => (
                   <p key={i} className="text-[15px] leading-relaxed text-gray-700"><Rich text={p} /></p>
                 ))}
+                {blocks?.result && (
+                  <div className="flex flex-col gap-4 rounded-xl bg-[#EAF6F0] p-5 sm:flex-row sm:items-center">
+                    <div className="flex flex-1 items-center gap-4">
+                      {blocks.result.sealImg && <img src={blocks.result.sealImg} alt={`Selo ${blocks.result.seal}`} className="h-14 w-14 object-contain" />}
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-[#00995D]">Resultado da qualificação</p>
+                        <p className="text-4xl font-bold leading-tight text-gray-900 tabular-nums">{blocks.result.pct}</p>
+                        <p className="text-sm text-gray-600">de atingimento</p>
+                        <p className="mt-2 border-t border-[#CFE7DA] pt-2 text-[11px] font-bold uppercase tracking-wide text-[#00995D]">Classificação</p>
+                        <p className="text-base font-bold text-gray-900">Selo {blocks.result.seal}</p>
+                      </div>
+                    </div>
+                    <ul className="space-y-2 border-[#CFE7DA] sm:border-l sm:pl-5">
+                      {[
+                        { Icon: CheckCircle2, label: 'Status', value: blocks.result.status },
+                        { Icon: FileText, label: 'Certificado', value: blocks.result.certificate },
+                        { Icon: CalendarDays, label: 'Validade', value: blocks.result.validUntil },
+                      ].filter(x => x.value).map(({ Icon, label, value }) => (
+                        <li key={label} className="flex items-center gap-2.5">
+                          <Icon className="h-5 w-5 shrink-0 text-[#00995D]" />
+                          <span>
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-[#00995D]">{label}</span>
+                            <span className="block text-sm font-bold text-gray-900">{value}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {blocks?.highlight && (
                   <div className="flex items-center gap-4 rounded-xl bg-[#EAF6F0] p-4">
                     {blocks.highlight.iconImg

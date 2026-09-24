@@ -5,8 +5,9 @@ import { renderEmailHtml } from '../src/lib/notifyEmail.js';
 // permanece como fallback. appUrl só alimenta o logo do cabeçalho.
 const appUrl = () => process.env.APP_URL ?? '';
 
-export const otpEmailHtml = (code: string) => renderEmailHtml({
+export const otpEmailHtml = (code: string, name?: string) => renderEmailHtml({
   banner: 'Código de acesso ao portal',
+  recipientName: name,
   paragraphs: [
     'Use o código abaixo para concluir o seu acesso ao Portal da Rede de Prestadores.',
     'Ele vale por **10 minutos** e só pode ser usado uma vez.',
@@ -25,8 +26,9 @@ export const inviteEmailHtml = (name: string, link: string) => renderEmailHtml({
   cta: { label: 'Definir minha senha', url: link },
 }, appUrl());
 
-export const resetEmailHtml = (link: string) => renderEmailHtml({
+export const resetEmailHtml = (link: string, name?: string) => renderEmailHtml({
   banner: 'Redefinição de senha',
+  recipientName: name,
   paragraphs: [
     'Recebemos uma solicitação para redefinir a sua senha no Portal da Rede de Prestadores.',
     'O link vale por **30 minutos** e só pode ser usado uma vez. Se você não solicitou, ignore este e-mail e sua senha continuará a mesma.',
@@ -41,9 +43,9 @@ export type EmailSendResult = 'sent' | 'suppressed';
 export type EmailSendOutcome = { result: EmailSendResult; messageId?: string };
 
 export interface Mailer {
-  sendOtp(to: string, code: string): Promise<EmailSendOutcome>;
+  sendOtp(to: string, code: string, name?: string): Promise<EmailSendOutcome>;
   sendInvite(to: string, name: string, link: string): Promise<EmailSendOutcome>;
-  sendPasswordReset(to: string, link: string): Promise<EmailSendOutcome>;
+  sendPasswordReset(to: string, link: string, name?: string): Promise<EmailSendOutcome>;
   sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendOutcome>;
 }
 
@@ -117,14 +119,14 @@ export class ResendMailer implements Mailer {
     if (error) throw new Error(`Falha ao enviar e-mail: ${error.message ?? error}`);
     return { result: 'sent', messageId: data?.id };
   }
-  async sendOtp(to: string, code: string): Promise<EmailSendOutcome> {
-    return this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code));
+  async sendOtp(to: string, code: string, name?: string): Promise<EmailSendOutcome> {
+    return this.send(to, OTP_SUBJECT(code), OTP_BODY(code), otpEmailHtml(code, name));
   }
   async sendInvite(to: string, name: string, link: string): Promise<EmailSendOutcome> {
     return this.send(to, INVITE_SUBJECT, INVITE_BODY(name, link), inviteEmailHtml(name, link));
   }
-  async sendPasswordReset(to: string, link: string): Promise<EmailSendOutcome> {
-    return this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link));
+  async sendPasswordReset(to: string, link: string, name?: string): Promise<EmailSendOutcome> {
+    return this.send(to, RESET_SUBJECT, RESET_BODY(link), resetEmailHtml(link, name));
   }
   async sendNotification(to: string, subject: string, text: string, html?: string): Promise<EmailSendOutcome> {
     return this.send(to, subject, text, html);

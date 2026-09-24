@@ -162,3 +162,18 @@ test('ciclo_aberto: menciona o manual só quando has_manual (sem linkar o arquiv
   assert.ok(e.html.includes('manual do seu roteiro'));
   assert.ok(!e.html.includes('/manual'), 'e-mail não linka o arquivo');
 });
+
+test('roteiro_pendente (prestador): data fora do título, botão "Concluir roteiro"', () => {
+  const n = renderNotification('roteiro_pendente', { end_date: '2026-10-07' });
+  assert.equal(n.title, 'Roteiro pendente de resposta');
+  assert.ok(n.body.includes('07/10/2026'), n.body);
+  const e = renderNotificationEmail('roteiro_pendente', { end_date: '2026-10-07' }, 'https://x', 'DANIELA');
+  assert.ok(e.html.includes('ROTEIRO PENDENTE DE RESPOSTA'));
+  assert.ok(e.html.includes('Concluir roteiro') && !e.html.includes('Acessar o portal'));
+  assert.ok(e.html.includes('Olá, <strong>DANIELA</strong>'));
+  for (const marco of ['7', 'fim']) {
+    assert.ok(renderNotificationEmail('roteiro_pendente', { end_date: '2026-10-07', marco }, 'https://x').html.includes('Concluir roteiro'), marco);
+  }
+  // Resumo da auditoria mantém "Acessar o portal".
+  assert.ok(renderNotificationEmail('roteiro_pendente', { digest: true, end_date: '2026-10-07' }, 'https://x').html.includes('Acessar o portal'));
+});

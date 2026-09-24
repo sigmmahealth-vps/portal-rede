@@ -83,7 +83,8 @@ test('ícones do card de destaque por tipo', () => {
   assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Ouro' }, APP).html.includes(`${APP}/selos/ouro.png`));
   assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Prata' }, APP).html.includes(`${APP}/selos/prata.png`));
   assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Bronze' }, APP).html.includes(`${APP}/selos/bronze.png`));
-  assert.ok(renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Diamante' }, APP).html.includes('🏅')); // selo sem arte → emoji
+  const semArte = renderNotificationEmail('parecer_aprovado', { ...CTX, seal: 'Diamante' }, APP).html; // selo sem arte → card sem medalha
+  assert.ok(semArte.includes('Selo Diamante') && !semArte.includes('/selos/'));
   for (const t of ['certificado_emitido', 'certificado_vencendo', 'acao_vencendo', 'acao_atrasada', 'roteiro_pendente'] as const) {
     assert.ok(renderNotificationEmail(t, CTX, APP).html.includes(`${APP}/calendario.png`), t);
   }
@@ -98,4 +99,48 @@ test('cards removidos na rodada de aprovação: reanálise e plano sem destaque'
 test('saudação ausente sem nome do destinatário', () => {
   const e = renderNotificationEmail('ciclo_aberto', CTX, APP);
   assert.ok(e.html.includes('Olá.'));
+});
+
+test('parecer_aprovado: card de resultado, título e botão do cliente', () => {
+  const e = renderNotificationEmail('parecer_aprovado', { seal: 'Ouro', percentual: 92.2, has_certificate: true, valid_until: '2027-03-15' }, APP, 'GUILHERME');
+  assert.ok(e.html.includes('RESULTADO DA SUA QUALIFICAÇÃO'));
+  assert.ok(e.html.includes('Confira abaixo o resultado da sua avaliação.'));
+  assert.ok(e.html.includes('92,2%') && e.html.includes('de atingimento') && e.html.includes('Selo Ouro'));
+  assert.ok(e.html.includes('Aprovado') && e.html.includes('Disponível no portal') && e.html.includes('15/03/2027'));
+  assert.ok(e.html.includes('Acessar meu resultado'));
+  // Sem certificado emitido, não promete certificado nem validade.
+  const semCert = renderNotificationEmail('parecer_aprovado', { seal: 'Ouro', percentual: 92.2 }, APP).html;
+  assert.ok(!semCert.includes('Disponível no portal') && !semCert.includes('VALIDADE'));
+});
+
+test('certificado_emitido: chamada para o próximo ciclo e botão "Acessar certificado"', () => {
+  const e = renderNotificationEmail('certificado_emitido', { valid_until: '2026-10-10' }, APP, 'GUILHERME');
+  assert.ok(e.html.includes('Parabéns por esta conquista! Nos encontramos novamente no próximo ciclo de qualificação.'));
+  assert.ok(e.html.includes('Acessar certificado') && !e.html.includes('Acessar o portal'));
+  assert.ok(e.html.includes(`${APP}/qualificacao?aba=certificados`));
+  assert.ok(e.html.includes('10/10/2026'));
+});
+
+test('plano_gerado: prestador recebe texto/botão do cliente; auditoria segue genérica', () => {
+  const p = renderNotificationEmail('plano_gerado', { provider_name: 'GUILHERME', audience: 'prestador' }, APP, 'GUILHERME');
+  assert.ok(p.html.includes('SEU PLANO DE AÇÃO ESTÁ DISPONÍVEL'));
+  assert.ok(p.html.includes('Sua qualificação ainda tem próximos passos'));
+  assert.ok(p.html.includes('Acessar Plano de Ação') && p.html.includes(`${APP}/qualificacao?aba=planos`));
+  const a = renderNotificationEmail('plano_gerado', { provider_name: 'GUILHERME' }, APP, 'Auditoria');
+  assert.ok(a.html.includes('PLANO DE AÇÃO GERADO') && a.html.includes('<strong>GUILHERME</strong>'));
+  assert.ok(!a.html.includes('Sua qualificação ainda tem próximos passos'));
+});
+
+test('certificado_vencendo: texto do cliente com a validade e chamada para o próximo ciclo', () => {
+  const e = renderNotificationEmail('certificado_vencendo', { valid_until: '2026-10-10' }, APP, 'GUILHERME');
+  assert.ok(e.html.includes('é válido até <strong>10/10/2026</strong>. O próximo ciclo está chegando!'));
+  assert.ok(e.html.includes('manter suas documentações e evidências atualizadas'));
+  assert.ok(e.html.includes('Olá, <strong>GUILHERME</strong>'));
+});
+
+test('reanalise_solicitada: botão "Preencher reanálise" nas três variantes', () => {
+  for (const ctx of [{ items: [{ code: '1.1.5', text: 'CNES' }], instance_id: 9 }, { integral: true }, { question_code: '1.1.4' }]) {
+    const h = renderNotificationEmail('reanalise_solicitada', ctx, APP, 'GUILHERME').html;
+    assert.ok(h.includes('Preencher reanálise') && !h.includes('Acessar o portal'), JSON.stringify(ctx));
+  }
 });

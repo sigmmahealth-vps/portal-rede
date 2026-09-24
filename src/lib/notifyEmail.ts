@@ -40,6 +40,8 @@ export interface EmailBlocks {
   // card estilo "protocolo": icon = emoji no quadrado verde; iconImg = imagem
   // solta (ex.: medalha do selo), tem precedência sobre icon.
   highlight?: { label: string; value: string; icon?: string; iconImg?: string };
+  // Card de resultado (aprovação): % grande + selo à esquerda, status/certificado/validade à direita.
+  result?: { pct: string; seal: string; sealImg?: string; status: string; certificate?: string; validUntil?: string };
   steps?: string;                                  // callout "Próximos passos:"
   cta?: { label: string; url: string };            // botão verde
 }
@@ -73,6 +75,43 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
         <td style="padding:18px;${FONT}">
           <div style="font-size:11px;letter-spacing:1px;color:${C.green};font-weight:bold;">${escapeHtml(b.highlight.label).toUpperCase()}</div>
           <div style="font-size:20px;font-weight:bold;color:#111827;margin-top:2px;">${escapeHtml(b.highlight.value)}</div>
+        </td>
+      </tr>
+    </table>` : '';
+  const lbl = (t: string) =>
+    `<div style="${FONT}font-size:10px;letter-spacing:1px;color:${C.green};font-weight:bold;">${escapeHtml(t).toUpperCase()}</div>`;
+  const side = (icon: string, label: string, value: string) => `
+          <tr>
+            <td width="30" style="padding:6px 10px 6px 0;vertical-align:middle;">
+              <img src="${escapeHtml(appUrl)}/${icon}" alt="" width="22" height="22" style="display:block;width:22px;height:22px;">
+            </td>
+            <td style="padding:6px 0;vertical-align:middle;">
+              ${lbl(label)}
+              <div style="${FONT}font-size:14px;font-weight:bold;color:#111827;">${escapeHtml(value)}</div>
+            </td>
+          </tr>`;
+  const r = b.result;
+  const result = r ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;background:${C.lightGreen};border-radius:12px;">
+      <tr>
+        ${r.sealImg ? `<td width="76" style="padding:20px 0 20px 20px;vertical-align:middle;">
+          <img src="${escapeHtml(r.sealImg)}" alt="Selo ${escapeHtml(r.seal)}" width="56" style="display:block;width:56px;height:auto;">
+        </td>` : ''}
+        <td style="padding:20px 16px;vertical-align:middle;">
+          ${lbl('Resultado da qualificação')}
+          <div style="${FONT}font-size:36px;line-height:1.1;font-weight:bold;color:#111827;margin-top:2px;">${escapeHtml(r.pct)}</div>
+          <div style="${FONT}font-size:13px;color:${C.text};">de atingimento</div>
+          <div style="border-top:1px solid #CFE7DA;margin:12px 0 10px;"></div>
+          ${lbl('Classificação')}
+          <div style="${FONT}font-size:17px;font-weight:bold;color:#111827;">Selo ${escapeHtml(r.seal)}</div>
+        </td>
+        <td width="1" style="background:#CFE7DA;"></td>
+        <td width="200" style="padding:14px 20px;vertical-align:middle;">
+          <table cellpadding="0" cellspacing="0">
+            ${side('icone-status.png', 'Status', r.status)}
+            ${r.certificate ? side('icone-certificado.png', 'Certificado', r.certificate) : ''}
+            ${r.validUntil ? side('icone-validade.png', 'Validade', r.validUntil) : ''}
+          </table>
         </td>
       </tr>
     </table>` : '';
@@ -121,6 +160,7 @@ export function renderEmailHtml(b: EmailBlocks, appUrl: string): string {
     <td style="padding:28px;">
       <p style="margin:0 0 16px;${FONT}font-size:15px;line-height:1.6;color:#111827;"><strong>${greeting}</strong></p>
       ${paragraphs}
+      ${result}
       ${highlight}
       ${steps}
       ${cta}
@@ -167,6 +207,8 @@ export function notificationBlocks(
   appUrl: string,
 ): EmailBlocks {
   const cta = { label: 'Acessar o portal', url: `${appUrl}${notifyLink(type, ctx)}` };
+  const concluirCta = { ...cta, label: 'Concluir roteiro' };   // lembretes ao prestador (cliente, 2026-09-24)
+  const reanaliseCta = { ...cta, label: 'Preencher reanálise' }; // devolução p/ reanálise (cliente, 2026-09-24)
   let b: EmailBlocks;
 
   switch (type) {
@@ -229,7 +271,7 @@ export function notificationBlocks(
           ],
           ...(ctx.end_date ? { highlight: { label: 'Prazo para reenvio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
           steps: 'acesse o roteiro, leia a orientação do auditor em cada critério apontado, anexe as novas evidências e reenvie para análise.',
-          cta,
+          cta: reanaliseCta,
         };
         break;
       }
@@ -239,23 +281,31 @@ export function notificationBlocks(
             paragraphs: ['O auditor devolveu a sua avaliação de qualificação para reanálise.'],
             ...(ctx.end_date ? { highlight: { label: 'Prazo para reenvio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
             steps: 'acesse o roteiro no portal, revise os critérios apontados, ajuste as evidências e reenvie a avaliação para análise.',
-            cta,
+            cta: reanaliseCta,
           }
         : {
             banner: 'Reanálise de critério solicitada',
             paragraphs: ['O auditor solicitou a reanálise de um critério da sua avaliação de qualificação.'],
             ...(ctx.end_date ? { highlight: { label: 'Prazo para reenvio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
             steps: 'acesse o roteiro, leia a orientação do auditor no critério apontado, anexe a nova evidência e reenvie para análise.',
-            cta,
+            cta: reanaliseCta,
           };
       break;
     case 'parecer_aprovado':
       b = {
-        banner: 'Avaliação de qualificação aprovada',
-        paragraphs: ['Sua avaliação de qualificação foi concluída pelo auditor com **aprovação**. Parabéns!'],
-        highlight: { label: 'Classificação', value: `Selo ${ctx.seal ?? ''} — ${fmtPct(ctx.percentual ?? 0)} de atingimento`, icon: '🏅', iconImg: sealImageUrl(ctx.seal, appUrl) },
+        // Textos e card de resultado pedidos pelo cliente (2026-09-24).
+        banner: 'Resultado da sua qualificação',
+        paragraphs: ['Sua avaliação de qualificação foi concluída. Confira abaixo o resultado da sua avaliação.'],
+        result: {
+          pct: fmtPct(ctx.percentual ?? 0),
+          seal: String(ctx.seal ?? ''),
+          sealImg: sealImageUrl(ctx.seal, appUrl),
+          status: 'Aprovado',
+          certificate: ctx.has_certificate ? 'Disponível no portal' : undefined,
+          validUntil: ctx.valid_until ? fmtDate(ctx.valid_until) : undefined,
+        },
         steps: 'acesse o portal para consultar o parecer completo e o seu certificado de qualificação.',
-        cta,
+        cta: { ...cta, label: 'Acessar meu resultado' },
       };
       break;
     case 'parecer_reprovado':
@@ -269,13 +319,30 @@ export function notificationBlocks(
     case 'certificado_emitido':
       b = {
         banner: 'Certificado de qualificação emitido',
-        paragraphs: ['Seu **Certificado de Qualificação** da Rede de Prestadores foi emitido e já está disponível no portal.'],
+        // Texto e botão do cliente (2026-09-24): chamada para o próximo ciclo.
+        paragraphs: [
+          'Seu **Certificado de Qualificação** da Rede de Prestadores foi emitido e já está disponível no portal.',
+          'Parabéns por esta conquista! Nos encontramos novamente no próximo ciclo de qualificação.',
+        ],
         highlight: { label: 'Validade', value: fmtDate(ctx.valid_until) || '—', iconImg: `${appUrl}/calendario.png` },
         steps: 'acesse o portal para visualizar, imprimir e compartilhar o certificado. A autenticidade pode ser verificada pelo QR code.',
-        cta,
+        cta: { ...cta, label: 'Acessar certificado' },
       };
       break;
     case 'plano_gerado':
+      // Versão do prestador com texto/botão do cliente (2026-09-24); auditoria segue a genérica.
+      if (ctx.audience === 'prestador') {
+        b = {
+          banner: 'Seu Plano de Ação está disponível',
+          paragraphs: [
+            'Sua qualificação ainda tem próximos passos. Um **Plano de Ação** está disponível no PRP com os pontos identificados a partir da sua avaliação.',
+            'Acesse para conferir e dar continuidade às tratativas.',
+          ],
+          steps: 'acesse o portal para consultar as ações, os prazos e registrar as evidências de conclusão.',
+          cta: { ...cta, label: 'Acessar Plano de Ação' },
+        };
+        break;
+      }
       b = {
         banner: 'Plano de ação gerado',
         paragraphs: [
@@ -326,7 +393,7 @@ export function notificationBlocks(
             paragraphs: ['Hoje é o último dia do ciclo de qualificação e você ainda não enviou o seu roteiro. Após o encerramento não será mais possível enviar.'],
             highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
             steps: 'acesse o portal agora, conclua o roteiro com as evidências e envie para análise antes do encerramento de hoje.',
-            cta,
+            cta: concluirCta,
           }
         : ctx.marco === '7'
         ? {
@@ -334,20 +401,24 @@ export function notificationBlocks(
             paragraphs: ['Faltam 7 dias para o encerramento do ciclo de qualificação e você ainda não enviou o seu roteiro.'],
             highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
             steps: 'acesse o portal e envie o roteiro com as evidências antes do encerramento.',
-            cta,
+            cta: concluirCta,
           }
         : {
-            banner: 'Roteiro de qualificação pendente',
+            banner: 'Roteiro pendente de resposta',
             paragraphs: ['Você ainda não enviou o seu roteiro de qualificação e o prazo termina junto com o encerramento do ciclo.'],
             highlight: { label: 'Encerramento do ciclo', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` },
             steps: 'acesse o portal, conclua o preenchimento do roteiro com as evidências e envie para análise antes do encerramento.',
-            cta,
+            cta: concluirCta,
           };
       break;
     case 'certificado_vencendo':
       b = {
         banner: 'Certificado próximo do vencimento',
-        paragraphs: ['O seu Certificado de Qualificação da Rede de Prestadores está próximo do vencimento.'],
+        // Texto do cliente (2026-09-24): chamada para o próximo ciclo + separação de documentos.
+        paragraphs: [
+          `Seu **Certificado de Qualificação** é válido até **${fmtDate(ctx.valid_until) || '—'}**. O próximo ciclo está chegando!`,
+          'Aproveite para revisar e manter suas documentações e evidências atualizadas. Assim você estará preparado para a próxima avaliação e para alcançar a melhor pontuação possível.',
+        ],
         highlight: { label: 'Válido até', value: fmtDate(ctx.valid_until) || '—', iconImg: `${appUrl}/calendario.png` },
         steps: 'fique atento à abertura do próximo ciclo de qualificação para renovar o seu certificado.',
         cta,

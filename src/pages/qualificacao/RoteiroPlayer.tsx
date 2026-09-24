@@ -230,17 +230,24 @@ export default function RoteiroPlayer({
   const jumpedToReanalise = useRef(false);
   useEffect(() => {
     if (jumpedToReanalise.current || initialFilter !== 'reanalise' || loading) return;
-    const target = questions.find(q => answers[q.id]?.evidence_status === 'aguardando_reanalise');
-    if (!target) return;
+    const devolvidas = questions.filter(q => answers[q.id]?.evidence_status === 'aguardando_reanalise');
+    if (!devolvidas.length) return;
     jumpedToReanalise.current = true;
     setStatusFilter('reanalise');
     // Sobe na árvore só até a ETAPA do stepper (nó "SEÇÃO N" / raiz com critérios) —
     // a raiz da árvore pode ser um grupo acima das seções e não é etapa válida.
-    const groupIds = new Set(computeStepGroups(sections, questions).map(g => g.id));
+    // Abre na PRIMEIRA etapa (ordem do roteiro) com critério devolvido, não na do
+    // primeiro critério do array (que não segue a ordem das seções).
+    const groups = computeStepGroups(sections, questions);
+    const groupIndex = new Map(groups.map((g, i) => [g.id, i]));
     const sectionById = new Map<number, Section>(sections.map(s => [s.id, s]));
-    let cur = sectionById.get(target.section_id);
-    while (cur && !groupIds.has(cur.id) && cur.parent_section_id) cur = sectionById.get(cur.parent_section_id);
-    if (cur && groupIds.has(cur.id)) setActiveSectionId(cur.id);
+    let first = Infinity;
+    for (const q of devolvidas) {
+      let cur = sectionById.get(q.section_id);
+      while (cur && !groupIndex.has(cur.id) && cur.parent_section_id) cur = sectionById.get(cur.parent_section_id);
+      if (cur && groupIndex.has(cur.id)) first = Math.min(first, groupIndex.get(cur.id)!);
+    }
+    if (first !== Infinity) setActiveSectionId(groups[first].id);
   }, [loading, questions, answers, sections, initialFilter]);
 
   const loadScript = async () => {
@@ -404,7 +411,8 @@ export default function RoteiroPlayer({
     }
   };
 
-  const saveProgress = async (goToNext: boolean = false) => {
+  // nextIndex = etapa de destino do "Próxima"; -1 = não há próxima → finalizar/reenviar.
+  const saveProgress = async (goToNext: boolean = false, nextIndex: number = -1) => {
     setSaving(true);
     try {
       let instId = currentInstanceId;
@@ -436,11 +444,10 @@ export default function RoteiroPlayer({
         alert('Progresso salvo com sucesso!');
       } else {
         const roots = computeStepGroups(sections, questions);
-        const currentIndex = roots.findIndex(s => s.id === activeSectionId);
-        if (currentIndex !== -1 && currentIndex < roots.length - 1) {
-          setActiveSectionId(roots[currentIndex + 1].id);
+        if (nextIndex >= 0 && nextIndex < roots.length) {
+          setActiveSectionId(roots[nextIndex].id);
           scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-        } else if (currentIndex === roots.length - 1) {
+        } else {
           const pend = pendingItems();
           if (pend.length > 0) {
             alert(`Há ${pend.length} critério(s) pendente(s) (sem resposta, evidência ou justificativa). Complete-os antes de finalizar.`);
@@ -538,6 +545,18 @@ export default function RoteiroPlayer({
   const reanaliseSet = new Set(
     questions.filter(q => answers[q.id]?.evidence_status === 'aguardando_reanalise').map(q => q.id),
   );
+  // Critérios devolvidos por etapa (mesma ordem de rootSections).
+  const reanaliseByRoot = rootSections.map(r => {
+    const ids = new Set(descendantSectionIds(r.id));
+    return questions.filter(q => ids.has(q.section_id) && reanaliseSet.has(q.id)).length;
+  });
+  // Modo correção: filtro Reanálise ativo e há devolução → "Próxima" pula direto para a
+  // próxima etapa com critério devolvido; sem mais nenhuma, o botão vira "Reenviar".
+  const reanaliseMode = statusFilter === 'reanalise' && reanaliseSet.size > 0;
+  const nextRootIndex = reanaliseMode
+    ? reanaliseByRoot.findIndex((n, i) => i > activeRootIndex && n > 0)
+    : (isLastRoot ? -1 : activeRootIndex + 1);
+  const goToRoot = (i: number) => { setActiveSectionId(rootSections[i].id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   const emptyGroup = renderList.every(r => (questionsBySection.get(r.section.id)?.length ?? 0) === 0);
 
@@ -653,6 +672,30 @@ export default function RoteiroPlayer({
             const totalVisible = groupQs.filter(filterMatches).length;
             return (
             <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-6 border-0 p-0">
+            {/* Mapa da devolução: quantos critérios cada seção tem em reanálise, na ordem do roteiro. */}
+            {!readOnly && reanaliseSet.size > 0 && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                <p className="text-sm font-semibold text-red-900">
+                  {reanaliseSet.size} critério(s) devolvido(s) para reanálise
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {rootSections.map((r, i) => reanaliseByRoot[i] > 0 && (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => { setStatusFilter('reanalise'); goToRoot(i); }}
+                      aria-current={i === activeRootIndex ? 'step' : undefined}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                        i === activeRootIndex ? 'border-red-500 bg-red-500 text-white' : 'border-red-300 bg-white text-red-800 hover:bg-red-100'
+                      }`}
+                    >
+                      {r.name}
+                      <span className="tabular-nums">· {reanaliseByRoot[i]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Filtro de status — aplica a todas as (sub)seções do grupo atual. */}
             <div className="flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
               {filterTabs.map(t => {
@@ -913,14 +956,18 @@ export default function RoteiroPlayer({
                   if (readOnly) {
                     if (!isLastRoot) { setActiveSectionId(rootSections[activeRootIndex + 1].id); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }
                   } else {
-                    saveProgress(true);
+                    saveProgress(true, nextRootIndex);
                   }
                 }}
                 disabled={saving || (readOnly && isLastRoot)}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 disabled:opacity-60"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {isLastRoot ? (<>Finalizar avaliação <Check className="h-4 w-4" strokeWidth={3} /></>) : (<>Próxima etapa <ChevronRight className="h-4 w-4" /></>)}
+                {readOnly
+                  ? (isLastRoot ? <>Finalizar avaliação <Check className="h-4 w-4" strokeWidth={3} /></> : <>Próxima etapa <ChevronRight className="h-4 w-4" /></>)
+                  : nextRootIndex === -1
+                    ? <>{reanaliseMode ? 'Reenviar para análise' : 'Finalizar avaliação'} <Check className="h-4 w-4" strokeWidth={3} /></>
+                    : <>{reanaliseMode ? `Próxima com reanálise: ${rootSections[nextRootIndex].name}` : 'Próxima etapa'} <ChevronRight className="h-4 w-4" /></>}
               </button>
             </div>
           )}
@@ -962,6 +1009,11 @@ export default function RoteiroPlayer({
                         {sec.name}
                       </span>
                       <span className={`mt-0.5 block text-xs ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>{done}/{secQs.length} critérios</span>
+                      {!readOnly && reanaliseByRoot[rootSections.indexOf(sec)] > 0 && (
+                        <span className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">
+                          {reanaliseByRoot[rootSections.indexOf(sec)]} em reanálise
+                        </span>
+                      )}
                       <span className="mt-1.5 block h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
                         <span
                           className="block h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out"

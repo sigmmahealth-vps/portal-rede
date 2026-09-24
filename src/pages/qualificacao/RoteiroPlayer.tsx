@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchApi } from '../../lib/api';
+import { fetchApi, manualHref } from '../../lib/api';
 import { computeScore } from '../../lib/score';
 import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
-  AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2, RotateCcw,
+  AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2, RotateCcw, FileText,
 } from 'lucide-react';
 
 interface Question {
@@ -632,6 +632,11 @@ export default function RoteiroPlayer({
                 </p>
                 <p className="text-xs text-gray-500">respondidos</p>
               </div>
+              {script?.manual_filename && (
+                <a href={manualHref(scriptId)} className="ml-auto inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:underline">
+                  <FileText className="h-4 w-4" /> Manual
+                </a>
+              )}
             </div>
           )}
 
@@ -982,6 +987,14 @@ export default function RoteiroPlayer({
           {/* Fixo no topo do corpo com scroll; rola internamente se houver muitas seções. */}
           <div className="sticky top-0 max-h-[calc(100vh-10rem)] space-y-4 overflow-y-auto pr-1">
             <p className="px-1 text-sm font-bold text-secondary-900">{script?.title || 'Roteiro de Qualificação'}</p>
+            {script?.manual_filename && (
+              <a
+                href={manualHref(scriptId)}
+                className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-secondary-900 transition-colors hover:bg-gray-50"
+              >
+                <FileText className="h-4 w-4 text-emerald-700" /> Baixar manual do roteiro
+              </a>
+            )}
             <div className="rounded-2xl border border-gray-200 bg-white p-5">
               <div className="flex items-center gap-4">
                 <Donut value={progressPct} />

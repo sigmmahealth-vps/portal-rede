@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { fetchApi } from '../../lib/api';
+import { fetchApi, manualHref } from '../../lib/api';
 import { fmtData, fmtPct } from '../../lib/formatDate';
 import {
   Play, Clock, LayoutGrid, ClipboardList, Target, Award, Smile, ArrowRight, Eye, MapPin,
-  AlertTriangle, ChevronDown, ChevronRight, CheckCircle2,
+  AlertTriangle, ChevronDown, ChevronRight, CheckCircle2, FileText,
 } from 'lucide-react';
 import RoteiroPlayer from './RoteiroPlayer';
 import MeuPlanoAcao from './MeuPlanoAcao';
@@ -61,7 +61,7 @@ const itemBtnLabel = (type: AlertType): string =>
 
 // key? — sem @types/react neste projeto, JSX não infere LibraryManagedAttributes;
 // o campo é só para o checker aceitar `key=` no map, React descarta em runtime.
-const AlertGroupCard = ({ type, items, onRun }: { key?: string; type: AlertType; items: AlertItem[]; onRun: (type: AlertType, it: AlertItem) => void }) => {
+const AlertGroupCard = ({ type, items, onRun, manualFor }: { key?: string; type: AlertType; items: AlertItem[]; onRun: (type: AlertType, it: AlertItem) => void; manualFor?: (scriptId?: number) => string | null }) => {
   const meta = GROUP_META[type];
   // Grupo com 1 item já vem expandido, sem colapso (spec §2).
   const [open, setOpen] = useState(items.length === 1);
@@ -94,12 +94,22 @@ const AlertGroupCard = ({ type, items, onRun }: { key?: string; type: AlertType;
                 {it.detail && <p className="mt-0.5 text-xs font-medium text-gray-500">{it.detail}</p>}
                 {it.deadline && <p className="mt-0.5 text-xs font-medium text-gray-500">até {fmtData(it.deadline)}</p>}
               </div>
-              <button
-                onClick={() => onRun(type, it)}
-                className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors ${meta.btn}`}
-              >
-                {itemBtnLabel(type)} <ArrowRight className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {(() => {
+                  const href = manualFor?.(it.scriptId);
+                  return href && (
+                    <a href={href} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-secondary-900 hover:bg-gray-50">
+                      <FileText className="h-4 w-4" /> Manual
+                    </a>
+                  );
+                })()}
+                <button
+                  onClick={() => onRun(type, it)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors ${meta.btn}`}
+                >
+                  {itemBtnLabel(type)} <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -235,6 +245,10 @@ export default function PrestadorView({ user }: { user: any }) {
   // --- Mural de alertas (spec 2026-08-13) ------------------------------------
   const model = buildInicioModel({ instances, surveys: survey?.surveys ?? [], plans, certificates });
 
+  // Link do manual no Início: só para roteiro com manual enviado (pesquisa/plano não têm scriptId).
+  const manualFor = (scriptId?: number) =>
+    scriptId != null && scripts.some((s: any) => Number(s.id) === scriptId && s.manual_filename) ? manualHref(scriptId) : null;
+
   // Ação de cada item, por tipo de grupo.
   const runItem = (type: AlertType, it: AlertItem) => {
     if (type === 'pesquisa') { setActiveTab('pesquisa'); return; }
@@ -269,7 +283,7 @@ export default function PrestadorView({ user }: { user: any }) {
       )}
 
       {/* Grupos de alerta, na ordem de urgência do modelo */}
-      {model.groups.map(g => <AlertGroupCard key={g.type} type={g.type} items={g.items} onRun={runItem} />)}
+      {model.groups.map(g => <AlertGroupCard key={g.type} type={g.type} items={g.items} onRun={runItem} manualFor={manualFor} />)}
 
       {/* Bloco positivo: certificado novo (não conta em N; some após 1ª abertura) */}
       {model.newCertificates.map(c => (
@@ -347,6 +361,14 @@ export default function PrestadorView({ user }: { user: any }) {
                     </button>
                   );
                 })()}
+                {s.manual_filename && (
+                  <a
+                    href={manualHref(s.id)}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-secondary-900 transition-colors hover:bg-gray-50"
+                  >
+                    <FileText className="h-4 w-4" /> Baixar manual do roteiro
+                  </a>
+                )}
               </div>
             );
           }).filter(Boolean);

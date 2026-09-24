@@ -61,12 +61,15 @@ export function notifyLink(type: string, ctx: Record<string, any> = {}): string 
   }
 }
 
+// Aviso de manual (spec 2026-09-24): só texto — o arquivo é baixado dentro do portal, nunca por link/anexo.
+export const MANUAL_TXT = ' O manual do seu roteiro está disponível no portal, em Meus Roteiros.';
+
 export function renderNotification(type: NotifyType, ctx: Record<string, any> = {}): NotifyContent {
   const link = notifyLink(type, ctx);
   switch (type) {
     case 'ciclo_aberto':
       return { title: `Ciclo de qualificação ${ctx.cycle_label ?? ''} aberto`.replace(/\s+/g, ' ').trim(),
-               body: `Seu roteiro de qualificação está disponível para preenchimento no portal.${ctx.end_date ? ` O prazo para envio termina em ${fmtDate(ctx.end_date)}.` : ''}`, link };
+               body: `Seu roteiro de qualificação está disponível para preenchimento no portal.${ctx.end_date ? ` O prazo para envio termina em ${fmtDate(ctx.end_date)}.` : ''}${ctx.has_manual ? MANUAL_TXT : ''}`, link };
     case 'ciclo_reaberto':
       // prorrogado = admin informou nova data de fim; senão é reabertura no mesmo prazo.
       return ctx.prorrogado

@@ -4,7 +4,7 @@
 // Puro: sem DB/env — o server passa appUrl e o nome do destinatário.
 // E-mail-safe: tabelas + estilos inline (sem CSS externo, sem flexbox).
 
-import { type NotifyType, fmtDate, notifyLink } from './notifyCatalog.js';
+import { type NotifyType, fmtDate, notifyLink, MANUAL_TXT } from './notifyCatalog.js';
 import { fmtPct } from './formatDate.js';
 
 const C = {
@@ -173,6 +173,7 @@ export function notificationBlocks(
         banner: `Ciclo de qualificação ${ctx.cycle_label ?? ''} aberto`.replace(/\s+/g, ' ').trim(),
         paragraphs: [
           `O ciclo de qualificação **${ctx.cycle_label ?? ''}** da Rede de Prestadores da Unimed Criciúma foi aberto e o seu roteiro já está disponível para preenchimento no portal.`,
+          ...(ctx.has_manual ? [MANUAL_TXT.trim()] : []),
         ],
         ...(ctx.end_date ? { highlight: { label: 'Prazo para envio', value: fmtDate(ctx.end_date) || '—', iconImg: `${appUrl}/calendario.png` } } : {}),
         steps: 'acesse o portal, responda aos critérios do roteiro anexando as evidências solicitadas e, ao concluir, envie a avaliação para análise.',

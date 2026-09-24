@@ -142,3 +142,13 @@ test('notifyLink: cada aviso leva à aba do destino (não à home da Qualificaç
   assert.equal(notifyLink('certificado_emitido'), '/qualificacao?aba=certificados');
   assert.equal(notifyLink('tipo_inexistente'), '/qualificacao');
 });
+
+test('ciclo_aberto: menciona o manual só quando has_manual (sem linkar o arquivo)', () => {
+  const com = renderNotification('ciclo_aberto', { cycle_label: '2026', has_manual: true });
+  const sem = renderNotification('ciclo_aberto', { cycle_label: '2026' });
+  assert.ok(com.body.includes('manual do seu roteiro'), com.body);
+  assert.ok(!sem.body.includes('manual'), sem.body);
+  const e = renderNotificationEmail('ciclo_aberto', { cycle_label: '2026', has_manual: true }, 'https://x');
+  assert.ok(e.html.includes('manual do seu roteiro'));
+  assert.ok(!e.html.includes('/manual'), 'e-mail não linka o arquivo');
+});

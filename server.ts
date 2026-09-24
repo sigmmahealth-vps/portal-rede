@@ -256,6 +256,17 @@ async function startServer() {
     return rows.map(r => ({ user_id: Number(r.user_id), email: r.email, name: r.name }));
   }
 
+  // Algum roteiro do prestador neste ciclo tem manual enviado? (aviso de abertura, spec 2026-09-24)
+  async function providerHasManual(providerId: number, cycleId: number): Promise<boolean> {
+    const { rows } = await query(
+      `SELECT EXISTS (
+         SELECT 1 FROM eval_instances i
+           JOIN eval_scripts s ON s.id = i.script_id
+           JOIN eval_script_manuals m ON m.source_file = s.source_file
+          WHERE i.provider_id = $1 AND i.cycle_id = $2) AS has`, [providerId, cycleId]);
+    return !!rows[0]?.has;
+  }
+
   async function auditoriaRecipients(): Promise<NotifyRecipient[]> {
     const { rows } = await query(
       `SELECT id AS user_id, email, name FROM users WHERE role = 'auditoria' AND is_active = true AND invite_status = 'accepted'`);
@@ -4958,7 +4969,7 @@ async function startServer() {
         ip: hashClientIp(req),
       });
       void (async () => {
-        await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label, end_date: cy[0].end_date },
+        await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label, end_date: cy[0].end_date, has_manual: await providerHasManual(providerId, cycleId) },
           await prestadorRecipients(providerId, locationId), { providerId });
       })().catch((e) => console.error('[notify] inclusão avulsa:', e));
 
@@ -5067,7 +5078,7 @@ async function startServer() {
       // Notifica os prestadores do ciclo (fire-and-forget; não atrasa a resposta).
       void (async () => {
         for (const pid of cycleProviderIds) {
-          await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label, end_date: cy[0].end_date },
+          await notifyEvent('ciclo_aberto', { cycle_label: cy[0].label, end_date: cy[0].end_date, has_manual: await providerHasManual(pid, cycleId) },
             await prestadorRecipients(pid), { providerId: pid });
         }
       })();

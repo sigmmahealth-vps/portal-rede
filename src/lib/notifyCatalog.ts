@@ -30,8 +30,39 @@ export function roteiroReminderMarco(daysLeft: number): RoteiroReminderMarco | n
   return null;
 }
 
+// Destino do clique (sininho e botão do e-mail): aba da Qualificação ligada ao aviso.
+// Slugs valem para as duas visões (prestador: inicio/roteiros/planos/certificados;
+// staff: painel-ciclo/planos). Reanálise com instance_id abre o roteiro já em correção.
+export function notifyLink(type: string, ctx: Record<string, any> = {}): string {
+  const aba = (a: string) => `/qualificacao?aba=${a}`;
+  switch (type) {
+    case 'ciclo_aberto':
+    case 'ciclo_reaberto':
+    case 'parecer_aprovado':
+    case 'ciclo_encerrado_sem_avaliacao':
+      return aba('roteiros');
+    case 'roteiro_pendente':
+      return aba(ctx.digest ? 'painel-ciclo' : 'roteiros');
+    case 'roteiro_enviado':
+      return aba('painel-ciclo');
+    case 'reanalise_solicitada':
+      return ctx.instance_id ? `${aba('roteiros')}&corrigir=${Number(ctx.instance_id)}` : aba('inicio');
+    case 'parecer_reprovado':
+    case 'plano_gerado':
+    case 'acao_aguardando_validacao':
+    case 'acao_vencendo':
+    case 'acao_atrasada':
+      return aba('planos');
+    case 'certificado_emitido':
+    case 'certificado_vencendo':
+      return aba('certificados');
+    default:
+      return '/qualificacao';
+  }
+}
+
 export function renderNotification(type: NotifyType, ctx: Record<string, any> = {}): NotifyContent {
-  const link = '/qualificacao';
+  const link = notifyLink(type, ctx);
   switch (type) {
     case 'ciclo_aberto':
       return { title: `Ciclo de qualificação ${ctx.cycle_label ?? ''} aberto`.replace(/\s+/g, ' ').trim(),

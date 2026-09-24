@@ -114,7 +114,11 @@ export default function PrestadorView({ user }: { user: any }) {
   const [evalScriptId, setEvalScriptId] = useState<number | null>(null);
   const [locations, setLocations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabKey>('inicio');
+  // ?aba= vem do clique numa notificação (notifyLink); sem ele, abre no Início.
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const p = new URLSearchParams(window.location.search).get('aba');
+    return (TABS.find(t => t.key === p)?.key ?? 'inicio') as TabKey;
+  });
   const [activePlayer, setActivePlayer] = useState<{ scriptId: number, instanceId?: number, locationId?: number, readOnly?: boolean, initialFilter?: 'reanalise' } | null>(null);
 
   const [survey, setSurvey] = useState<any>(null);
@@ -134,6 +138,21 @@ export default function PrestadorView({ user }: { user: any }) {
     loadData();
     loadSurvey();
   }, []);
+
+  // ?corrigir=<instância> (notificação de reanálise): abre o roteiro direto na correção,
+  // como o botão "Corrigir" do Início. Consome o parâmetro para não reabrir ao voltar.
+  useEffect(() => {
+    if (loading) return;
+    const url = new URL(window.location.href);
+    const id = url.searchParams.get('corrigir');
+    if (!id) return;
+    url.searchParams.delete('corrigir');
+    window.history.replaceState({}, '', url.toString());
+    const inst = instances.find(i => String(i.id) === id);
+    if (inst && !OPEN_STATES.includes(inst.status)) {
+      setActivePlayer({ scriptId: inst.script_id, instanceId: inst.id, locationId: inst.location_id ?? undefined, readOnly: false, initialFilter: 'reanalise' });
+    }
+  }, [loading, instances]);
 
   const loadData = async () => {
     try {

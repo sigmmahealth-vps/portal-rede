@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderNotification, dedupeKey, roteiroReminderMarco, NOTIFY_TYPES } from './notifyCatalog.js';
+import { renderNotification, dedupeKey, roteiroReminderMarco, NOTIFY_TYPES, notifyLink } from './notifyCatalog.js';
 import { renderNotificationEmail } from './notifyEmail.js';
 
 test('todos os tipos renderizam título, corpo e link', () => {
@@ -12,7 +12,7 @@ test('todos os tipos renderizam título, corpo e link', () => {
     });
     assert.ok(c.title.length > 0, t);
     assert.ok(c.body.length > 0, t);
-    assert.equal(c.link, '/qualificacao', t);
+    assert.ok(c.link.startsWith('/qualificacao'), t);
   }
 });
 
@@ -65,7 +65,7 @@ test('ciclo_reaberto: prorrogação vs reabertura, ambos com o prazo', () => {
   const re = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
   assert.equal(re.title, 'Ciclo Ciclo 2026 reaberto');
   assert.ok(!re.title.includes('prorrog') && re.body.includes('15/10/2026'), re.body);
-  assert.equal(re.link, '/qualificacao');
+  assert.equal(re.link, '/qualificacao?aba=roteiros');
 });
 
 test('ciclo_reaberto: e-mail tem banner próprio (não o tipo cru) e o prazo', () => {
@@ -130,4 +130,15 @@ test('tipo desconhecido não quebra (fallback)', () => {
   const c = renderNotification('tipo_inexistente' as any, {});
   assert.equal(c.title, 'tipo_inexistente');
   assert.equal(c.link, '/qualificacao');
+});
+
+test('notifyLink: cada aviso leva à aba do destino (não à home da Qualificação)', () => {
+  assert.equal(notifyLink('reanalise_solicitada', { instance_id: 42 }), '/qualificacao?aba=roteiros&corrigir=42');
+  assert.equal(notifyLink('reanalise_solicitada', {}), '/qualificacao?aba=inicio');
+  assert.equal(notifyLink('roteiro_enviado'), '/qualificacao?aba=painel-ciclo');
+  assert.equal(notifyLink('roteiro_pendente', { digest: true }), '/qualificacao?aba=painel-ciclo');
+  assert.equal(notifyLink('roteiro_pendente', {}), '/qualificacao?aba=roteiros');
+  assert.equal(notifyLink('acao_aguardando_validacao'), '/qualificacao?aba=planos');
+  assert.equal(notifyLink('certificado_emitido'), '/qualificacao?aba=certificados');
+  assert.equal(notifyLink('tipo_inexistente'), '/qualificacao');
 });

@@ -3795,7 +3795,7 @@ async function startServer() {
       });
 
       void (async () => {
-        await notifyEvent('reanalise_solicitada', { integral: true, end_date: await instanceCycleEnd(id) },
+        await notifyEvent('reanalise_solicitada', { integral: true, instance_id: id, end_date: await instanceCycleEnd(id) },
           await prestadorRecipients(Number(reopened.provider_id), reopened.location_id ?? null),
           { providerId: Number(reopened.provider_id) });
       })().catch((e) => console.error('[notify] site reanalise_solicitada (reopen):', e));
@@ -5324,7 +5324,7 @@ async function startServer() {
       void (async () => {
         const items = marked.map((m: any) => ({ code: m.code, text: questionOnly(m.text ?? '') }));
         await notifyEvent('reanalise_solicitada',
-          { items, end_date: await instanceCycleEnd(id) },
+          { items, instance_id: id, end_date: await instanceCycleEnd(id) },
           await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
           { providerId: Number(inst.provider_id), dedupeRef: `reanalise-lote:${id}:${Date.now()}` });
       })().catch((e) => console.error('[notify] site reanalise_solicitada (lote):', e));

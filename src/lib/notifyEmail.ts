@@ -4,7 +4,7 @@
 // Puro: sem DB/env — o server passa appUrl e o nome do destinatário.
 // E-mail-safe: tabelas + estilos inline (sem CSS externo, sem flexbox).
 
-import { type NotifyType, fmtDate } from './notifyCatalog.js';
+import { type NotifyType, fmtDate, notifyLink } from './notifyCatalog.js';
 import { fmtPct } from './formatDate.js';
 
 const C = {
@@ -164,7 +164,7 @@ export function notificationBlocks(
   ctx: Record<string, any>,
   appUrl: string,
 ): EmailBlocks {
-  const cta = { label: 'Acessar o portal', url: `${appUrl}/qualificacao` };
+  const cta = { label: 'Acessar o portal', url: `${appUrl}${notifyLink(type, ctx)}` };
   let b: EmailBlocks;
 
   switch (type) {

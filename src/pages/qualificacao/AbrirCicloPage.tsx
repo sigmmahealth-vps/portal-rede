@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { fetchApi } from '../../lib/api';
 import {
   ArrowLeft, ChevronRight, AlertTriangle, Save, RotateCcw, Loader2, Play,
-  Users, ClipboardList, Layers, UserMinus,
+  Users, ClipboardList, Layers, UserMinus, Search,
 } from 'lucide-react';
 import { fmtDataHora } from '../../lib/formatDate';
 
@@ -44,7 +44,9 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const [err, setErr] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [overridesDirty, setOverridesDirty] = useState(false);
-  const [excluding, setExcluding] = useState<InstanceRow | null>(null);
+  const [excluding, setExcluding] = useState<InstanceRow[] | null>(null);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // `saved` = o que acabou de ser gravado (ou deve ser descartado). Rascunhos não salvos
   // do resto sobrevivem ao recarregamento — excluir/reincluir um par não apaga roteiros
@@ -172,18 +174,25 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
     }
   };
 
-  const confirmarExclusao = async (row: InstanceRow, reason: string) => {
+  // ponytail: um POST por par (endpoint existente), sequencial; lote de centenas leva
+  // alguns segundos — endpoint em lote se isso incomodar.
+  const confirmarExclusao = async (rows: InstanceRow[], reason: string) => {
     setSaving(true); setErr(null);
+    let done = 0;
     try {
-      await fetchApi(`/eval/cycles/${cycle.id}/exclusions`, {
-        method: 'POST',
-        body: JSON.stringify({ provider_id: row.provider_id, location_id: row.location_id, reason }),
-      });
+      for (const row of rows) {
+        await fetchApi(`/eval/cycles/${cycle.id}/exclusions`, {
+          method: 'POST',
+          body: JSON.stringify({ provider_id: row.provider_id, location_id: row.location_id, reason }),
+        });
+        done++;
+      }
       setExcluding(null);
-      await loadPreview();
+      setSelected(new Set());
     } catch (e: any) {
-      setErr(e?.message || 'Erro ao excluir do ciclo');
+      setErr(`${e?.message || 'Erro ao excluir do ciclo'}${rows.length > 1 ? ` (${done} de ${rows.length} excluídos)` : ''}`);
     } finally {
+      if (done > 0) await loadPreview();
       setSaving(false);
     }
   };
@@ -241,6 +250,25 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const inCycle = instances.filter(i => activeGroupNames.has(i.provider_group));
   const visibleInstances = inCycle.filter(i => i.excluded_id == null);
   const excludedRows = inCycle.filter(i => i.excluded_id != null);
+  const norm = (s: string | null) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const q = norm(search.trim());
+  const filtered = visibleInstances.filter(i =>
+    (!groupFilter || i.provider_group === groupFilter) &&
+    (!q || [i.provider_name, i.provider_code, i.location_label, i.city].some(v => norm(v).includes(q)))
+  );
+  const rowKey = (r: InstanceRow) => `${r.provider_id}:${r.location_id}`;
+  const selectedRows = visibleInstances.filter(r => selected.has(rowKey(r)));
+  const allFilteredSelected = filtered.length > 0 && filtered.every(r => selected.has(rowKey(r)));
+  const toggleRow = (r: InstanceRow) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(rowKey(r)) ? next.delete(rowKey(r)) : next.add(rowKey(r));
+    return next;
+  });
+  const toggleAllFiltered = () => setSelected(prev => {
+    const next = new Set(prev);
+    filtered.forEach(r => allFilteredSelected ? next.delete(rowKey(r)) : next.add(rowKey(r)));
+    return next;
+  });
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#f4f4f4] lg:left-20">
@@ -446,6 +474,17 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="search"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Buscar prestador, código, local…"
+                        aria-label="Buscar prestador"
+                        className="w-60 rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-3 text-xs focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+                      />
+                    </div>
                     <label className="text-xs font-semibold text-gray-600">Filtrar grupo:</label>
                     <select
                       value={groupFilter}
@@ -469,10 +508,46 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                     )}
                   </div>
                 </div>
+                {!readOnly && selectedRows.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-100 bg-red-50 px-4 py-2">
+                    <p className="text-xs font-semibold text-red-800">
+                      {selectedRows.length} prestador(es)/local selecionado(s)
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelected(new Set())}
+                        className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
+                      >
+                        Limpar seleção
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExcluding(selectedRows)}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-40"
+                      >
+                        <UserMinus className="h-3 w-3" /> Excluir selecionados
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="max-h-[540px] overflow-y-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="sticky top-0 bg-gray-50 text-xs uppercase text-gray-600">
                       <tr>
+                        {!readOnly && (
+                          <th className="w-10 p-3">
+                            <input
+                              type="checkbox"
+                              checked={allFilteredSelected}
+                              onChange={toggleAllFiltered}
+                              disabled={filtered.length === 0}
+                              aria-label="Selecionar todos os prestadores do filtro"
+                              className="h-4 w-4 accent-emerald-600"
+                            />
+                          </th>
+                        )}
                         <th className="p-3 font-semibold">Prestador</th>
                         <th className="p-3 font-semibold">Grupo</th>
                         <th className="p-3 font-semibold">Local</th>
@@ -482,15 +557,26 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                     </thead>
                     <tbody>
                       {(() => {
-                        const filtered = groupFilter ? visibleInstances.filter(i => i.provider_group === groupFilter) : visibleInstances;
                         if (filtered.length === 0) {
-                          return <tr><td colSpan={5} className="p-8 text-center text-gray-500">Nenhum prestador nesse filtro.</td></tr>;
+                          return <tr><td colSpan={readOnly ? 5 : 6} className="p-8 text-center text-gray-500">Nenhum prestador nesse filtro.</td></tr>;
                         }
                         return filtered.map(r => {
                           const effectiveSid = r.override_script_id ?? r.default_script_id ?? 0;
                           const isOverridden = r.override_script_id != null && r.override_script_id !== r.default_script_id;
+                          const isSelected = selected.has(rowKey(r));
                           return (
-                            <tr key={`${r.provider_id}-${r.location_id}`} className="border-t border-gray-100">
+                            <tr key={`${r.provider_id}-${r.location_id}`} className={`border-t border-gray-100 ${isSelected ? 'bg-red-50/40' : ''}`}>
+                              {!readOnly && (
+                                <td className="p-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleRow(r)}
+                                    aria-label={`Selecionar ${r.provider_name} — ${r.location_label || 'local'}`}
+                                    className="h-4 w-4 accent-emerald-600"
+                                  />
+                                </td>
+                              )}
                               <td className="p-3">
                                 <p className="font-medium text-secondary-900">{r.provider_name}</p>
                                 {r.provider_code && <p className="text-[11px] text-gray-500">{r.provider_code}</p>}
@@ -531,7 +617,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
                                 {!readOnly && (
                                   <button
                                     type="button"
-                                    onClick={() => setExcluding(r)}
+                                    onClick={() => setExcluding([r])}
                                     title="Remover este prestador/local do ciclo"
                                     className="rounded-md p-1 text-red-600 hover:bg-red-50"
                                   >
@@ -628,7 +714,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
 
       {excluding && (
         <ExcluirModal
-          row={excluding}
+          rows={excluding}
           saving={saving}
           onCancel={() => setExcluding(null)}
           onConfirm={(reason) => confirmarExclusao(excluding, reason)}
@@ -640,19 +726,35 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
 
 const MOTIVOS_RAPIDOS = ['Aposentadoria', 'Atendimento exclusivo CC/hospitalar'];
 
-function ExcluirModal({ row, saving, onCancel, onConfirm }: {
-  row: InstanceRow; saving: boolean; onCancel: () => void; onConfirm: (reason: string) => void;
+function ExcluirModal({ rows, saving, onCancel, onConfirm }: {
+  rows: InstanceRow[]; saving: boolean; onCancel: () => void; onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
+  const row = rows[0];
   // Portal: escapa do stacking context do overlay (z-20) pra cobrir o header (z-[25]).
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-bold text-secondary-900">Remover do ciclo</h3>
-        <p className="mt-1 text-sm text-gray-600">
-          <strong>{row.provider_name}</strong>{row.location_label ? ` — ${row.location_label}` : ''} não receberá
-          instância neste ciclo. Informe o motivo (obrigatório):
-        </p>
+        {rows.length === 1 ? (
+          <p className="mt-1 text-sm text-gray-600">
+            <strong>{row.provider_name}</strong>{row.location_label ? ` — ${row.location_label}` : ''} não receberá
+            instância neste ciclo. Informe o motivo (obrigatório):
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-gray-600">
+              <strong>{rows.length} prestadores/locais</strong> não receberão instância neste ciclo. O mesmo motivo vale para todos (obrigatório):
+            </p>
+            <ul className="mt-2 max-h-32 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs text-secondary-900">
+              {rows.map(r => (
+                <li key={`${r.provider_id}-${r.location_id}`} className="truncate">
+                  {r.provider_name}{r.location_label ? ` — ${r.location_label}` : ''}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           {MOTIVOS_RAPIDOS.map(m => (
             <button
@@ -682,7 +784,7 @@ function ExcluirModal({ row, saving, onCancel, onConfirm }: {
             onClick={() => onConfirm(reason.trim())}
             className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-40"
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserMinus className="h-4 w-4" />} Excluir do ciclo
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserMinus className="h-4 w-4" />} {rows.length > 1 ? `Excluir ${rows.length} do ciclo` : 'Excluir do ciclo'}
           </button>
         </div>
       </div>

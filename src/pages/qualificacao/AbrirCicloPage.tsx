@@ -46,8 +46,13 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
   const [overridesDirty, setOverridesDirty] = useState(false);
   const [excluding, setExcluding] = useState<InstanceRow | null>(null);
 
-  const loadPreview = async () => {
+  // `saved` = o que acabou de ser gravado (ou deve ser descartado). Rascunhos não salvos
+  // do resto sobrevivem ao recarregamento — excluir/reincluir um par não apaga roteiros
+  // trocados e ainda não salvos.
+  const loadPreview = async (saved: 'all' | 'groups' | 'overrides' | 'none' = 'none') => {
     setErr(null);
+    const keepGroups = dirty && saved !== 'all' && saved !== 'groups';
+    const keepOverrides = overridesDirty && saved !== 'all' && saved !== 'overrides';
     try {
       const [pv, sc, inst] = await Promise.all([
         fetchApi(`/eval/cycles/${cycle.id}/abertura-preview`),
@@ -56,16 +61,29 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
       ]);
       setPreview(pv);
       setScripts(sc);
-      setGroups(pv.groups || []);
-      setInstances(inst.rows || []);
-      setDirty(false);
-      setOverridesDirty(false);
+      const fetchedGroups: GroupRow[] = pv.groups || [];
+      setGroups(prev => {
+        if (!keepGroups) return fetchedGroups;
+        const byName = new Map(fetchedGroups.map(g => [g.provider_group, g]));
+        return prev.map(g => ({ ...(byName.get(g.provider_group) ?? g), script_id: g.script_id, script_title: g.script_title }));
+      });
+      const fetchedRows: InstanceRow[] = inst.rows || [];
+      setInstances(prev => {
+        if (!keepOverrides) return fetchedRows;
+        const byKey = new Map<string, InstanceRow>(prev.map(r => [`${r.provider_id}:${r.location_id}`, r]));
+        return fetchedRows.map(r => {
+          const p = byKey.get(`${r.provider_id}:${r.location_id}`);
+          return p ? { ...r, override_script_id: p.override_script_id, override_script_title: p.override_script_title } : r;
+        });
+      });
+      if (!keepGroups) setDirty(false);
+      if (!keepOverrides) setOverridesDirty(false);
     } catch (e: any) {
       setErr(e?.message || 'Erro ao carregar preview');
     }
   };
 
-  useEffect(() => { loadPreview(); }, [cycle.id]);
+  useEffect(() => { loadPreview('all'); }, [cycle.id]);
 
   const setGroupScript = (grp: string, newSid: number) => {
     setGroups(prev => prev.map(g => {
@@ -111,7 +129,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
         method: 'PUT',
         body: JSON.stringify({ overrides: payload }),
       });
-      await loadPreview();
+      await loadPreview('overrides');
     } catch (e: any) {
       setErr(e?.message || 'Erro ao salvar overrides');
     } finally {
@@ -130,7 +148,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
           groups: groups.map(g => ({ provider_group: g.provider_group, script_id: g.script_id })),
         }),
       });
-      await loadPreview();
+      await loadPreview('groups');
     } catch (e: any) {
       setErr(e?.message || 'Erro ao salvar grupos');
     } finally {
@@ -146,7 +164,7 @@ export default function AbrirCicloPage({ cycle, onClose, onDone }: { cycle: any;
         method: 'PUT',
         body: JSON.stringify({ groups: [] }),
       });
-      await loadPreview();
+      await loadPreview('groups');
     } catch (e: any) {
       setErr(e?.message || 'Erro ao restaurar');
     } finally {

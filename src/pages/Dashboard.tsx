@@ -9,7 +9,6 @@ import {
   DownloadCloud, 
   CreditCard, 
   Award, 
-  File,
   Calendar,
   AlertCircle,
   Clock,
@@ -286,10 +285,6 @@ export default function Dashboard() {
               <Link to="/qualificacao" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
                 <Award className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
                 <span className="text-xs font-medium text-gray-600 text-center">Qualificação da Rede</span>
-              </Link>
-              <Link to="/documentos" className="flex flex-col items-center justify-center p-4 rounded-xl border border-gray-100 hover:border-[#00995D] hover:shadow-sm transition-all group">
-                <File className="h-6 w-6 text-[#00995D] mb-2" strokeWidth={1.5} />
-                <span className="text-xs font-medium text-gray-600 text-center">Documentos</span>
               </Link>
             </div>
           </div>

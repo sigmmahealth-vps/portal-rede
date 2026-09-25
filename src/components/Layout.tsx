@@ -1,4 +1,4 @@
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -43,17 +43,15 @@ export default function Layout() {
   const [user, setUser] = useState<any>(null);
 
   const isAdmin = user?.role === 'admin' || user?.role === 'auditoria';
-  const isCooperado = user?.is_cooperado === true;
 
-  // Módulos de pessoa jurídica que não se aplicam ao médico cooperado.
-  const COOPERADO_HIDDEN = ['Gestão Documental', 'Contratos'];
+  // Módulos ainda não liberados para os acessos de prestador (cliente, 25/09): aparecem
+  // no menu como "Em breve", sem link, e a URL direta volta para o Dashboard.
+  const PROVIDER_SOON = ['/documentos', '/contratos'];
 
-  const filteredNavigation = navigation.filter(item => {
-    if ((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin) return false;
-    if (isCooperado && COOPERADO_HIDDEN.includes(item.name)) return false;
-
-    return true;
-  });
+  const filteredNavigation = navigation
+    .filter(item => !((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin))
+    .map(item => ({ ...item, soon: !!user && !isAdmin && PROVIDER_SOON.includes(item.href) }));
+  const blockedRoute = !!user && !isAdmin && PROVIDER_SOON.includes(location.pathname);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -86,8 +84,8 @@ export default function Layout() {
     else document.body.style.fontSize = '100%';
   }, [largeText]);
 
-  const searchResults = filteredNavigation.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const searchResults = filteredNavigation.filter(item =>
+    !item.soon && item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   useEffect(() => {
@@ -129,6 +127,14 @@ export default function Layout() {
           <nav className="flex-1 px-2 py-4 space-y-2 overflow-y-auto">
             {filteredNavigation.map((item) => {
               const isActive = location.pathname === item.href;
+              if (item.soon) return (
+                <div key={item.name} aria-disabled="true" title="Em breve"
+                  className="flex cursor-not-allowed items-center rounded-lg px-3 py-3 text-sm font-medium text-white/50">
+                  <item.icon className="mr-3 h-5 w-5 flex-shrink-0 text-white/40" />
+                  <span className="flex-1">{item.name}</span>
+                  <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 text-[10px] text-white">Em breve</span>
+                </div>
+              );
               return (
                 <Link
                   key={item.name}
@@ -168,6 +174,16 @@ export default function Layout() {
         <div className="flex flex-col flex-1 overflow-y-auto py-4 space-y-2 px-3">
           {filteredNavigation.map((item) => {
             const isActive = location.pathname === item.href;
+            if (item.soon) return (
+              <div key={item.name} aria-disabled="true" title={`${item.name} — em breve`}
+                className="flex h-12 cursor-not-allowed items-center rounded-xl px-3 text-white/40">
+                <item.icon className="h-6 w-6 flex-shrink-0" strokeWidth={2} />
+                <span className={`ml-3 flex flex-1 items-center justify-between whitespace-nowrap font-medium transition-opacity duration-300 ${isSidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>
+                  <span className="text-white/50">{item.name}</span>
+                  <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 text-[10px] text-white">Em breve</span>
+                </span>
+              </div>
+            );
             return (
               <Link
                 key={item.name}
@@ -320,7 +336,7 @@ export default function Layout() {
             {/* min-w-0 (não overflow-hidden): contém a largura do flex sem virar
                 contexto de clipping, o que quebraria position: sticky dos filhos. */}
             <div className="flex-1 min-w-0">
-              <Outlet />
+              {blockedRoute ? <Navigate to="/dashboard" replace /> : <Outlet />}
             </div>
             <RightSidebar />
           </div>

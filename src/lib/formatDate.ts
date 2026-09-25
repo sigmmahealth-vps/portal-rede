@@ -31,5 +31,5 @@ export function fmtPct(v: number | string | null | undefined): string {
   if (v == null || v === '') return '';
   const n = Number(v);
   if (!isFinite(n)) return '';
-  return `${(Math.round(n * 10) / 10).toString().replace('.', ',')}%`;
+  return `${n.toFixed(1).replace('.', ',')}%`; // sempre 1 casa (homologação 25/09)
 }

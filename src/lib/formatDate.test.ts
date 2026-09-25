@@ -27,9 +27,9 @@ test('fmtPct: 1 casa decimal com vírgula, nunca arredonda para inteiro (B-03)',
   assert.equal(fmtPct(95.7), '95,7%');    // era 96% (arredondado) — o bug
   assert.equal(fmtPct(95.71), '95,7%');   // 2 casas -> 1
   assert.equal(fmtPct(66.7), '66,7%');
-  assert.equal(fmtPct(100), '100%');      // sem zero à toa
+  assert.equal(fmtPct(100), '100,0%');    // sempre 1 casa (homologação 25/09)
   assert.equal(fmtPct(89.7), '89,7%');
-  assert.equal(fmtPct(0), '0%');
+  assert.equal(fmtPct(0), '0,0%');
   assert.equal(fmtPct(null), '');
   assert.equal(fmtPct('nao-e-numero'), '');
 });

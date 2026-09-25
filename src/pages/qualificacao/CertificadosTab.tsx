@@ -167,7 +167,7 @@ export default function CertificadosTab() {
                       {c.dimensions.map(d => (
                         <div key={d.dimension} className="flex items-center justify-between py-1">
                           <span className="text-sm text-gray-600">{d.dimension}</span>
-                          <span className="text-sm font-bold text-emerald-600">{d.pct.toFixed(1)}%</span>
+                          <span className="text-sm font-bold text-emerald-600">{fmtPct(d.pct)}</span>
                         </div>
                       ))}
                     </div>

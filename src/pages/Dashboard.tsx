@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { welcomeLine } from '../lib/greeting';
+import { fmtPct } from '../lib/formatDate';
 import { 
   UploadCloud, 
   FileText, 
@@ -51,7 +52,6 @@ export default function Dashboard() {
   const isCooperado = user?.is_cooperado === true;
 
   // Formata percentual em pt-BR (vírgula). Valores numeric do Postgres chegam como string.
-  const formatPct = (value: number) => value.toFixed(2).replace('.', ',');
 
   // Distribuição de selos da rede (admin) — vinda de eval_instances via /dashboard.
   const sealRows: any[] = adminData?.sealDistribution || [];
@@ -181,7 +181,7 @@ export default function Dashboard() {
                                   <p className="text-xs text-gray-500">{count} {count === 1 ? 'prestador avaliado' : 'prestadores avaliados'}</p>
                                 </div>
                               </div>
-                              <span className="text-lg font-bold text-gray-800">{formatPct(pct)}%</span>
+                              <span className="text-lg font-bold text-gray-800">{fmtPct(pct)}</span>
                             </div>
                           );
                         })}

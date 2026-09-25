@@ -193,7 +193,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                     ? <img src={SEAL_IMG[s]} alt={s} className="h-7 w-7 object-contain" />
                     : <span className="text-2xl" aria-hidden="true">🚫</span>}
                   <span className="text-lg font-bold text-secondary-900">
-                    {dist[s]} <span className="text-sm font-semibold text-gray-500">· {Math.round((dist[s] / totalSeals) * 100)}%</span>
+                    {dist[s]} <span className="text-sm font-semibold text-gray-500">· {fmtPct((dist[s] / totalSeals) * 100)}</span>
                   </span>
                 </span>
               ))}

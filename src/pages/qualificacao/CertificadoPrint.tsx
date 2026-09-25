@@ -7,7 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { fetchApi } from '../../lib/api';
-import { fmtData } from '../../lib/formatDate';
+import { fmtData, fmtPct } from '../../lib/formatDate';
 import type { Certificate } from './CertificadosTab';
 
 // Cor do número por selo (nome e validade são sempre verdes na arte).
@@ -15,8 +15,6 @@ const NUM_COLOR: Record<string, string> = { Ouro: '#b8860b', Prata: '#7a7f87', B
 const GREEN = '#0f5c3f';
 
 const fmtDateOnly = (d: string) => fmtData(d);
-// Percentual no formato da arte: vírgula, 1 casa decimal, sem zero à toa (94,4% / 100% / 96%).
-const fmtPct = (n: number) => `${(Math.round(Number(n) * 10) / 10).toString().replace('.', ',')}%`;
 const esc = (s: string) =>
   String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 

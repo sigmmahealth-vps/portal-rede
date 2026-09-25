@@ -3,7 +3,7 @@ import { Award } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import WhatsAppIcon from './WhatsAppIcon';
 import { fetchApi } from '../lib/api';
-import { fmtData } from '../lib/formatDate';
+import { fmtData, fmtPct } from '../lib/formatDate';
 import { currentCertificate } from '../lib/sealVigente';
 
 // Estilo do selo (cor de fundo, texto e rótulo) por nível.
@@ -35,7 +35,7 @@ export default function RightSidebar() {
   const isProvider = !!user?.provider_id;
   const seal: string | null = cert?.seal ?? null;
   const st = sealStyle(seal);
-  const pct = cert?.percentual != null ? `${Number(cert.percentual).toFixed(2).replace('.', ',')}%` : null;
+  const pct = cert?.percentual != null ? fmtPct(cert.percentual) : null;
   const years = providerSince
     ? Math.floor((Date.now() - new Date(providerSince).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
     : null;

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, ChevronLeft, Search, CheckCircle2, FileText, CalendarDays } from 'lucide-react';
 import { fetchApi } from '../lib/api';
 import { notificationBlocks } from '../lib/notifyEmail';
-import { NOTIFY_TYPES, type NotifyType } from '../lib/notifyCatalog';
+import { NOTIFY_TYPES, NOTIFY_TYPE_LABELS, type NotifyType } from '../lib/notifyCatalog';
 
 // Caixa de entrada de notificações: lista à esquerda, leitura à direita.
 // O painel de leitura renderiza os mesmos blocos do e-mail (destaque, próximos
@@ -20,20 +20,7 @@ interface Notif {
   created_at: string;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  ciclo_aberto: 'Ciclo aberto',
-  roteiro_enviado: 'Roteiro enviado',
-  reanalise_solicitada: 'Reanálise',
-  parecer_aprovado: 'Avaliação aprovada',
-  parecer_reprovado: 'Avaliação concluída',
-  certificado_emitido: 'Certificado emitido',
-  plano_gerado: 'Plano de ação',
-  acao_aguardando_validacao: 'Ação p/ validação',
-  acao_vencendo: 'Prazo de ação',
-  acao_atrasada: 'Ação em atraso',
-  roteiro_pendente: 'Roteiro pendente',
-  certificado_vencendo: 'Certificado a vencer',
-};
+const TYPE_LABELS: Record<string, string> = NOTIFY_TYPE_LABELS;
 
 const KNOWN_TYPES = new Set<string>(NOTIFY_TYPES);
 
@@ -106,6 +93,13 @@ export default function Notificacoes() {
 
   useEffect(load, [page, onlyUnread, typeFilter, q]);
 
+  // Filtro por tipo: só os tipos que este usuário já recebeu, na ordem do catálogo.
+  const [myTypes, setMyTypes] = useState<string[]>([]);
+  useEffect(() => {
+    fetchApi('/notifications/types').then((t: string[]) => setMyTypes(t)).catch(() => setMyTypes([]));
+  }, []);
+  const typeOptions = NOTIFY_TYPES.filter((t) => myTypes.includes(t));
+
   const onSearch = (v: string) => {
     setQInput(v);
     clearTimeout(debounce.current);
@@ -160,7 +154,7 @@ export default function Notificacoes() {
         <select value={typeFilter} onChange={(e) => { setPage(1); setTypeFilter(e.target.value); }}
           className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm text-gray-700">
           <option value="">Todos os tipos</option>
-          {NOTIFY_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t] ?? t}</option>)}
+          {typeOptions.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
         </select>
       </div>
 

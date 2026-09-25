@@ -563,6 +563,14 @@ async function startServer() {
     } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
+  // Tipos que este usuário já recebeu — alimenta o filtro "tipo" da caixa de entrada.
+  app.get('/api/notifications/types', authenticate, async (req: any, res) => {
+    try {
+      const { rows } = await query('SELECT DISTINCT type FROM notifications WHERE user_id = $1', [req.user.id]);
+      res.json(rows.map((r: any) => r.type));
+    } catch (err: any) { console.error(err); res.status(500).json({ error: err.message }); }
+  });
+
   app.get('/api/notifications/unread-count', authenticate, async (req: any, res) => {
     try {
       const { rows } = await query(

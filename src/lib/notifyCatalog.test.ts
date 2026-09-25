@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderNotification, dedupeKey, roteiroReminderMarco, NOTIFY_TYPES, notifyLink } from './notifyCatalog.js';
+import { renderNotification, dedupeKey, roteiroReminderMarco, NOTIFY_TYPES, NOTIFY_TYPE_LABELS, notifyLink } from './notifyCatalog.js';
 import { renderNotificationEmail } from './notifyEmail.js';
 
 test('todos os tipos renderizam título, corpo e link', () => {
@@ -169,4 +169,14 @@ test('roteiro_pendente (prestador): data fora do título, botão "Concluir rotei
   }
   // Resumo da auditoria mantém "Acessar o portal".
   assert.ok(renderNotificationEmail('roteiro_pendente', { digest: true, end_date: '2026-10-07' }, 'https://x').html.includes('Acessar o portal'));
+});
+
+test('NOTIFY_TYPE_LABELS: todo tipo tem nome no padrão (sem código cru, sem abreviação)', () => {
+  for (const t of NOTIFY_TYPES) {
+    const l = NOTIFY_TYPE_LABELS[t];
+    assert.ok(l, `sem nome: ${t}`);
+    assert.ok(!l.includes('_') && !l.includes('p/'), `fora do padrão: ${t} → ${l}`);
+    assert.equal(l[0], l[0].toUpperCase(), `1ª letra maiúscula: ${l}`);
+    assert.equal(l.slice(1), l.slice(1).toLowerCase(), `só a 1ª maiúscula: ${l}`);
+  }
 });

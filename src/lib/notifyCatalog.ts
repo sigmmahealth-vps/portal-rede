@@ -10,6 +10,25 @@ export const NOTIFY_TYPES = [
 ] as const;
 export type NotifyType = typeof NOTIFY_TYPES[number];
 
+// Nome de cada tipo nas telas (filtro da caixa de entrada, E-mails Enviados).
+// Padrão: "objeto + situação", só a 1ª letra maiúscula, sem abreviação.
+export const NOTIFY_TYPE_LABELS: Record<NotifyType, string> = {
+  ciclo_aberto: 'Ciclo aberto',
+  ciclo_reaberto: 'Ciclo reaberto ou prorrogado',
+  ciclo_encerrado_sem_avaliacao: 'Ciclo encerrado sem avaliação',
+  roteiro_enviado: 'Roteiro enviado',
+  roteiro_pendente: 'Roteiro pendente',
+  reanalise_solicitada: 'Reanálise solicitada',
+  parecer_aprovado: 'Avaliação aprovada',
+  parecer_reprovado: 'Avaliação não qualificada',
+  certificado_emitido: 'Certificado emitido',
+  certificado_vencendo: 'Certificado a vencer',
+  plano_gerado: 'Plano de ação gerado',
+  acao_aguardando_validacao: 'Ação aguardando validação',
+  acao_vencendo: 'Ação a vencer',
+  acao_atrasada: 'Ação atrasada',
+};
+
 export interface NotifyContent { title: string; body: string; link: string; }
 
 import { fmtData, fmtPct } from './formatDate';

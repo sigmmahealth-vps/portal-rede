@@ -1,23 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import { fmtDataHora } from '../../lib/formatDate';
+import { NOTIFY_TYPE_LABELS } from '../../lib/notifyCatalog';
 import { RefreshCw, Send, Search } from 'lucide-react';
 
-// Rótulos amigáveis dos tipos de notificação (espelha NOTIFY_TYPES do back).
+// Rótulos dos tipos: os de notificação vêm do catálogo (mesmo padrão da caixa de
+// entrada) + os e-mails de acesso, que só existem nesta tela.
 const TYPE_LABELS: Record<string, string> = {
-  ciclo_aberto: 'Ciclo aberto',
-  roteiro_enviado: 'Roteiro enviado',
-  reanalise_solicitada: 'Reanálise solicitada',
-  parecer_aprovado: 'Avaliação aprovada',
-  parecer_reprovado: 'Avaliação não qualificada',
-  certificado_emitido: 'Certificado emitido',
-  plano_gerado: 'Plano de ação gerado',
-  acao_aguardando_validacao: 'Ação aguardando validação',
-  acao_vencendo: 'Ação a vencer',
-  acao_atrasada: 'Ação atrasada',
-  roteiro_pendente: 'Roteiro pendente',
-  certificado_vencendo: 'Certificado a vencer',
-  ciclo_encerrado_sem_avaliacao: 'Ciclo encerrado sem avaliação',
+  ...NOTIFY_TYPE_LABELS,
   convite: 'Convite de acesso',
   reset_senha: 'Redefinição de senha',
   otp: 'Código de acesso (login)',

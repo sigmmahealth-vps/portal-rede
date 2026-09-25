@@ -40,7 +40,7 @@ displayStatus(
 | sem resposta **e** `submittedAt` presente **e** `isWithinDeadline(submittedAt, now)` | `aguardando_pesquisa` |
 | caso contrário | `emitir_parecer` (prestador: `em_analise`) |
 
-- **Critério decidido** = `evidence_status IN ('aprovado','reprovado','nao_se_aplica')` — a mesma lista que `POST /api/eval/instances/:id/parecer` usa. Critério em reanálise (inclusive rascunho, `aguardando_reanalise`) não está decidido.
+- **Critério decidido** = `evidence_status IN ('aprovado','reprovado','nao_se_aplica')` — a mesma lista que `POST /api/eval/instances/:id/parecer` usa. Critério em reanálise (inclusive rascunho, `aguardando_reanalise`) não está decidido. `evidence_status` NULL (resposta sem evidência) também conta como não decidido.
 - **Invariante:** `emitir_parecer` ⇔ o `POST .../parecer` passaria nas três travas atuais (status permitido, pesquisa liberada, sem critério pendente). Os dois usam as mesmas condições; a borda do prazo é a de `isWithinDeadline` (inclusive o instante exato dos 7 dias = ainda dentro).
 - Sem `submittedAt` a pesquisa não trava (igual ao parecer hoje).
 
@@ -55,7 +55,7 @@ Em `src/lib/statusLabels.ts` (mapa canônico, mesmo estilo Title Case dos atuais
 
 Nenhuma regra de negócio muda; só dados passam a ser devolvidos.
 
-- **`GET /api/eval/dashboard/auditor`**: a query ganha `pending_count` por instância com **exatamente o mesmo predicado do parecer**: `COUNT(*) FROM eval_answers WHERE instance_id = ei.id AND evidence_status NOT IN ('aprovado','reprovado','nao_se_aplica')` (atenção: `NOT IN` não conta `evidence_status NULL` — mantido de propósito para a invariante valer; a lista terminal vira uma constante SQL compartilhada pelas duas queries). `buildAuditorDashboard` passa a devolver `display_status` em cada instância (`audience='auditor'`), com o `now` injetável que já existe.
+- **`GET /api/eval/dashboard/auditor`**: a query ganha `pending_count` por instância com **exatamente o mesmo predicado do parecer**: o predicado é `COALESCE(ea.evidence_status,'pendente') NOT IN (...)`, constante compartilhada `PENDING_ANSWER_SQL`; NULL conta como pendente (revisão final 25/09, aprovado pela Katy); isso também endurece a trava do parecer, que passa a recusar critério respondido sem decisão (o AuditorPlayer já impunha isso na tela). `buildAuditorDashboard` passa a devolver `display_status` em cada instância (`audience='auditor'`), com o `now` injetável que já existe.
 - **`GET /api/eval/instances`** (lista do prestador): passa a devolver `pending_count` (mesmo predicado acima) e `has_survey_response` por instância; `submitted_at` já vem (`ei.*`). O cálculo é feito na tela com `displayStatus(..., 'prestador')`.
 
 ## Telas

@@ -108,6 +108,12 @@ export default function PainelDoCiclo({ user }: { user: any }) {
     return Array.from(new Set(data.instances.map((i: any) => i.display_status ?? i.status))) as string[];
   }, [data]);
 
+  // Status mostrado muda com o tempo (pesquisa respondida, prazo vencido): se o
+  // filtro escolhido sumiu da lista, volta para "Todos" em vez de filtrar vazio.
+  useEffect(() => {
+    if (statusFilter && !statusesPresent.includes(statusFilter)) setStatusFilter('');
+  }, [statusesPresent, statusFilter]);
+
   const reopen = async (inst: any) => {
     if (!confirm(`Devolver a avaliação de "${inst.provider_name}" para o prestador?`)) return;
     await fetchApi(`/eval/instances/${inst.id}/reopen`, { method: 'POST' });

@@ -38,11 +38,12 @@ const COUNTS_IN_SCORE_SQL =
   "NOT (LOWER(COALESCE(ea.answer_value,'')) = 'na' AND ea.evidence_status = 'aprovado')" +
   " AND ea.evidence_status IS DISTINCT FROM 'nao_se_aplica'";
 
-// Critério ainda sem decisão terminal (resposta aliasada `ea`). Fonte única do
-// parecer (trava "critérios sem decisão") e do pending_count do painel — os dois
-// precisam bater para "Emitir Parecer Final" ⇔ parecer permitido (spec 2026-09-25).
-// Obs.: NOT IN não conta evidence_status NULL (comportamento do parecer, mantido).
-const PENDING_ANSWER_SQL = "ea.evidence_status NOT IN ('aprovado','reprovado','nao_se_aplica')";
+// Critério ainda sem decisão terminal (resposta aliasada `ea`). Fonte única do parecer
+// (trava "critérios sem decisão") e do pending_count (painel e /api/eval/instances);
+// NULL conta como pendente (resposta sem evidência ainda não decidida), igual ao
+// AuditorPlayer e à rota de reabertura; decisão da Katy em 25/09 — o parecer passa a
+// recusar critério respondido sem decisão.
+const PENDING_ANSWER_SQL = "COALESCE(ea.evidence_status, 'pendente') NOT IN ('aprovado','reprovado','nao_se_aplica')";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {

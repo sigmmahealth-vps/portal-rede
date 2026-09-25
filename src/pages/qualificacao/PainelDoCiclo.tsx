@@ -166,41 +166,24 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         <Card label="Enviados / Pendentes" value={`${k.sent} / ${k.pending}`} sub={`${sentPct}% enviados`} />
         <Card label="Em análise" value={k.in_review} />
         <Card label="Aguardando reanálise" value={k.awaiting_provider} />
-        <Card label="Média geral" value={`${k.avg_score.toFixed(1)}%`} />
+        <Card label="Média geral" value={fmtPct(k.avg_score)} />
         <Card label="Tempo médio de análise" value={k.avg_analysis_days == null ? '—' : `${k.avg_analysis_days} d`}
           sub="do envio ao parecer" />
         <Card label="Segurança < 60%" value={k.low_security_count}
           valueClass={k.low_security_count > 0 ? 'text-red-600' : undefined} />
 
-        {/* Selos emitidos no ciclo — medalha (arte oficial dos e-mails) + quantidade · % */}
-        <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm md:col-span-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Selos</p>
-        {(() => {
-          const dist = k.seal_distribution as Record<string, number>;
-          const totalSeals = Object.values(dist).reduce((a, b) => a + (b as number), 0);
-          const SEAL_IMG: Record<string, string> = {
-            'Ouro': '/selos/ouro.png', 'Prata': '/selos/prata.png', 'Bronze': '/selos/bronze.png',
-          };
-          const order = ['Ouro', 'Prata', 'Bronze', 'Não Qualificado'].filter(s => (dist[s] || 0) > 0);
-          if (totalSeals === 0) {
-            return <p className="mt-1 text-sm text-gray-400">Nenhum selo emitido ainda.</p>;
-          }
-          return (
-            <div className="mt-2 flex items-center gap-x-6 overflow-x-auto">
-              {order.map(s => (
-                <span key={s} className="inline-flex shrink-0 items-center gap-1.5" title={s}>
-                  {SEAL_IMG[s]
-                    ? <img src={SEAL_IMG[s]} alt={s} className="h-7 w-7 object-contain" />
-                    : <span className="text-2xl" aria-hidden="true">🚫</span>}
-                  <span className="text-lg font-bold text-secondary-900">
-                    {dist[s]} <span className="text-sm font-semibold text-gray-500">· {fmtPct((dist[s] / totalSeals) * 100)}</span>
-                  </span>
-                </span>
-              ))}
-            </div>
-          );
-        })()}
-        </div>
+        {/* Selos emitidos no ciclo (homologação 25/09): só a quantidade de Ouro/Prata/Bronze,
+            num card do mesmo tamanho dos demais. */}
+        <Card label="Selos" value={
+          <span className="flex items-center gap-4">
+            {(['Ouro', 'Prata', 'Bronze'] as const).map(s => (
+              <span key={s} className="inline-flex items-center gap-1" title={s}>
+                <img src={`/selos/${s.toLowerCase()}.png`} alt={s} className="h-7 w-7 object-contain" />
+                {(k.seal_distribution as Record<string, number>)[s] || 0}
+              </span>
+            ))}
+          </span>
+        } />
 
         {/* Distribuição por grupo de prestador (spec 2026-09-15 — dado já vinha no payload). */}
         {(k.group_distribution || []).length > 0 && (

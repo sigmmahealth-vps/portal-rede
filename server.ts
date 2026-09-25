@@ -192,16 +192,6 @@ async function initData() {
     await query(insertAnnouncementSql, ['Nova Tabela de Honorários', 'A tabela de honorários foi atualizada para 2024.', 'Financeiro', new Date().toISOString()]);
     await query(insertAnnouncementSql, ['Campanha de Vacinação', 'Participem da campanha de vacinação contra a gripe.', 'Geral', new Date(Date.now() - 86400000 * 2).toISOString()]);
 
-    // Insert Trainings
-    const insertTrainingSql = 'INSERT INTO trainings (title, description, video_url, pdf_url, validity_days) VALUES ($1, $2, $3, $4, $5) RETURNING id';
-    const { rows: t1Rows } = await query(insertTrainingSql, ['Boas Práticas de Faturamento', 'Aprenda a evitar glosas.', 'https://example.com/video1', 'https://example.com/pdf1', 365]);
-    const { rows: t2Rows } = await query(insertTrainingSql, ['LGPD na Saúde', 'Treinamento obrigatório sobre proteção de dados.', 'https://example.com/video2', 'https://example.com/pdf2', 365]);
-
-    // Insert Provider Trainings
-    const insertProvTrainingSql = 'INSERT INTO provider_trainings (provider_id, training_id, status, completed_at) VALUES ($1, $2, $3, $4)';
-    await query(insertProvTrainingSql, [providerId, t1Rows[0].id, 'pendente', null]);
-    await query(insertProvTrainingSql, [providerId, t2Rows[0].id, 'concluido', new Date().toISOString()]);
-
     // Insert Financials
     const insertFinancialSql = 'INSERT INTO financials (provider_id, competence, gross_value, glosa_value, net_value, status) VALUES ($1, $2, $3, $4, $5, $6)';
     await query(insertFinancialSql, [providerId, '01/2024', 50000.00, 2500.00, 47500.00, 'Pago']);

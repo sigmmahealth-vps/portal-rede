@@ -11,47 +11,11 @@ export default function Treinamentos() {
   const [showEvaluation, setShowEvaluation] = useState(false);
   const [evaluationScore, setEvaluationScore] = useState<number | null>(null);
 
-  // Mock Training Data for demonstration
-  const mockTraining = {
-    id: 'mock-1',
-    title: 'Trilha de Qualificação ONA - Nível 1',
-    description: 'Capacitação completa sobre os padrões de qualidade e segurança do paciente exigidos pela ONA.',
-    status: 'em_andamento',
-    progress: 60,
-    modules: [
-      {
-        id: 1,
-        title: 'Módulo 1: Introdução à Qualidade',
-        duration: '15 min',
-        completed: true,
-        videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
-        materialUrl: '#'
-      },
-      {
-        id: 2,
-        title: 'Módulo 2: Segurança do Paciente',
-        duration: '25 min',
-        completed: true,
-        videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
-        materialUrl: '#'
-      },
-      {
-        id: 3,
-        title: 'Módulo 3: Protocolos Clínicos',
-        duration: '20 min',
-        completed: false,
-        videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
-        materialUrl: '#'
-      }
-    ]
-  };
-
   useEffect(() => {
     const loadTrainings = async () => {
       try {
         const data = await fetchApi('/trainings');
-        // Add the mock training to the list for demonstration
-        setTrainings([mockTraining, ...data]);
+        setTrainings(data);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -286,6 +250,14 @@ export default function Treinamentos() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Treinamentos e Capacitação</h1>
       </div>
+
+      {trainings.length === 0 && (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-gray-100 bg-white px-6 py-16 text-center shadow-sm">
+          <GraduationCap className="h-10 w-10 text-gray-300" />
+          <p className="font-semibold text-gray-700">Nenhum treinamento disponível no momento.</p>
+          <p className="text-sm text-gray-500">Quando houver novos treinamentos, eles aparecerão aqui.</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {trainings.map((training) => (

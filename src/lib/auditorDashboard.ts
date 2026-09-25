@@ -24,6 +24,9 @@ export interface DashboardInstance {
   // com item de critério eliminatório pendente (prev_plan_dl) o selo trava em Bronze.
   prev_plan_pending?: boolean;
   prev_plan_dl?: boolean;
+  // Critérios sem decisão terminal (mesmo predicado do parecer) e status mostrado (spec 2026-09-25).
+  pending_count?: number;
+  display_status?: string;
 }
 
 // Estado derivado da Pesquisa de Satisfação (spec 2026-09-11) — sem status novo no
@@ -142,6 +145,7 @@ export function buildAuditorDashboard(
       dims,
       seguranca_pct: dims && dims['Segurança'] != null ? dims['Segurança'] : null,
       survey_state: surveyState(i.status, i.submitted_at, i.has_survey_response, now),
+      display_status: displayStatus(i.status, Number(i.pending_count) || 0, i.submitted_at, i.has_survey_response, now),
     };
   });
 

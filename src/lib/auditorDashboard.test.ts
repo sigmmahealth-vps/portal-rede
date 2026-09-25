@@ -163,3 +163,18 @@ test('displayStatus: regra de Aguardando Pesquisa / Emitir Parecer Final', () =>
   assert.equal(displayStatus('aguardando_evidencia', 0, sent2d, true, now, 'prestador'), 'em_analise');
   assert.equal(displayStatus('em_analise', 0, sent2d, false, now, 'prestador'), 'aguardando_pesquisa');
 });
+
+test('buildAuditorDashboard anexa display_status (pending_count + pesquisa)', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  const r = buildAuditorDashboard(cycle, [
+    inst({ id: 1, status: 'em_analise', pending_count: 3, submitted_at: '2026-09-09T12:00:00Z', has_survey_response: false }),
+    inst({ id: 2, status: 'em_analise', pending_count: 0, submitted_at: '2026-09-09T12:00:00Z', has_survey_response: false }),
+    inst({ id: 3, status: 'em_analise', pending_count: 0, submitted_at: '2026-09-09T12:00:00Z', has_survey_response: true }),
+    inst({ id: 4, status: 'pendente' }),
+  ], [], now);
+  const ds = Object.fromEntries(r.instances.map(i => [i.id, i.display_status]));
+  assert.equal(ds[1], 'em_analise');
+  assert.equal(ds[2], 'aguardando_pesquisa');
+  assert.equal(ds[3], 'emitir_parecer');
+  assert.equal(ds[4], 'pendente');
+});

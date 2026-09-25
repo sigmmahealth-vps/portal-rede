@@ -206,14 +206,24 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         {(k.group_distribution || []).length > 0 && (
           <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm md:col-span-2 lg:col-span-4">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Locais por grupo de prestador</p>
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
-              {k.group_distribution.map((g: any) => (
-                <span key={g.group} className="inline-flex items-baseline gap-1.5 text-sm text-gray-600">
-                  <span className="font-bold text-secondary-900">{g.count}</span>
-                  <span className="truncate" title={g.group}>{g.group}</span>
-                </span>
-              ))}
-            </div>
+            {/* Barras horizontais (maior → menor) com rolagem; CSS puro, sem lib de gráfico. */}
+            {(() => {
+              const groups = [...k.group_distribution].sort((a: any, b: any) => b.count - a.count);
+              const max = Math.max(...groups.map((g: any) => g.count), 1);
+              return (
+                <ul className="mt-3 max-h-56 max-w-4xl space-y-2 overflow-y-auto pr-2 sm:space-y-1.5">
+                  {groups.map((g: any) => (
+                    <li key={g.group} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 text-sm sm:grid-cols-[minmax(0,18rem)_1fr_3rem]">
+                      <span className="truncate text-gray-600" title={g.group}>{g.group}</span>
+                      <span className="order-last col-span-2 h-2.5 rounded-full bg-gray-100 sm:order-none sm:col-span-1">
+                        <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${Math.max((g.count / max) * 100, 1.5)}%` }} />
+                      </span>
+                      <span className="text-right font-bold tabular-nums text-secondary-900">{g.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
           </div>
         )}
       </div>

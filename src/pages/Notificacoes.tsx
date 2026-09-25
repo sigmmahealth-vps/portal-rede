@@ -266,12 +266,14 @@ export default function Notificacoes() {
                     <strong>Próximos passos:</strong> <Rich text={blocks.steps} />
                   </div>
                 )}
-                {/* Feedback homologação 09/2026: a notificação leva ao destino com um clique. */}
+                {/* Homologação 25/09: todo clique abre a Qualificação na aba inicial —
+                    Início (prestador) ou Estratégico (auditoria), pelo default de cada visão.
+                    ponytail: o CTA do e-mail segue com o link por tipo (notifyLink). */}
                 <button
-                  onClick={() => navigate(blocks?.cta?.url || selected.link || '/qualificacao')}
+                  onClick={() => navigate('/qualificacao')}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-[#00995D] px-4 py-2 text-sm font-semibold text-white hover:bg-[#007a4a]"
                 >
-                  {blocks?.cta?.label ?? 'Acessar o portal'} →
+                  Acessar o portal →
                 </button>
               </div>
             </div>

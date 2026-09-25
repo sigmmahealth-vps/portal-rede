@@ -65,7 +65,7 @@ test('ciclo_reaberto: prorrogação vs reabertura, ambos com o prazo', () => {
   const re = renderNotification('ciclo_reaberto', { cycle_label: 'Ciclo 2026', end_date: '2026-10-15' });
   assert.equal(re.title, 'Ciclo Ciclo 2026 reaberto');
   assert.ok(!re.title.includes('prorrog') && re.body.includes('15/10/2026'), re.body);
-  assert.equal(re.link, '/qualificacao?aba=roteiros');
+  assert.equal(re.link, '/qualificacao');
 });
 
 test('ciclo_reaberto: e-mail tem banner próprio (não o tipo cru) e o prazo', () => {
@@ -142,15 +142,8 @@ test('tipo desconhecido não quebra (fallback)', () => {
   assert.equal(c.link, '/qualificacao');
 });
 
-test('notifyLink: cada aviso leva à aba do destino (não à home da Qualificação)', () => {
-  assert.equal(notifyLink('reanalise_solicitada', { instance_id: 42 }), '/qualificacao?aba=roteiros&corrigir=42');
-  assert.equal(notifyLink('reanalise_solicitada', {}), '/qualificacao?aba=inicio');
-  assert.equal(notifyLink('roteiro_enviado'), '/qualificacao?aba=painel-ciclo');
-  assert.equal(notifyLink('roteiro_pendente', { digest: true }), '/qualificacao?aba=painel-ciclo');
-  assert.equal(notifyLink('roteiro_pendente', {}), '/qualificacao?aba=roteiros');
-  assert.equal(notifyLink('acao_aguardando_validacao'), '/qualificacao?aba=planos');
-  assert.equal(notifyLink('certificado_emitido'), '/qualificacao?aba=certificados');
-  assert.equal(notifyLink('tipo_inexistente'), '/qualificacao');
+test('notifyLink: todo aviso abre a Qualificação na aba inicial (homologação 25/09)', () => {
+  for (const t of NOTIFY_TYPES) assert.equal(notifyLink(t, { instance_id: 42, digest: true }), '/qualificacao');
 });
 
 test('ciclo_aberto: menciona o manual só quando has_manual (sem linkar o arquivo)', () => {

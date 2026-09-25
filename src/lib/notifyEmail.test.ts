@@ -117,7 +117,7 @@ test('certificado_emitido: chamada para o próximo ciclo e botão "Acessar certi
   const e = renderNotificationEmail('certificado_emitido', { valid_until: '2026-10-10' }, APP, 'GUILHERME');
   assert.ok(e.html.includes('Parabéns por esta conquista! Nos encontramos novamente no próximo ciclo de qualificação.'));
   assert.ok(e.html.includes('Acessar certificado') && !e.html.includes('Acessar o portal'));
-  assert.ok(e.html.includes(`${APP}/qualificacao?aba=certificados`));
+  assert.ok(e.html.includes(`href="${APP}/qualificacao"`));
   assert.ok(e.html.includes('10/10/2026'));
 });
 
@@ -125,7 +125,7 @@ test('plano_gerado: prestador recebe texto/botão do cliente; auditoria segue ge
   const p = renderNotificationEmail('plano_gerado', { provider_name: 'GUILHERME', audience: 'prestador' }, APP, 'GUILHERME');
   assert.ok(p.html.includes('SEU PLANO DE AÇÃO ESTÁ DISPONÍVEL'));
   assert.ok(p.html.includes('Sua qualificação ainda tem próximos passos'));
-  assert.ok(p.html.includes('Acessar Plano de Ação') && p.html.includes(`${APP}/qualificacao?aba=planos`));
+  assert.ok(p.html.includes('Acessar Plano de Ação') && p.html.includes(`href="${APP}/qualificacao"`));
   const a = renderNotificationEmail('plano_gerado', { provider_name: 'GUILHERME' }, APP, 'Auditoria');
   assert.ok(a.html.includes('PLANO DE AÇÃO GERADO') && a.html.includes('<strong>GUILHERME</strong>'));
   assert.ok(!a.html.includes('Sua qualificação ainda tem próximos passos'));

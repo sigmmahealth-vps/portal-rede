@@ -18,3 +18,7 @@ uploads/
 # Scratch de ferramentas (não versionar)
 .superpowers/
 backups/
+
+# Ferramentas locais (Claude launch config, cache do plugin impeccable)
+.claude/
+.impeccable/

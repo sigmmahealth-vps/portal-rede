@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { welcomeLine } from '../lib/greeting';
@@ -74,56 +74,15 @@ export default function Dashboard() {
         </div>
 
         {/* Admin Top Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
-            <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mr-4">
-              <Users className="h-7 w-7 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Total de Prestadores</p>
-              <p className="text-3xl font-bold text-gray-800">{Number(adminData?.providersCount?.count) || 0}</p>
-            </div>
-          </div>
-          
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
-            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mr-4">
-              <AlertCircle className="h-7 w-7 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">OS SGU-Card Abertas</p>
-              <p className="text-lg font-bold text-gray-400">Em breve</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
-            <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mr-4">
-              <FileText className="h-7 w-7 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Docs. Legais Pendentes</p>
-              <p className="text-3xl font-bold text-gray-800">{Number(adminData?.pendingDocsCount?.count) || 0}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
-            <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center mr-4">
-              <Calendar className="h-7 w-7 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Consultas (Consulta Já)</p>
-              <p className="text-lg font-bold text-gray-400">Em breve</p>
-            </div>
-          </div>
-
-          <Link to="/credenciamento" className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center hover:border-[#00995D] hover:shadow-md transition-all cursor-pointer">
-            <div className="w-14 h-14 rounded-full bg-[#00995D]/10 flex items-center justify-center mr-4">
-              <ClipboardCheck className="h-7 w-7 text-[#00995D]" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Novos Credenciamentos</p>
-              <p className="text-3xl font-bold text-gray-800">{adminData?.pendingCredentialingCount?.count || 0}</p>
-            </div>
-          </Link>
+        {/* Cards em coluna (ícone + rótulo em cima, número embaixo): cabem nas 5 colunas sem quebrar o rótulo em 3–4 linhas. */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+          <TopCard icon={Users} tone="bg-emerald-50 text-emerald-600" label="Total de prestadores"
+            value={Number(adminData?.providersCount?.count) || 0} />
+          <TopCard icon={AlertCircle} tone="bg-blue-50 text-blue-600" label="OS SGU-Card abertas" />
+          <TopCard icon={FileText} tone="bg-amber-50 text-amber-600" label="Docs. legais pendentes"
+            value={Number(adminData?.pendingDocsCount?.count) || 0} />
+          <TopCard icon={Calendar} tone="bg-purple-50 text-purple-600" label="Consultas (Consulta Já)" />
+          <TopCard icon={ClipboardCheck} tone="bg-[#00995D]/10 text-[#00995D]" label="Novos credenciamentos" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -387,6 +346,26 @@ export default function Dashboard() {
           </div>
 
         </div>
+    </div>
+  );
+}
+
+// Card do topo da visão geral (admin/auditoria). Sem `value` = indicador ainda não
+// integrado: mostra a etiqueta "Em breve" no lugar do número.
+function TopCard({ icon: Icon, tone, label, value }: {
+  icon: ComponentType<{ className?: string }>; tone: string; label: string; value?: number;
+}) {
+  return (
+    <div className="flex flex-col rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2.5">
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tone}`}>
+          <Icon className="h-5 w-5" />
+        </span>
+        <p className="text-xs font-semibold leading-snug text-gray-500">{label}</p>
+      </div>
+      {value === undefined
+        ? <span className="mt-4 inline-block self-start rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">Em breve</span>
+        : <p className="mt-3 text-3xl font-bold tabular-nums text-gray-800">{value.toLocaleString('pt-BR')}</p>}
     </div>
   );
 }

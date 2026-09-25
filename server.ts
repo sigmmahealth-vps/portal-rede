@@ -3549,6 +3549,9 @@ async function startServer() {
             WHERE es.script_id = ei.script_id) AS total_questions,
           (SELECT count(*)::int FROM eval_answers ea
             WHERE ea.instance_id = ei.id AND ea.answer_value IS NOT NULL) AS answered_count
+          ,(SELECT count(*)::int FROM eval_answers ea
+             WHERE ea.instance_id = ei.id AND ${PENDING_ANSWER_SQL}) AS pending_count,
+          EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id) AS has_survey_response
         FROM eval_instances ei
         JOIN eval_scripts s ON ei.script_id = s.id
         JOIN providers p ON ei.provider_id = p.id

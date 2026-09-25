@@ -175,11 +175,13 @@ export default function PainelDoCiclo({ user }: { user: any }) {
         {/* Selos emitidos no ciclo (homologação 25/09): só a quantidade de Ouro/Prata/Bronze,
             num card do mesmo tamanho dos demais. */}
         <Card label="Selos" value={
-          <span className="flex items-center gap-4">
+          // Medalha em cima, número embaixo — cabe 999 nos três selos. Card mais estreito: xl
+          // (menu expandido + barra lateral, ~110 px úteis) → número em text-base nessa faixa.
+          <span className="flex max-w-[14rem] justify-between">
             {(['Ouro', 'Prata', 'Bronze'] as const).map(s => (
-              <span key={s} className="inline-flex items-center gap-1" title={s}>
+              <span key={s} className="flex flex-col items-center leading-tight" title={s}>
                 <img src={`/selos/${s.toLowerCase()}.png`} alt={s} className="h-7 w-7 object-contain" />
-                {(k.seal_distribution as Record<string, number>)[s] || 0}
+                <span className="text-xl tabular-nums xl:text-base 2xl:text-xl">{(k.seal_distribution as Record<string, number>)[s] || 0}</span>
               </span>
             ))}
           </span>

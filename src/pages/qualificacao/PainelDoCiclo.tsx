@@ -39,6 +39,8 @@ function statusPill(status: string) {
     pendente: 'bg-amber-100 text-amber-800',
     em_analise: 'bg-purple-100 text-purple-800',
     aguardando_evidencia: 'bg-orange-100 text-orange-800',
+    aguardando_pesquisa: 'bg-sky-100 text-sky-800',
+    emitir_parecer: 'bg-violet-600 text-white',
     aprovado: 'bg-emerald-100 text-emerald-800',
     reprovado: 'bg-red-100 text-red-700',
     finalizado: 'bg-emerald-100 text-emerald-800',
@@ -92,7 +94,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
     if (!data) return [];
     const q = search.trim().toLowerCase();
     return data.instances.filter((i: any) => {
-      if (statusFilter && i.status !== statusFilter) return false;
+      if (statusFilter && (i.display_status ?? i.status) !== statusFilter) return false;
       if (lowSecOnly && !(i.seguranca_pct != null && i.seguranca_pct < 60)) return false;
       if (!q) return true;
       return (i.provider_name || '').toLowerCase().includes(q)
@@ -103,7 +105,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   // Status presentes no ciclo (pra montar as opções do dropdown).
   const statusesPresent = useMemo(() => {
     if (!data) return [] as string[];
-    return Array.from(new Set(data.instances.map((i: any) => i.status))) as string[];
+    return Array.from(new Set(data.instances.map((i: any) => i.display_status ?? i.status))) as string[];
   }, [data]);
 
   const reopen = async (inst: any) => {
@@ -233,7 +235,7 @@ export default function PainelDoCiclo({ user }: { user: any }) {
             <option value="">Todos os status ({data.instances.length})</option>
             {statusesPresent.map(st => (
               <option key={st} value={st}>
-                {statusLabel(st)} ({data.instances.filter((i: any) => i.status === st).length})
+                {statusLabel(st)} ({data.instances.filter((i: any) => (i.display_status ?? i.status) === st).length})
               </option>
             ))}
           </select>
@@ -272,12 +274,12 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                   <td className="p-3 text-sm text-gray-600">{i.provider_code || '—'}</td>
                   <td className="p-3 text-sm text-gray-600">{i.unidade || i.city || '—'}</td>
                   <td className="p-3">
-                    <span className={`inline-block whitespace-nowrap px-2.5 py-1 text-[10px] font-bold uppercase rounded-full tracking-wide ${statusPill(i.status)}`}>
-                      {statusLabel(i.status)}
+                    <span className={`inline-block whitespace-nowrap px-2.5 py-1 text-[10px] font-bold uppercase rounded-full tracking-wide ${statusPill(i.display_status ?? i.status)}`}>
+                      {statusLabel(i.display_status ?? i.status)}
                     </span>
                     {/* Estado derivado da Pesquisa (spec 2026-09-11): 'aguardando' = parecer
                         travado pela pesquisa; 'finalizada' = respondida. */}
-                    {i.survey_state === 'aguardando' && (
+                    {i.survey_state === 'aguardando' && (i.display_status ?? i.status) !== 'aguardando_pesquisa' && (
                       <span className="mt-1 block w-fit whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
                         Aguardando finalização da pesquisa
                       </span>

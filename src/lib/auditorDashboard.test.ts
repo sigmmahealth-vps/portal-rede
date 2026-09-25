@@ -178,3 +178,14 @@ test('buildAuditorDashboard anexa display_status (pending_count + pesquisa)', ()
   assert.equal(ds[3], 'emitir_parecer');
   assert.equal(ds[4], 'pendente');
 });
+
+test('displayStatus: sem contagem de pendentes (dado ausente) mantém o status gravado', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  assert.equal(displayStatus('em_analise', undefined, '2026-09-09T12:00:00Z', false, now), 'em_analise');
+  assert.equal(displayStatus('em_analise', null, '2026-09-01T12:00:00Z', true, now), 'em_analise');
+  // Painel sem pending_count na linha não pode antecipar Aguardando Pesquisa.
+  const r = buildAuditorDashboard(cycle, [
+    inst({ id: 1, status: 'em_analise', submitted_at: '2026-09-09T12:00:00Z', has_survey_response: false }),
+  ], [], now);
+  assert.equal(r.instances[0].display_status, 'em_analise');
+});

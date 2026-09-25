@@ -413,7 +413,7 @@ export default function PrestadorView({ user }: { user: any }) {
                 </span>
               ) : (
                 <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-600">
-                  {statusLabel(displayStatus(inst.status, Number(inst.pending_count) || 0, inst.submitted_at, inst.has_survey_response, new Date(), 'prestador'))}
+                  {statusLabel(displayStatus(inst.status, inst.pending_count, inst.submitted_at, inst.has_survey_response, new Date(), 'prestador'))}
                 </span>
               )}
             </div>

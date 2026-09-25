@@ -6701,6 +6701,7 @@ async function startServer() {
           submitted_at: r.submitted_at != null ? new Date(r.submitted_at).toISOString() : null,
           completed_at: r.completed_at != null ? new Date(r.completed_at).toISOString() : null,
           has_survey_response: !!r.has_survey_response,
+          pending_count: r.pending_count != null ? Number(r.pending_count) : null,
           prev_plan_pending: !!r.prev_plan_pending,
           prev_plan_dl: !!r.prev_plan_dl,
         })),

@@ -25,7 +25,7 @@ export interface DashboardInstance {
   prev_plan_pending?: boolean;
   prev_plan_dl?: boolean;
   // Critérios sem decisão terminal (mesmo predicado do parecer) e status mostrado (spec 2026-09-25).
-  pending_count?: number;
+  pending_count?: number | null;
   display_status?: string;
 }
 
@@ -48,15 +48,17 @@ export function surveyState(
 // Só muda em_analise/aguardando_evidencia com TODOS os critérios decididos:
 // pesquisa ainda travando o parecer → 'aguardando_pesquisa'; senão → 'emitir_parecer'
 // (mesmas travas do POST /parecer). O prestador não vê 'emitir_parecer' (etapa interna).
+// pendingCount ausente (null/undefined) = não sabemos → mantém o status gravado,
+// nunca supõe "tudo decidido" (bug 25/09: linha sem pending_count virava Aguardando Pesquisa).
 export function displayStatus(
   status: string,
-  pendingCount: number,
+  pendingCount: number | null | undefined,
   submittedAt: string | null | undefined,
   hasSurveyResponse: boolean | undefined,
   now: Date,
   audience: 'auditor' | 'prestador' = 'auditor',
 ): string {
-  if (!['em_analise', 'aguardando_evidencia'].includes(status) || pendingCount > 0) return status;
+  if (!['em_analise', 'aguardando_evidencia'].includes(status) || pendingCount == null || pendingCount > 0) return status;
   if (!hasSurveyResponse && submittedAt && isWithinDeadline(new Date(submittedAt), now)) return 'aguardando_pesquisa';
   return audience === 'prestador' ? 'em_analise' : 'emitir_parecer';
 }
@@ -145,7 +147,7 @@ export function buildAuditorDashboard(
       dims,
       seguranca_pct: dims && dims['Segurança'] != null ? dims['Segurança'] : null,
       survey_state: surveyState(i.status, i.submitted_at, i.has_survey_response, now),
-      display_status: displayStatus(i.status, Number(i.pending_count) || 0, i.submitted_at, i.has_survey_response, now),
+      display_status: displayStatus(i.status, i.pending_count, i.submitted_at, i.has_survey_response, now),
     };
   });
 

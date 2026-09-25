@@ -187,11 +187,6 @@ async function initData() {
     await query(insertTicketSql, [providerId, 'Dúvida sobre Glosa', 'Gostaria de entender o motivo da glosa na fatura 123.', 'Financeiro', 'Média', 'aberto', new Date().toISOString()]);
     await query(insertTicketSql, [providerId, 'Atualização de Endereço', 'Mudamos de endereço, segue comprovante.', 'Cadastro', 'Baixa', 'encerrado', new Date(Date.now() - 86400000 * 5).toISOString()]);
 
-    // Insert Announcements
-    const insertAnnouncementSql = 'INSERT INTO announcements (title, description, category, date) VALUES ($1, $2, $3, $4)';
-    await query(insertAnnouncementSql, ['Nova Tabela de Honorários', 'A tabela de honorários foi atualizada para 2024.', 'Financeiro', new Date().toISOString()]);
-    await query(insertAnnouncementSql, ['Campanha de Vacinação', 'Participem da campanha de vacinação contra a gripe.', 'Geral', new Date(Date.now() - 86400000 * 2).toISOString()]);
-
     // Insert Financials
     const insertFinancialSql = 'INSERT INTO financials (provider_id, competence, gross_value, glosa_value, net_value, status) VALUES ($1, $2, $3, $4, $5, $6)';
     await query(insertFinancialSql, [providerId, '01/2024', 50000.00, 2500.00, 47500.00, 'Pago']);

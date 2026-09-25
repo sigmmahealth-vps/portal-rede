@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAuditorDashboard, type DashboardInstance, type DimPct } from './auditorDashboard.js';
+import { buildAuditorDashboard, displayStatus, type DashboardInstance, type DimPct } from './auditorDashboard.js';
 
 const cycle = { id: 1, label: 'Ciclo 2026', start_date: '2026-01-01', end_date: '2026-12-31' };
 
@@ -135,4 +135,31 @@ test('survey_state: aguardando dentro do prazo, finalizada com resposta, null no
   assert.equal(st[3], null);
   assert.equal(st[4], null);
   assert.equal(st[5], null);
+});
+
+test('displayStatus: regra de Aguardando Pesquisa / Emitir Parecer Final', () => {
+  const now = new Date('2026-09-11T12:00:00Z');
+  const sent2d = '2026-09-09T12:00:00Z';   // dentro dos 7 dias
+  const sent10d = '2026-09-01T12:00:00Z';  // prazo vencido
+  const edge = '2026-09-04T12:00:00Z';     // exatamente 7 dias antes de now → ainda dentro
+
+  // Critério pendente: status gravado não muda.
+  assert.equal(displayStatus('em_analise', 2, sent2d, false, now), 'em_analise');
+  assert.equal(displayStatus('aguardando_evidencia', 1, sent2d, true, now), 'aguardando_evidencia');
+  // Tudo decidido + pesquisa travando.
+  assert.equal(displayStatus('em_analise', 0, sent2d, false, now), 'aguardando_pesquisa');
+  assert.equal(displayStatus('em_analise', 0, edge, false, now), 'aguardando_pesquisa');
+  // Tudo decidido + pesquisa liberada (respondida, vencida ou sem data de envio).
+  assert.equal(displayStatus('em_analise', 0, sent2d, true, now), 'emitir_parecer');
+  assert.equal(displayStatus('em_analise', 0, sent10d, false, now), 'emitir_parecer');
+  assert.equal(displayStatus('em_analise', 0, null, false, now), 'emitir_parecer');
+  assert.equal(displayStatus('aguardando_evidencia', 0, sent2d, true, now), 'emitir_parecer');
+  // Outros status nunca mudam.
+  for (const s of ['pendente', 'em_andamento', 'aprovado', 'ciclo_encerrado']) {
+    assert.equal(displayStatus(s, 0, sent10d, true, now), s);
+  }
+  // Prestador: Emitir Parecer Final vira Em Análise; Aguardando Pesquisa se mantém.
+  assert.equal(displayStatus('em_analise', 0, sent2d, true, now, 'prestador'), 'em_analise');
+  assert.equal(displayStatus('aguardando_evidencia', 0, sent2d, true, now, 'prestador'), 'em_analise');
+  assert.equal(displayStatus('em_analise', 0, sent2d, false, now, 'prestador'), 'aguardando_pesquisa');
 });

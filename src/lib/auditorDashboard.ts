@@ -41,6 +41,23 @@ export function surveyState(
   return null;
 }
 
+// Status mostrado ao usuário (spec 2026-09-25) — calculado, nunca gravado.
+// Só muda em_analise/aguardando_evidencia com TODOS os critérios decididos:
+// pesquisa ainda travando o parecer → 'aguardando_pesquisa'; senão → 'emitir_parecer'
+// (mesmas travas do POST /parecer). O prestador não vê 'emitir_parecer' (etapa interna).
+export function displayStatus(
+  status: string,
+  pendingCount: number,
+  submittedAt: string | null | undefined,
+  hasSurveyResponse: boolean | undefined,
+  now: Date,
+  audience: 'auditor' | 'prestador' = 'auditor',
+): string {
+  if (!['em_analise', 'aguardando_evidencia'].includes(status) || pendingCount > 0) return status;
+  if (!hasSurveyResponse && submittedAt && isWithinDeadline(new Date(submittedAt), now)) return 'aguardando_pesquisa';
+  return audience === 'prestador' ? 'em_analise' : 'emitir_parecer';
+}
+
 export interface DimPct { instance_id: number; dimension: string; pct: number; }
 
 export interface AuditorDashboardPayload {

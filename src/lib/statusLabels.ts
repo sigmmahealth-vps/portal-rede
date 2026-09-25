@@ -7,6 +7,8 @@ export const STATUS_LABEL: Record<string, string> = {
   em_andamento:          'Em Preenchimento',
   em_analise:            'Em Análise',
   aguardando_evidencia:  'Reanálise',
+  aguardando_pesquisa:   'Aguardando Pesquisa',   // calculado (spec 2026-09-25)
+  emitir_parecer:        'Emitir Parecer Final',  // calculado (spec 2026-09-25)
   aprovado:              'Concluído',
   reprovado:             'Concluído',
   finalizado:            'Concluído',

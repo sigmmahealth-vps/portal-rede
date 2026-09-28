@@ -166,54 +166,9 @@ async function initData() {
     console.error("Error seeding settings:", e);
   }
 
-  const { rows: userCountRows } = await query('SELECT COUNT(*) as count FROM users');
-  if (Number(userCountRows[0].count) === 0) {
-    const hash = bcrypt.hashSync('senha123', 10);
-
-    // Insert Provider
-    const { rows: providerRows } = await query(
-      'INSERT INTO providers (name, cnpj, qualification_level, status) VALUES ($1, $2, $3, $4) RETURNING id',
-      ['Clínica Saúde Total', '12.345.678/0001-90', 'A', 'Ativo']
-    );
-    const providerId = providerRows[0].id;
-
-    // Insert Users
-    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Dr. João Silva', 'prestador@unimed.com', hash, 'prestador', providerId]);
-    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Admin Unimed', 'admin@unimed.com', hash, 'admin', null]);
-    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Auditor Carlos', 'auditoria@unimed.com', hash, 'auditoria', null]);
-    await query('INSERT INTO users (name, email, password, role, provider_id) VALUES ($1, $2, $3, $4, $5)', ['Dra. Ana Souza', 'cooperado@unimed.com', hash, 'cooperado', null]);
-
-    // Insert Documents
-    const insertDocSql = 'INSERT INTO documents (provider_id, type, issue_date, expiry_date, status, file_url) VALUES ($1, $2, $3, $4, $5, $6)';
-    await query(insertDocSql, [providerId, 'Alvará Sanitário', '2023-01-10', '2024-01-10', 'vencido', '/docs/alvara.pdf']);
-    await query(insertDocSql, [providerId, 'CNES', '2023-05-20', '2024-05-20', 'valido', '/docs/cnes.pdf']);
-    await query(insertDocSql, [providerId, 'Contrato Social', '2020-01-01', '2030-01-01', 'valido', '/docs/contrato.pdf']);
-
-    // Insert Tickets
-    const insertTicketSql = 'INSERT INTO tickets (provider_id, title, description, category, priority, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)';
-    await query(insertTicketSql, [providerId, 'Dúvida sobre Glosa', 'Gostaria de entender o motivo da glosa na fatura 123.', 'Financeiro', 'Média', 'aberto', new Date().toISOString()]);
-    await query(insertTicketSql, [providerId, 'Atualização de Endereço', 'Mudamos de endereço, segue comprovante.', 'Cadastro', 'Baixa', 'encerrado', new Date(Date.now() - 86400000 * 5).toISOString()]);
-
-    // Insert Financials
-    const insertFinancialSql = 'INSERT INTO financials (provider_id, competence, gross_value, glosa_value, net_value, status) VALUES ($1, $2, $3, $4, $5, $6)';
-    await query(insertFinancialSql, [providerId, '01/2024', 50000.00, 2500.00, 47500.00, 'Pago']);
-    await query(insertFinancialSql, [providerId, '02/2024', 45000.00, 1000.00, 44000.00, 'Pago']);
-    await query(insertFinancialSql, [providerId, '03/2024', 55000.00, 5000.00, 50000.00, 'Aberto']);
-
-    // Insert Audits
-    const insertAuditSql = 'INSERT INTO audits (provider_id, scheduled_date, status, evaluation) VALUES ($1, $2, $3, $4)';
-    await query(insertAuditSql, [providerId, new Date(Date.now() + 86400000 * 15).toISOString(), 'programada', null]);
-    await query(insertAuditSql, [providerId, new Date(Date.now() - 86400000 * 60).toISOString(), 'realizada', 'Aprovado com ressalvas']);
-
-    // Insert Action Plans
-    await query('INSERT INTO action_plans (provider_id, title, description, deadline, status, created_at) VALUES ($1, $2, $3, $4, $5, $6)', [providerId, 'Melhoria no tempo de espera', 'Reduzir o tempo de espera na recepção para menos de 15 minutos.', new Date(Date.now() + 86400000 * 30).toISOString(), 'em_andamento', new Date().toISOString()]);
-
-    // Insert Price Tables
-    const insertPriceTableSql = 'INSERT INTO price_tables (provider_id, title, code, version, status, effective_date, file_url, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)';
-    await query(insertPriceTableSql, [providerId, 'Tabela de Honorários Médicos', 'THM-2024', 'v1.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/thm-2024.pdf', new Date().toISOString()]);
-    await query(insertPriceTableSql, [providerId, 'Tabela de Materiais e Medicamentos', 'TMM-2024', 'v1.2', 'vigente', new Date('2024-03-01').toISOString(), '/docs/tmm-2024.pdf', new Date().toISOString()]);
-    await query(insertPriceTableSql, [null, 'Tabela TUSS Padrão', 'TUSS-2024', 'v2.0', 'vigente', new Date('2024-01-01').toISOString(), '/docs/tuss-2024.pdf', new Date().toISOString()]);
-  }
+  // (Removido 2026-09-28) Seed de demo em base vazia criava admin@unimed.com com senha
+  // fixa — em produção zerada seria um admin aberto. Equipe interna nasce sem senha e
+  // define a sua pelo "Esqueci minha senha".
 
   // (Removido) O seed idempotente de "Dra. Ana Souza" (cooperado@unimed.com)
   // recriava o usuário a cada boot, ressuscitando a conta de demo mesmo depois
@@ -3171,12 +3126,18 @@ async function startServer() {
                q.dimension, q.documentType, q.guidance, q.evidenceRequired, elimFlags[i], q.order],
             );
           }
-          return { id: scriptId, version: parsed.version };
+          // Prestadores carregados antes de o roteiro existir ficam com eval_script_id NULL;
+          // liga-os pelo roteiro_cod (FOR-XXX). Quem já tem roteiro não é tocado.
+          const cod = /FOR-(\d+)/i.exec(parsed.sourceFile ?? '');
+          const linked = cod ? (await client.query(
+            'UPDATE providers SET eval_script_id = $1 WHERE eval_script_id IS NULL AND roteiro_cod = $2',
+            [scriptId, `FOR-${cod[1]}`])).rowCount ?? 0 : 0;
+          return { id: scriptId, version: parsed.version, linked };
         });
 
         await auditLog({
           query, userId: req.user.id, action: 'eval_script_imported',
-          meta: { script_id: result.id, source_file: parsed.sourceFile, version, eliminatory_inherited: elimFlags.filter(Boolean).length },
+          meta: { script_id: result.id, source_file: parsed.sourceFile, version, eliminatory_inherited: elimFlags.filter(Boolean).length, providers_linked: result.linked },
           ip: hashClientIp(req),
         });
 

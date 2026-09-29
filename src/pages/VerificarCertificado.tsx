@@ -1,5 +1,5 @@
 // src/pages/VerificarCertificado.tsx
-// Alvo do QR code (spec 5.4.5). Pública — sem login, como /politica-privacidade.
+// Alvo do QR code (spec 5.4.5). Pública — sem login.
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { BadgeCheck, BadgeX, Clock } from 'lucide-react';

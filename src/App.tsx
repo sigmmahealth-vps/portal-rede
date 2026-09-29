@@ -41,7 +41,6 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/esqueci-senha" element={<EsqueciSenha />} />
         <Route path="/definir-senha" element={<DefinirSenha />} />
-        <Route path="/politica-privacidade" element={<PoliticaPrivacidade />} />
         <Route path="/qualificacao/certificado/:id/imprimir" element={<CertificadoPrint />} />
         <Route path="/verificar/:codigo" element={<VerificarCertificado />} />
         <Route path="/" element={<Layout />}>
@@ -65,6 +64,7 @@ export default function App() {
           <Route path="perfil" element={<Perfil />} />
           <Route path="dispositivos" element={<Dispositivos />} />
           <Route path="meus-dados" element={<MeusDados />} />
+          <Route path="politica-privacidade" element={<PoliticaPrivacidade />} />
           <Route path="ferramentas" element={<Ferramentas />} />
           <Route path="notificacoes" element={<Notificacoes />} />
           <Route path="medicacoes" element={<EmConstrucao />} />

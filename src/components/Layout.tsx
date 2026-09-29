@@ -22,6 +22,8 @@ import { useState, useEffect, useRef } from 'react';
 import RightSidebar from './RightSidebar';
 import NotificationsBell from './NotificationsBell';
 import { fetchApi } from '../lib/api';
+import PrivacyConsentModal from './PrivacyConsentModal';
+import { needsPrivacyAcceptance, PRIVACY_POLICY_VERSION } from '../lib/privacyPolicy';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -97,6 +99,13 @@ export default function Layout() {
     }
   }, [navigate]);
 
+  // Aceite da Política de Privacidade (spec 2026-09-29): undefined = ainda carregando.
+  const [privacyAccepted, setPrivacyAccepted] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!user) return;
+    fetchApi('/auth/me').then((r) => setPrivacyAccepted(r.user?.privacy_accepted_version ?? null)).catch(() => {});
+  }, [user?.id]);
+
   const handleLogout = async () => {
     try {
       await fetchApi('/auth/logout', { method: 'POST' });
@@ -114,6 +123,9 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-[#f4f4f4] font-sans">
+      {privacyAccepted !== undefined && needsPrivacyAcceptance(privacyAccepted) && (
+        <PrivacyConsentModal onAccepted={() => setPrivacyAccepted(PRIVACY_POLICY_VERSION)} onLogout={handleLogout} />
+      )}
       {/* Mobile sidebar */}
       <div className={`fixed inset-0 z-50 lg:hidden ${sidebarOpen ? 'block' : 'hidden'}`}>
         <div className="fixed inset-0 bg-gray-900/80" onClick={() => setSidebarOpen(false)} />
@@ -321,6 +333,7 @@ export default function Layout() {
                     </div>
                     <Link to="/perfil" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Meu Perfil</Link>
                     <Link to="/meus-dados" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Meus dados</Link>
+                    <Link to="/politica-privacidade" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Política de Privacidade</Link>
                     <Link to="/dispositivos" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Configurações</Link>
                     <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">Sair</button>
                   </div>

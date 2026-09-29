@@ -290,12 +290,6 @@ export default function Login() {
             </div>
           </form>
           )}
-
-          <p className="text-center mt-4">
-            <Link to="/politica-privacidade" className="text-xs text-gray-500 hover:underline">
-              Política de Privacidade
-            </Link>
-          </p>
         </div>
 
         <div className="w-full max-w-md mt-8">

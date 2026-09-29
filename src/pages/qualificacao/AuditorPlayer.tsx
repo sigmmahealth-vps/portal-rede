@@ -5,7 +5,7 @@ import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
 import { ITEM_STATUS_LABEL } from './planoStatus';
 import MemoriaCalculoModal from './MemoriaCalculoModal';
-import { fmtPct } from '../../lib/formatDate';
+import { fmtPct, fmtDataHora } from '../../lib/formatDate';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, XCircle, RotateCcw,
   Loader2, Paperclip, ShieldCheck, FileText, MessageSquare, Ban,
@@ -205,6 +205,7 @@ export default function AuditorPlayer({
   const [planChecked, setPlanChecked] = useState<Set<number>>(new Set());
   const [planSaving, setPlanSaving] = useState(false);
   const [showMemoria, setShowMemoria] = useState(false);
+  const [showTermo, setShowTermo] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // silent: refresh após uma ação — não pisca o spinner (evita remontar e jogar o scroll pro topo).
@@ -476,6 +477,16 @@ export default function AuditorPlayer({
                   {instance.location_label ? <> · {instance.location_label}</> : null}
                 </p>
               )}
+              {/* Termo de Ciência (spec 2026-09-29): prova do aceite registrada no roteiro. */}
+              {instance && (instance.term ? (
+                <p className="mt-1 text-xs text-gray-500">
+                  Termo de Ciência aceito por <span className="font-medium text-gray-700">{instance.term.user_name}</span> em {fmtDataHora(instance.term.accepted_at)}
+                  {' · '}
+                  <button type="button" onClick={() => setShowTermo(true)} className="font-medium text-[#00995D] hover:underline">Ver termo</button>
+                </p>
+              ) : (
+                <p className="mt-1 text-xs font-medium text-amber-700">Termo de Ciência não aceito</p>
+              ))}
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -1001,6 +1012,26 @@ export default function AuditorPlayer({
 
       {showMemoria && (
         <MemoriaCalculoModal instanceId={instanceId} onClose={() => setShowMemoria(false)} />
+      )}
+
+      {showTermo && instance?.term && createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 p-4" onClick={() => setShowTermo(false)}>
+          <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-gray-900">Termo de Ciência aceito</h2>
+              <p className="text-xs text-gray-500">
+                {instance.term.user_name} · {fmtDataHora(instance.term.accepted_at)} · versão {instance.term.term_version}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto whitespace-pre-line px-6 py-4 text-sm leading-relaxed text-gray-700">
+              {instance.term.term_text}
+            </div>
+            <div className="flex justify-end border-t border-gray-100 px-6 py-3">
+              <button onClick={() => setShowTermo(false)} className="rounded-md px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">Fechar</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

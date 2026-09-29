@@ -215,7 +215,6 @@ export default function UsuariosTab() {
               <th className="text-left p-3">E-mail</th>
               <th className="text-left p-3">Função</th>
               <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Política</th>
               <th className="text-left p-3">Último acesso</th>
               <th className="p-3 w-10 rounded-tr-xl"></th>
             </tr>
@@ -247,20 +246,22 @@ export default function UsuariosTab() {
                   </td>
                   <td className="p-3 whitespace-nowrap">{ROLE_LABEL[u.role] ?? u.role}</td>
                   <td className="p-3"><span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
-                  <td className="p-3 text-sm whitespace-nowrap">
-                    {u.privacy_accepted_version === PRIVACY_POLICY_VERSION ? (
-                      <span className="text-gray-500">Aceita em {fmtDataHora(u.privacy_accepted_at)} <span className="text-xs text-gray-400">(v{u.privacy_accepted_version})</span></span>
-                    ) : (
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700">
-                        Pendente{u.privacy_accepted_version ? ` (aceitou v${u.privacy_accepted_version})` : ''}
-                      </span>
-                    )}
-                  </td>
                   <td className="p-3 text-gray-500 text-sm whitespace-nowrap">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="p-3 relative">
                     <button onClick={() => setMenuOpenFor(menuOpenFor === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-700"><MoreVertical /></button>
                     {menuOpenFor === u.id && (
-                      <div className="absolute right-0 top-10 z-20 bg-white border border-gray-200 rounded-md shadow-lg py-1 w-56">
+                      <div className="absolute right-0 top-10 z-20 bg-white border border-gray-200 rounded-md shadow-lg py-1 w-64">
+                        {/* Aceite da Política de Privacidade (spec 2026-09-29) — informativo, não é ação. */}
+                        <div className="px-3 py-2 text-xs border-b border-gray-100">
+                          <p className="font-semibold text-gray-500 uppercase tracking-wide">Política de Privacidade</p>
+                          {u.privacy_accepted_version === PRIVACY_POLICY_VERSION ? (
+                            <p className="mt-0.5 text-gray-700">Aceita em {fmtDataHora(u.privacy_accepted_at)} <span className="text-gray-400">(v{u.privacy_accepted_version})</span></p>
+                          ) : (
+                            <p className="mt-0.5 font-medium text-amber-700">
+                              Pendente{u.privacy_accepted_version ? ` (aceitou v${u.privacy_accepted_version})` : ''}
+                            </p>
+                          )}
+                        </div>
                         {(u.role === 'admin' || u.role === 'auditoria') && (
                           <button onClick={() => patch(u.id, { role: u.role === 'admin' ? 'auditoria' : 'admin' })}
                             className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
@@ -288,7 +289,7 @@ export default function UsuariosTab() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-gray-500">Nenhum usuário encontrado.</td></tr>
+              <tr><td colSpan={6} className="p-6 text-center text-gray-500">Nenhum usuário encontrado.</td></tr>
             )}
           </tbody>
         </table>

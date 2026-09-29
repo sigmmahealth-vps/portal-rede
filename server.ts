@@ -22,6 +22,7 @@ import { SESSION, isAbsoluteExpired, isRevoked } from './auth/session.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { questionOnly } from './src/lib/questionText.js';
+import { PRIVACY_POLICY_VERSION } from './src/lib/privacyPolicy.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail } from './src/lib/notifyEmail.js';
@@ -1020,11 +1021,37 @@ async function startServer() {
   // Dados do usuário autenticado (substitui leitura do localStorage no frontend).
   app.get('/api/auth/me', authenticate, async (req: any, res) => {
     const { rows } = await query(
-      'SELECT id, name, email, role, provider_id, last_login_at FROM users WHERE id = $1',
+      `SELECT id, name, email, role, provider_id, last_login_at,
+              (SELECT pa.policy_version FROM privacy_acceptances pa WHERE pa.user_id = users.id
+                ORDER BY pa.accepted_at DESC, pa.id DESC LIMIT 1) AS privacy_accepted_version
+         FROM users WHERE id = $1`,
       [req.user.id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Usuário não encontrado' });
     res.json({ user: rows[0] });
+  });
+
+  // Aceite da Política de Privacidade (spec 2026-09-29) — só INSERT, registro definitivo.
+  app.post('/api/privacy/accept', authenticate, async (req: any, res) => {
+    try {
+      if (req.body?.version !== PRIVACY_POLICY_VERSION) {
+        return res.status(409).json({ error: 'A política foi atualizada. Recarregue a página.' });
+      }
+      const { rows: prev } = await query(
+        'SELECT accepted_at FROM privacy_acceptances WHERE user_id = $1 AND policy_version = $2 LIMIT 1',
+        [req.user.id, PRIVACY_POLICY_VERSION]);
+      if (prev[0]) return res.json({ ok: true, accepted_at: prev[0].accepted_at });
+      const { rows } = await query(
+        `INSERT INTO privacy_acceptances (user_id, user_name, user_email, policy_version, ip_hash)
+         SELECT id, name, email, $2, $3 FROM users WHERE id = $1
+         RETURNING accepted_at`,
+        [req.user.id, PRIVACY_POLICY_VERSION, hashClientIp(req)]);
+      await auditLog({ query, userId: req.user.id, action: 'privacy_policy_accepted', meta: { version: PRIVACY_POLICY_VERSION }, ip: hashClientIp(req) });
+      res.json({ ok: true, accepted_at: rows[0]?.accepted_at ?? null });
+    } catch (err) {
+      console.error('POST /api/privacy/accept:', err);
+      res.status(500).json({ error: 'Falha ao registrar o aceite.' });
+    }
   });
 
   // Lista dispositivos confiáveis ativos do usuário corrente.
@@ -1195,9 +1222,14 @@ async function startServer() {
         `SELECT u.id, u.name, u.email, u.role, u.is_active, u.invite_status, u.last_login_at, u.created_at,
                 u.provider_id, p.sgu_code AS provider_code,
                 ul.location_id, pl.sgu_location_code,
-                COALESCE(NULLIF(pl.logradouro, ''), NULLIF(pl.label, ''), pl.cidade) AS location_label, pl.cidade AS location_cidade
+                COALESCE(NULLIF(pl.logradouro, ''), NULLIF(pl.label, ''), pl.cidade) AS location_label, pl.cidade AS location_cidade,
+                pa.accepted_at AS privacy_accepted_at, pa.policy_version AS privacy_accepted_version
          FROM users u
          LEFT JOIN providers p ON p.id = u.provider_id
+         LEFT JOIN LATERAL (
+           SELECT accepted_at, policy_version FROM privacy_acceptances
+            WHERE user_id = u.id ORDER BY accepted_at DESC, id DESC LIMIT 1
+         ) pa ON true
          LEFT JOIN LATERAL (
            SELECT location_id FROM user_locations WHERE user_id = u.id ORDER BY location_id LIMIT 1
          ) ul ON true

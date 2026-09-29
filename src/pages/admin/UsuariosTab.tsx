@@ -227,24 +227,24 @@ export default function UsuariosTab() {
                   <td className="p-3 font-medium text-gray-900">
                     {segment === 'prestadores' && u.provider_id ? (
                       <Link to={`/admin/prestadores/${u.provider_id}`} title={u.name}
-                        className="block max-w-[240px] truncate text-[#00995D] hover:underline">
+                        className="block max-w-[220px] truncate text-[#00995D] hover:underline">
                         {u.name}
                       </Link>
                     ) : (
-                      <div className="max-w-[240px] truncate" title={u.name}>{u.name}</div>
+                      <div className="max-w-[220px] truncate" title={u.name}>{u.name}</div>
                     )}
                     {segment === 'prestadores' && (u.provider_code || u.location_label) && (
-                      <span className="block max-w-[240px] truncate text-xs text-gray-400">
+                      <span className="block max-w-[220px] truncate text-xs text-gray-400">
                         {[u.sgu_location_code || u.provider_code, u.location_label].filter(Boolean).join(' · ')}
                       </span>
                     )}
                   </td>
                   <td className="p-3 text-gray-700">
                     {u.email
-                      ? <div className="max-w-[220px] truncate" title={u.email}>{u.email}</div>
+                      ? <div className="max-w-[200px] truncate" title={u.email}>{u.email}</div>
                       : <span className="italic text-gray-400">não definido</span>}
                   </td>
-                  <td className="p-3 whitespace-nowrap">{ROLE_LABEL[u.role] ?? u.role}</td>
+                  <td className="p-3">{ROLE_LABEL[u.role] ?? u.role}</td>
                   <td className="p-3"><span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
                   <td className="p-3 text-gray-500 text-sm whitespace-nowrap">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="p-3 relative">

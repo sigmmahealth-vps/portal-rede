@@ -3,6 +3,8 @@ import { fetchApi, manualHref } from '../../lib/api';
 import { computeScore } from '../../lib/score';
 import { questionOnly } from '../../lib/questionText';
 import IterationTimeline, { Iteration } from './IterationTimeline';
+import TermoEvidenciasTexto from '../../components/TermoEvidenciasTexto';
+import { TERMO_EVIDENCIAS_VERSION, TERMO_EVIDENCIAS_DECLARACAO } from '../../lib/termoEvidencias';
 import {
   Check, ChevronLeft, ChevronRight, ArrowLeft, UploadCloud,
   AlertTriangle, Save, Loader2, Paperclip, Eye, Trash2, RotateCcw, FileText,
@@ -213,6 +215,12 @@ export default function RoteiroPlayer({
   const [currentInstanceId, setCurrentInstanceId] = useState<number | null>(instanceId || null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Termo de Ciência (spec 2026-09-29): versão aceita neste roteiro; sem aceite, o termo
+  // aparece no lugar dos critérios até o prestador marcar "li e compreendi".
+  const [termVersion, setTermVersion] = useState<string | null>(null);
+  const [termChecked, setTermChecked] = useState(false);
+  const [termSaving, setTermSaving] = useState(false);
+
   useEffect(() => {
     loadScript();
   }, [scriptId]);
@@ -320,6 +328,7 @@ export default function RoteiroPlayer({
         for (const ans of instanceData.answers ?? []) qToA[ans.question_id] = ans.id;
 
         setAnswers(loadedAnswers);
+        setTermVersion(instanceData.term?.term_version ?? null);
         setItersByAnswer(iters);
         setAnswerIdByQ(qToA);
       }
@@ -349,26 +358,43 @@ export default function RoteiroPlayer({
     }));
   };
 
+  // Instância sob demanda (upload/aceite do termo antes de existir avaliação).
+  const ensureInstance = async (): Promise<number> => {
+    if (currentInstanceId) return currentInstanceId;
+    const { id } = await fetchApi('/eval/instances', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script_id: scriptId, provider_id: providerId, location_id: locationId ?? null }),
+    });
+    setCurrentInstanceId(id);
+    return id;
+  };
+
+  const acceptTerm = async () => {
+    setTermSaving(true);
+    try {
+      const id = await ensureInstance();
+      await fetchApi(`/eval/instances/${id}/term`, { method: 'POST', body: JSON.stringify({ version: TERMO_EVIDENCIAS_VERSION }) });
+      setTermVersion(TERMO_EVIDENCIAS_VERSION);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao registrar o aceite do termo');
+    } finally {
+      setTermSaving(false);
+    }
+  };
+
   const handleFileUpload = async (questionId: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     // Precisamos de uma instância p/ anexar; cria sob demanda se ainda não existe.
-    let instId = currentInstanceId;
-    if (!instId) {
-      try {
-        const { id } = await fetchApi('/eval/instances', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script_id: scriptId, provider_id: providerId, location_id: locationId ?? null }),
-        });
-        instId = id;
-        setCurrentInstanceId(id);
-      } catch (err) {
-        console.error(err);
-        alert('Erro ao iniciar avaliação para upload');
-        return;
-      }
+    let instId: number;
+    try {
+      instId = await ensureInstance();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao iniciar avaliação para upload');
+      return;
     }
 
     const formData = new FormData();
@@ -565,6 +591,37 @@ export default function RoteiroPlayer({
     { v: 'nao', label: 'Não', on: 'bg-red-500 text-white shadow-sm', score: () => 0 },
     { v: 'na', label: 'Não se aplica', on: 'bg-gray-600 text-white shadow-sm', score: () => 0 },
   ] as const;
+
+  if (!readOnly && !loading && termVersion !== TERMO_EVIDENCIAS_VERSION) {
+    return (
+      <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#f4f4f4] lg:left-20">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+            <button onClick={() => onClose()}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-emerald-700">
+              <ArrowLeft className="h-4 w-4" /> Voltar aos meus roteiros
+            </button>
+            <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{script?.title || 'Roteiro de Qualificação'}</p>
+            <div className="mt-2 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+              <TermoEvidenciasTexto />
+              <label className="mt-6 flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm font-medium text-gray-800">
+                <input type="checkbox" checked={termChecked} onChange={(e) => setTermChecked(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[#00995D] focus:ring-[#00995D]" />
+                {TERMO_EVIDENCIAS_DECLARACAO}
+              </label>
+              <div className="mt-4 flex justify-end">
+                <button onClick={acceptTerm} disabled={!termChecked || termSaving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#00995D] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#007a4a] disabled:cursor-not-allowed disabled:opacity-50">
+                  {termSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Iniciar preenchimento
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     // Painel de trabalho: cobre a área de conteúdo (abaixo do topo do portal, à direita do menu).

@@ -20,11 +20,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const FILE = process.env.CADASTRO_FILE || path.resolve(PROJECT_ROOT, '..', 'Prestadores Portal.xlsx');
 const SHEET = process.env.CADASTRO_SHEET || 'tabela';
-// Hosts onde a recarga destrutiva pode rodar: dev e homolog. NUNCA prod (zephyr).
+// Hosts onde a recarga pode rodar: dev e homolog. Prod só na carga inicial (2026-09-29),
+// com --prod explícito + APP_ENV=prod + URL idêntica à DATABASE_URL_PROD (é upsert, não apaga).
 const ALLOWED_HOSTS = ['reseau.proxy.rlwy.net', 'interchange.proxy.rlwy.net'];
 
-export function assertReloadHost(url: string | undefined = pickDatabaseUrl()): void {
+export function assertReloadHost(url: string | undefined = pickDatabaseUrl(), allowProd = false): void {
   const host = url ? new URL(url).host : '(vazio)';
+  if (allowProd && url && process.env.APP_ENV === 'prod' && url === process.env.DATABASE_URL_PROD) return;
   if (!url || !ALLOWED_HOSTS.some((h) => url.includes(h))) {
     throw new Error(`Trava de host: import-tabela só roda em DEV/HOMOLOG (${ALLOWED_HOSTS.join(', ')}). Host atual: ${host}`);
   }
@@ -108,7 +110,7 @@ async function main() {
     return;
   }
 
-  assertReloadHost();
+  assertReloadHost(pickDatabaseUrl(), process.argv.includes('--prod'));
   const { withTransaction, pool } = await import('./db.js');
   const scriptByCod = await resolveScriptIds();
   const naoResolvidos = new Set<string>();

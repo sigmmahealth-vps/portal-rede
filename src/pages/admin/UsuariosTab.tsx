@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Plus, Search, MoreVertical } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
 import NovoUsuarioModal from './NovoUsuarioModal';
+import { fmtDataHora } from '../../lib/formatDate';
+import { PRIVACY_POLICY_VERSION } from '../../lib/privacyPolicy';
 
 interface User {
   id: number;
@@ -17,6 +19,8 @@ interface User {
   location_id: number | null;
   location_label: string | null;
   sgu_location_code: string | null;
+  privacy_accepted_at: string | null;
+  privacy_accepted_version: string | null;
 }
 
 // Fronteira de conceito: Equipe interna (operadores) × Acessos de prestadores.
@@ -211,6 +215,7 @@ export default function UsuariosTab() {
               <th className="text-left p-3">E-mail</th>
               <th className="text-left p-3">Função</th>
               <th className="text-left p-3">Status</th>
+              <th className="text-left p-3">Política</th>
               <th className="text-left p-3">Último acesso</th>
               <th className="p-3 w-10 rounded-tr-xl"></th>
             </tr>
@@ -242,6 +247,15 @@ export default function UsuariosTab() {
                   </td>
                   <td className="p-3 whitespace-nowrap">{ROLE_LABEL[u.role] ?? u.role}</td>
                   <td className="p-3"><span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs font-medium ${s.color}`}>{s.label}</span></td>
+                  <td className="p-3 text-sm whitespace-nowrap">
+                    {u.privacy_accepted_version === PRIVACY_POLICY_VERSION ? (
+                      <span className="text-gray-500">Aceita em {fmtDataHora(u.privacy_accepted_at)} <span className="text-xs text-gray-400">(v{u.privacy_accepted_version})</span></span>
+                    ) : (
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700">
+                        Pendente{u.privacy_accepted_version ? ` (aceitou v${u.privacy_accepted_version})` : ''}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3 text-gray-500 text-sm whitespace-nowrap">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('pt-BR') : '—'}</td>
                   <td className="p-3 relative">
                     <button onClick={() => setMenuOpenFor(menuOpenFor === u.id ? null : u.id)} className="text-gray-400 hover:text-gray-700"><MoreVertical /></button>
@@ -274,7 +288,7 @@ export default function UsuariosTab() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="p-6 text-center text-gray-500">Nenhum usuário encontrado.</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-gray-500">Nenhum usuário encontrado.</td></tr>
             )}
           </tbody>
         </table>

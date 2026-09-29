@@ -338,10 +338,6 @@ async function startServer() {
   // Guarda o corpo cru (para verificar a assinatura do webhook do Resend).
   app.use(express.json({ verify: (req: any, _res, buf) => { req.rawBody = buf.toString('utf8'); } }));
   app.use(cookieParser());
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-  // Se o arquivo não existe, retorna 404 explícito — evita cair no SPA fallback
-  // (`app.get('*')`) e o React renderizar "página em construção" no lugar do anexo.
-  app.use('/uploads', (_req, res) => res.status(404).type('text').send('Arquivo não encontrado'));
 
   // Seed/init data BEFORE routes are registered.
   await initData();
@@ -390,6 +386,14 @@ async function startServer() {
       return res.status(500).json({ error: 'Falha ao validar sessão.' });
     }
   };
+
+  // Anexos (evidências, documentos) só com sessão válida — antes eram públicos por URL.
+  // ponytail: não confere o dono do arquivo; prestador logado com o link de outro ainda abre.
+  // Upgrade: servir por /api/... checando provider_id/location do registro dono do arquivo.
+  app.use('/uploads', authenticate, express.static(path.join(process.cwd(), 'uploads')));
+  // Se o arquivo não existe, retorna 404 explícito — evita cair no SPA fallback
+  // (`app.get('*')`) e o React renderizar "página em construção" no lugar do anexo.
+  app.use('/uploads', (_req, res) => res.status(404).type('text').send('Arquivo não encontrado'));
 
   const requireAdmin = (req: any, res: any, next: any) => {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Apenas administradores.' });

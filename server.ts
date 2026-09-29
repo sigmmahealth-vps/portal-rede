@@ -23,6 +23,7 @@ import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { questionOnly } from './src/lib/questionText.js';
 import { PRIVACY_POLICY_VERSION } from './src/lib/privacyPolicy.js';
+import { TERMO_EVIDENCIAS_VERSION, termoEvidenciasTexto } from './src/lib/termoEvidencias.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail } from './src/lib/notifyEmail.js';
@@ -3632,7 +3633,12 @@ async function startServer() {
           it => !(maskedIds.has(Number(it.answer_id)) && it.action === 'solicitou_reanalise'));
       }
 
-      res.json({ ...instance, answers: visibleAnswers, evidences, iterations: visibleIterations });
+      // Termo de Ciência (spec 2026-09-29): último aceite registrado neste roteiro.
+      const { rows: termRows } = await query(
+        `SELECT user_name, accepted_at, term_version, term_text FROM eval_instance_terms
+          WHERE instance_id = $1 ORDER BY accepted_at DESC, id DESC LIMIT 1`, [req.params.id]);
+
+      res.json({ ...instance, answers: visibleAnswers, evidences, iterations: visibleIterations, term: termRows[0] ?? null });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -3760,12 +3766,45 @@ async function startServer() {
     }
   });
 
+  // Aceite do Termo de Ciência pelo prestador, antes de preencher (spec 2026-09-29).
+  // Só INSERT — grava o texto integral aceito; staff não aceita em nome do prestador.
+  app.post('/api/eval/instances/:id/term', authenticate, async (req: any, res) => {
+    try {
+      const instance = await loadInstanceForWrite(req, res);
+      if (!instance) return;
+      if (req.user.role === 'admin' || req.user.role === 'auditoria') {
+        return res.status(403).json({ error: 'O termo é aceito pelo prestador.' });
+      }
+      if (req.body?.version !== TERMO_EVIDENCIAS_VERSION) {
+        return res.status(409).json({ error: 'O termo foi atualizado. Recarregue a página.' });
+      }
+      const { rows: prev } = await query(
+        'SELECT accepted_at FROM eval_instance_terms WHERE instance_id = $1 AND term_version = $2 LIMIT 1',
+        [instance.id, TERMO_EVIDENCIAS_VERSION]);
+      if (prev[0]) return res.json({ ok: true, accepted_at: prev[0].accepted_at });
+      const { rows } = await query(
+        `INSERT INTO eval_instance_terms (instance_id, user_id, user_name, user_email, term_version, term_text, ip_hash)
+         SELECT $1, id, name, email, $3, $4, $5 FROM users WHERE id = $2
+         RETURNING accepted_at`,
+        [instance.id, req.user.id, TERMO_EVIDENCIAS_VERSION, termoEvidenciasTexto(), hashClientIp(req)]);
+      await auditLog({ query, userId: req.user.id, action: 'eval_term_accepted', meta: { instance_id: Number(instance.id), version: TERMO_EVIDENCIAS_VERSION }, ip: hashClientIp(req) });
+      res.json({ ok: true, accepted_at: rows[0]?.accepted_at ?? null });
+    } catch (err) {
+      console.error('POST /api/eval/instances/:id/term:', err);
+      res.status(500).json({ error: 'Falha ao registrar o aceite do termo.' });
+    }
+  });
+
   app.post('/api/eval/instances/:id/submit', authenticate, async (req: any, res) => {
     try {
       const instance = await loadInstanceForWrite(req, res);
       if (!instance) return;
       if (!['em_andamento', 'aguardando_evidencia'].includes(instance.status)) {
         return res.status(409).json({ error: `status ${instance.status} não permite submit` });
+      }
+      const { rows: termOk } = await query('SELECT 1 FROM eval_instance_terms WHERE instance_id = $1 LIMIT 1', [instance.id]);
+      if (!termOk.length) {
+        return res.status(409).json({ error: 'Aceite o Termo de Ciência antes de enviar.' });
       }
 
       // Completude: toda eval_questions do script precisa ter answer com answer_value não vazio.

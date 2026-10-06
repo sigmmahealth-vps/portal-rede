@@ -12,29 +12,30 @@ export default function EsqueciSenha() {
     e.preventDefault();
     setLoading(true);
     try {
-      await fetchApi('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+      await fetchApi('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ login: email }) });
     } catch { /* sempre 200, mas defensivo */ }
     setSent(true);
     setLoading(false);
-    setTimeout(() => navigate('/login'), 4000);
+    setTimeout(() => navigate('/login'), 8000);
   };
 
   return (
     <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md">
         <h1 className="text-2xl font-bold text-emerald-700 mb-2">Esqueceu sua senha?</h1>
-        <p className="text-sm text-gray-500 mb-6">Digite seu e-mail e enviaremos um link para redefinir.</p>
+        <p className="text-sm text-gray-500 mb-6">Informe o CPF/CNPJ do prestador. Equipe Unimed: informe o seu e-mail.</p>
 
         {sent ? (
           <div className="bg-emerald-50 text-emerald-800 p-4 rounded-md text-sm">
-            Se o e-mail existir no sistema, você receberá instruções em alguns minutos. Verifique sua caixa de entrada (e o Spam).
+            Pedido registrado. Se o prestador tiver um único local com e-mail cadastrado, o link para redefinir a senha chega a esse e-mail em alguns minutos (confira também o Spam). Nos demais casos, a equipe da Unimed foi avisada e entrará em contato.
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">CPF/CNPJ</label>
               <input
-                type="email"
+                type="text"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -46,7 +47,7 @@ export default function EsqueciSenha() {
               disabled={loading}
               className="w-full bg-emerald-600 text-white p-3 rounded-md font-medium hover:bg-emerald-700 disabled:bg-gray-300"
             >
-              {loading ? 'Enviando...' : 'Enviar link'}
+              {loading ? 'Enviando...' : 'Solicitar redefinição'}
             </button>
           </form>
         )}

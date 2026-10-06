@@ -144,6 +144,8 @@ test('tipo desconhecido não quebra (fallback)', () => {
 
 test('notifyLink: todo aviso abre a Qualificação na aba inicial (homologação 25/09)', () => {
   for (const t of NOTIFY_TYPES) assert.equal(notifyLink(t, { instance_id: 42, digest: true }), '/qualificacao');
+  // Exceção: o pedido de senha leva o administrador ao cadastro do prestador.
+  assert.equal(notifyLink('senha_solicitada', { provider_id: 7 }), '/admin/prestadores/7');
 });
 
 test('ciclo_aberto: menciona o manual só quando has_manual (sem linkar o arquivo)', () => {

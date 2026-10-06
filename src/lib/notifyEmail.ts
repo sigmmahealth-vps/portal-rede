@@ -434,6 +434,14 @@ export function notificationBlocks(
         cta,
       };
       break;
+    case 'senha_solicitada':
+      b = {
+        banner: 'Redefinição de senha solicitada',
+        paragraphs: [`**${ctx.provider_name ?? 'Um prestador'}** pediu a redefinição da senha de acesso ao portal.`],
+        steps: 'confirme a identidade de quem pediu pelo contato do cadastro e defina uma nova senha provisória na aba Acessos do prestador.',
+        cta: { ...cta, label: 'Abrir o cadastro' },
+      };
+      break;
     default:
       b = { banner: String(type), paragraphs: [''], cta };
   }

@@ -106,6 +106,23 @@ export default function Layout() {
     fetchApi('/auth/me').then((r) => setPrivacyAccepted(r.user?.privacy_accepted_version ?? null)).catch(() => {});
   }, [user?.id]);
 
+  // Prestador com mais de uma unidade: troca sem sair entre as que usam o mesmo e-mail.
+  const [units, setUnits] = useState<{ user_id: number; label: string; current: boolean; can_switch: boolean }[]>([]);
+  useEffect(() => {
+    if (!user?.provider_id) return;
+    fetchApi('/auth/units').then((r) => setUnits(r.units ?? [])).catch(() => {});
+  }, [user?.id]);
+
+  const switchUnit = async (userId: number) => {
+    try {
+      const r = await fetchApi('/auth/switch-unit', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+      localStorage.setItem('user', JSON.stringify(r.user));
+      window.location.assign('/dashboard');
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await fetchApi('/auth/logout', { method: 'POST' });
@@ -326,11 +343,30 @@ export default function Layout() {
                   <span className="ml-2 text-sm font-bold text-gray-700 hidden sm:block">{user.name.split(' ')[0]}</span>
                 </button>
                 {showProfile && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">
+                  <div className={`absolute right-0 mt-2 ${units.length > 1 ? 'w-72' : 'w-48'} bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50`}>
                     <div className="px-4 py-2 border-b border-gray-100">
                       <p className="text-sm font-bold text-gray-800 truncate">{user.name}</p>
                       <p className="text-xs text-gray-500 truncate">{user.email || 'prestador@unimed.com'}</p>
                     </div>
+                    {units.length > 1 && (
+                      <div className="border-b border-gray-100 py-1">
+                        <p className="px-4 pt-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Unidade</p>
+                        {units.map((u) => (
+                          <button
+                            key={u.user_id}
+                            type="button"
+                            disabled={u.current || !u.can_switch}
+                            onClick={() => switchUnit(u.user_id)}
+                            title={u.current ? 'Unidade atual' : u.can_switch ? 'Trocar para esta unidade' : 'Usa outro e-mail: saia e entre escolhendo esta unidade'}
+                            className={`block w-full px-4 py-2 text-left text-sm ${u.current ? 'font-semibold text-[#00995D]' : u.can_switch ? 'text-gray-700 hover:bg-gray-50' : 'text-gray-500'}`}
+                          >
+                            {u.label}
+                            {u.current && <span className="block text-xs font-normal text-gray-500">Unidade atual</span>}
+                            {!u.current && !u.can_switch && <span className="block text-xs">Outro e-mail — saia e entre de novo</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <Link to="/perfil" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Meu Perfil</Link>
                     <Link to="/meus-dados" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Meus dados</Link>
                     <Link to="/politica-privacidade" className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setShowProfile(false)}>Política de Privacidade</Link>

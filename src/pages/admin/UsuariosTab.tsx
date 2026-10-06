@@ -38,7 +38,7 @@ const SEGMENTS: { id: Segment; label: string }[] = [
 
 const STATUS_BADGE = (u: User) => {
   if (!u.is_active) return { label: 'Inativo', color: 'bg-red-100 text-red-700' };
-  // Gerado do cadastro sem e-mail utilizável — admin define o e-mail antes do convite.
+  // Prestador: a unidade ainda não cadastrou o e-mail (faz isso no primeiro acesso).
   if (!u.email) return { label: 'Sem e-mail', color: 'bg-orange-100 text-orange-800' };
   if (u.invite_status === 'pending') return { label: 'Pendente', color: 'bg-amber-100 text-amber-800' };
   if (u.invite_status === 'expired') return { label: 'Expirado', color: 'bg-gray-200 text-gray-600' };
@@ -169,7 +169,7 @@ export default function UsuariosTab() {
           <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
             <span className="text-sm text-gray-600"><span className="text-xl font-bold text-secondary-900">{fmtPct(adesao)}</span> de adesão</span>
             <span className="text-sm text-gray-600"><span className="font-bold text-emerald-700">{ativos}</span> ativos</span>
-            <span className="text-sm text-gray-600"><span className="font-bold text-amber-700">{by('Pendente') + by('Expirado')}</span> convite pendente/expirado</span>
+            <span className="text-sm text-gray-600"><span className="font-bold text-amber-700">{by('Pendente') + by('Expirado')}</span> aguardando o primeiro acesso</span>
             <span className="text-sm text-gray-600"><span className="font-bold text-orange-700">{by('Sem e-mail')}</span> sem e-mail</span>
             <span className="text-sm text-gray-600"><span className="font-bold text-red-700">{by('Inativo')}</span> inativos</span>
             <span className="text-xs text-gray-400">de {segmentUsers.length} acessos</span>
@@ -272,11 +272,15 @@ export default function UsuariosTab() {
                           className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                           {u.is_active ? 'Desativar' : 'Reativar'}
                         </button>
-                        <button onClick={() => { setMenuOpenFor(null); setEmailModalUser(u); setEmailDraft(u.email ?? ''); }}
-                          className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
-                          {u.email ? 'Alterar e-mail' : 'Definir e-mail'}
-                        </button>
-                        {u.email && (u.invite_status === 'pending' || u.invite_status === 'expired') && (
+                        {/* E-mail e convite são da equipe interna. No prestador, o e-mail é da unidade
+                            (aba Acessos do cadastro) e o primeiro acesso é por senha provisória. */}
+                        {!u.provider_id && (
+                          <button onClick={() => { setMenuOpenFor(null); setEmailModalUser(u); setEmailDraft(u.email ?? ''); }}
+                            className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
+                            {u.email ? 'Alterar e-mail' : 'Definir e-mail'}
+                          </button>
+                        )}
+                        {!u.provider_id && u.email && (u.invite_status === 'pending' || u.invite_status === 'expired') && (
                           <button onClick={() => resend(u.id)}
                             className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
                             Enviar convite

@@ -6,7 +6,7 @@ export const NOTIFY_TYPES = [
   'parecer_aprovado', 'parecer_reprovado', 'certificado_emitido',
   'plano_gerado', 'acao_aguardando_validacao',
   'acao_vencendo', 'acao_atrasada', 'roteiro_pendente', 'certificado_vencendo',
-  'ciclo_encerrado_sem_avaliacao',
+  'ciclo_encerrado_sem_avaliacao', 'senha_solicitada',
 ] as const;
 export type NotifyType = typeof NOTIFY_TYPES[number];
 
@@ -27,6 +27,7 @@ export const NOTIFY_TYPE_LABELS: Record<NotifyType, string> = {
   acao_aguardando_validacao: 'Ação aguardando validação',
   acao_vencendo: 'Ação a vencer',
   acao_atrasada: 'Ação atrasada',
+  senha_solicitada: 'Redefinição de senha solicitada',
 };
 
 export interface NotifyContent { title: string; body: string; link: string; }
@@ -52,7 +53,9 @@ export function roteiroReminderMarco(daysLeft: number): RoteiroReminderMarco | n
 // Destino do clique (sininho e botão do e-mail). Homologação 25/09: todo aviso abre a
 // Qualificação na aba inicial — Início (prestador) ou Estratégico (auditoria), pelo
 // default de cada visão. O mapa por tipo (?aba=…, ?corrigir=…) está no histórico (8b62b78).
-export function notifyLink(_type: string, _ctx: Record<string, any> = {}): string {
+// Exceção: pedido de senha (aviso aos administradores) abre o cadastro do prestador.
+export function notifyLink(type: string, ctx: Record<string, any> = {}): string {
+  if (type === 'senha_solicitada' && ctx.provider_id) return `/admin/prestadores/${ctx.provider_id}`;
   return '/qualificacao';
 }
 
@@ -149,6 +152,10 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       // Textos do cliente (2026-09-24).
       return { title: `Ciclo encerrado - Avaliação não concluída${ctx.cycle_label ? ` (${ctx.cycle_label})` : ''}`,
                body: 'O ciclo de qualificação da Rede de Prestadores foi encerrado e identificamos que sua avaliação não foi concluída dentro do prazo estabelecido. Por esse motivo, a avaliação deste ciclo permanecerá registrada como não concluída.', link };
+    case 'senha_solicitada':
+      // Esqueci minha senha de prestador com mais de um local ou sem e-mail confirmado (spec 2026-10-06).
+      return { title: `Redefinição de senha solicitada${ctx.provider_name ? ` — ${ctx.provider_name}` : ''}`,
+               body: 'O prestador pediu a redefinição da senha de acesso ao portal. Confirme a identidade de quem pediu e defina uma nova senha provisória na aba Acessos do cadastro.', link };
     default:
       return { title: String(type), body: '', link };
   }

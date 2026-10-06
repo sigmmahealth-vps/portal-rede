@@ -17,6 +17,7 @@
     "db:backfill-ip-hash": "tsx db/backfill-ip-hash.ts",
     "db:provision-users": "tsx db/provision-users.ts",
     "db:reset-users": "tsx db/reset-users.ts",
+    "db:import-senhas": "tsx db/import-senhas.ts",
     "db:reset-qualificacao": "tsx db/reset-qualificacao.ts",
     "emails:preview": "tsx scripts/gen-email-previews.ts",
     "db:import-roteiros": "tsx db/import-roteiros.ts",

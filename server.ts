@@ -3689,7 +3689,8 @@ async function startServer() {
         SELECT eai.id, eai.answer_id, eai.iteration_number, eai.actor_id, eai.actor_role,
                eai.action, eai.answer_value, eai.score_obtained, eai.evidence_url,
                eai.observation, eai.created_at,
-               u.name AS actor_name
+               u.name AS actor_name,
+               (eai.actor_role = 'prestador' AND u.role = 'admin') AS on_behalf
           FROM eval_answer_iterations eai
           JOIN eval_answers ea ON ea.id = eai.answer_id
           LEFT JOIN users u ON u.id = eai.actor_id
@@ -3753,10 +3754,17 @@ async function startServer() {
       const instanceId = req.params.id;
       const { answers } = req.body;
 
-      const actorRole = PROVIDER_ACCESS_ROLES.includes(req.user.role) ? 'prestador' : 'auditor';
-      const isProvider = actorRole === 'prestador';
-      // D-04: prestador só escreve nos estados de edição. Fora disso (em_analise,
-      // finalizado, etc.) rejeita — staff segue sem restrição.
+      // Quem preenche o roteiro: o prestador ou um ADMIN em nome dele (spec 2026-10-06).
+      // Auditoria só analisa. O admin entra pelo lado do prestador: mesmas janelas e
+      // travas de critério, e a iteração fica como 'prestador' com actor_id = o admin
+      // (a tela mostra "em nome do prestador" pelo papel do autor).
+      if (req.user.role === 'auditoria') {
+        return res.status(403).json({ error: 'O roteiro é preenchido pelo prestador ou por um administrador.' });
+      }
+      const actorRole = 'prestador';
+      const isProvider = true;
+      // D-04: só se escreve nos estados de edição. Fora disso (em_analise,
+      // finalizado, etc.) rejeita.
       if (isProvider && !PROVIDER_EDIT_STATUSES.has(instance.status)) {
         return res.status(409).json({ error: `status ${instance.status} não permite edição pelo prestador` });
       }
@@ -3836,6 +3844,7 @@ async function startServer() {
           instance_id: Number(instanceId),
           location_id: instance.location_id ?? null,
           answers_count: Array.isArray(answers) ? answers.length : 0,
+          on_behalf: req.user.role === 'admin',
         },
         ip: hashClientIp(req),
       });
@@ -3879,11 +3888,15 @@ async function startServer() {
     try {
       const instance = await loadInstanceForWrite(req, res);
       if (!instance) return;
+      if (req.user.role === 'auditoria') {
+        return res.status(403).json({ error: 'O roteiro é enviado pelo prestador ou por um administrador.' });
+      }
       if (!['em_andamento', 'aguardando_evidencia'].includes(instance.status)) {
         return res.status(409).json({ error: `status ${instance.status} não permite submit` });
       }
+      // Admin envia em nome do prestador sem o Termo: o aceite é só do prestador, no acesso dele.
       const { rows: termOk } = await query('SELECT 1 FROM eval_instance_terms WHERE instance_id = $1 LIMIT 1', [instance.id]);
-      if (!termOk.length) {
+      if (!termOk.length && req.user.role !== 'admin') {
         return res.status(409).json({ error: 'Aceite o Termo de Ciência antes de enviar.' });
       }
 
@@ -3925,6 +3938,7 @@ async function startServer() {
           provider_id: Number(instance.provider_id),
           instance_id: Number(req.params.id),
           location_id: instance.location_id ?? null,
+          on_behalf: req.user.role === 'admin',
         },
         ip: hashClientIp(req),
       });
@@ -4055,8 +4069,9 @@ async function startServer() {
       const questionId = req.body.question_id ? Number(req.body.question_id) : null;
 
       // D-04: prestador só anexa evidência em estado de edição e, na reanálise, só
-      // no critério devolvido. Remove o upload órfão ao rejeitar. Staff sem restrição.
-      const isProvider = PROVIDER_ACCESS_ROLES.includes(req.user.role);
+      // no critério devolvido. Remove o upload órfão ao rejeitar. Admin anexa em nome do
+      // prestador sob as mesmas regras; auditoria segue sem restrição.
+      const isProvider = req.user.role !== 'auditoria';
       if (isProvider) {
         const rejectUpload = (code: number, msg: string) => {
           try { fs.unlinkSync(req.file.path); } catch { /* arquivo já sumiu */ }
@@ -6732,7 +6747,7 @@ async function startServer() {
       // já registradas, ignorando 'NA' — mesma fórmula do /parecer. Assim antes do
       // parecer o painel mostra o progresso ao invés de sempre 0.
       const { rows: instances } = await query(`
-        SELECT ei.id, ei.provider_id, ei.location_id,
+        SELECT ei.id, ei.provider_id, ei.location_id, ei.script_id,
                p.name AS provider_name,
                p.sgu_code AS provider_code,
                pl.cidade AS city,
@@ -6809,6 +6824,7 @@ async function startServer() {
         instances.map((r: any) => ({
           id: Number(r.id), provider_id: Number(r.provider_id),
           location_id: r.location_id != null ? Number(r.location_id) : null,
+          script_id: Number(r.script_id), // p/ o admin abrir o roteiro em nome do prestador
           provider_name: r.provider_name, provider_code: r.provider_code,
           city: r.city, unidade: r.unidade, provider_group: r.provider_group,
           status: r.status, percentual: Number(r.percentual) || 0, seal: r.seal,

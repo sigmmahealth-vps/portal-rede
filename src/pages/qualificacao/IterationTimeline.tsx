@@ -15,6 +15,7 @@ export interface Iteration {
   observation: string | null;
   created_at: string;
   actor_name?: string | null;
+  on_behalf?: boolean; // respondido por um administrador em nome do prestador
 }
 
 const ACTION_META: Record<string, { label: string; Icon: any; cls: string }> = {
@@ -58,7 +59,7 @@ export default function IterationTimeline({ items }: { items: Iteration[] }) {
                 <div className="text-xs">
                   <p className="text-secondary-900">
                     <span className="font-semibold">#{it.iteration_number} · {meta.label}</span>
-                    {it.actor_name && <span className="text-gray-500"> · {it.actor_name}</span>}
+                    {it.actor_name && <span className="text-gray-500"> · {it.actor_name}{it.on_behalf ? ' (administrador, em nome do prestador)' : ''}</span>}
                     <span className="text-gray-400"> · {fmt(it.created_at)}</span>
                   </p>
                   {it.observation && (

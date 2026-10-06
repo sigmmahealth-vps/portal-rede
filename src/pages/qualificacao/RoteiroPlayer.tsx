@@ -191,6 +191,7 @@ export default function RoteiroPlayer({
   providerId,
   readOnly = false,
   initialFilter,
+  onBehalf = false,
 }: {
   scriptId: number;
   instanceId?: number;
@@ -199,6 +200,9 @@ export default function RoteiroPlayer({
   providerId: number;
   readOnly?: boolean;
   initialFilter?: 'all' | 'pending' | 'reanalise' | 'done';
+  // Admin preenchendo em nome do prestador (spec 2026-10-06): sem Termo de Ciência
+  // (o aceite é só do prestador) e sem pesquisa de satisfação ao enviar.
+  onBehalf?: boolean;
 }) {
   const [script, setScript] = useState<any>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -497,7 +501,9 @@ export default function RoteiroPlayer({
       const r = await fetchApi(`/eval/instances/${instId}/submit`, { method: 'POST' });
       // Pesquisa de Satisfação só existe no primeiro envio; reenvio pós-reanálise
       // não gera pesquisa nova.
-      if (r?.first_submission) {
+      if (onBehalf) {
+        alert('Avaliação enviada para análise em nome do prestador.');
+      } else if (r?.first_submission) {
         alert('Avaliação enviada para análise!\n\nAgora responda à Pesquisa de Satisfação (leva ~2 min) e ganhe +10 pontos na sua qualificação — prazo de 7 dias.');
       } else {
         alert('Avaliação reenviada para análise!');
@@ -592,7 +598,10 @@ export default function RoteiroPlayer({
     { v: 'na', label: 'Não se aplica', on: 'bg-gray-600 text-white shadow-sm', score: () => 0 },
   ] as const;
 
-  if (!readOnly && !loading && termVersion !== TERMO_EVIDENCIAS_VERSION) {
+  // Algum critério foi respondido por um administrador em nome do prestador?
+  const filledByUnimed = (Object.values(itersByAnswer) as any[][]).some((its) => its.some((it) => it.on_behalf));
+
+  if (!readOnly && !onBehalf && !loading && termVersion !== TERMO_EVIDENCIAS_VERSION) {
     return (
       <div className="fixed inset-x-0 bottom-0 top-16 z-20 flex flex-col bg-[#f4f4f4] lg:left-20">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -635,7 +644,7 @@ export default function RoteiroPlayer({
           onClick={onClose}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-emerald-700"
         >
-          <ArrowLeft className="h-4 w-4" /> Voltar aos meus roteiros
+          <ArrowLeft className="h-4 w-4" /> {onBehalf ? 'Voltar ao painel do ciclo' : 'Voltar aos meus roteiros'}
         </button>
 
         <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -734,6 +743,17 @@ export default function RoteiroPlayer({
             const totalVisible = groupQs.filter(filterMatches).length;
             return (
             <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-6 border-0 p-0">
+            {onBehalf ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <span className="font-semibold">Você está preenchendo em nome do prestador.</span>{' '}
+                As respostas e evidências ficam registradas com o seu usuário. O Termo de Ciência continua sendo aceito só pelo prestador.
+              </div>
+            ) : filledByUnimed && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <span className="font-semibold">Parte deste roteiro foi preenchida pela Unimed em seu nome.</span>{' '}
+                Confira as respostas; o histórico de cada critério mostra quem respondeu.
+              </div>
+            )}
             {/* Mapa da devolução: quantos critérios cada seção tem em reanálise, na ordem do roteiro. */}
             {!readOnly && reanaliseSet.size > 0 && (
               <div className="rounded-2xl border border-red-200 bg-red-50 p-4">

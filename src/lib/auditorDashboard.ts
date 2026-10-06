@@ -4,6 +4,7 @@ export interface DashboardInstance {
   id: number;
   provider_id: number;
   location_id: number | null;
+  script_id?: number;
   provider_name: string;
   provider_code: string | null;
   city: string | null;

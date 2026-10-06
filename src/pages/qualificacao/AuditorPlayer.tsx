@@ -485,7 +485,10 @@ export default function AuditorPlayer({
                   <button type="button" onClick={() => setShowTermo(true)} className="font-medium text-[#00995D] hover:underline">Ver termo</button>
                 </p>
               ) : (
-                <p className="mt-1 text-xs font-medium text-amber-700">Termo de Ciência não aceito</p>
+                <p className="mt-1 text-xs font-medium text-amber-700">
+                  Termo de Ciência não aceito
+                  {(instance.iterations ?? []).some((it: any) => it.on_behalf) && ' — roteiro preenchido pela Unimed em nome do prestador'}
+                </p>
               ))}
             </div>
 

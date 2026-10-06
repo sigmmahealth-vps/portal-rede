@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { fetchApi } from '../../lib/api';
 import SemCiclo from './SemCiclo';
 import { fmtPct } from '../../lib/formatDate';
-import { Search, Download, Eye, Undo2, Award, AlertTriangle, UserPlus, X } from 'lucide-react';
+import { Search, Download, Eye, Undo2, Award, AlertTriangle, UserPlus, X, PencilLine } from 'lucide-react';
 import AuditorPlayer from './AuditorPlayer';
+import RoteiroPlayer from './RoteiroPlayer';
+import { PROVIDER_EDIT_STATUSES } from '../../lib/providerEdit';
 import { statusLabel } from '../../lib/statusLabels';
 
 const SEAL_COLORS: Record<string, string> = {
@@ -58,6 +60,8 @@ export default function PainelDoCiclo({ user }: { user: any }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [lowSecOnly, setLowSecOnly] = useState(false);
   const [evaluating, setEvaluating] = useState<any>(null);
+  // Admin preenchendo o roteiro em nome do prestador (spec 2026-10-06).
+  const [filling, setFilling] = useState<any>(null);
   const [inclusaoOpen, setInclusaoOpen] = useState(false);
   const [candidateCount, setCandidateCount] = useState<number | null>(null);
 
@@ -330,6 +334,14 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-1.5">
+                      {user?.role === 'admin' && PROVIDER_EDIT_STATUSES.has(i.status) && (
+                        <button
+                          onClick={() => setFilling(i)}
+                          title="Preencher em nome do prestador"
+                          aria-label="Preencher em nome do prestador"
+                          className="p-1.5 rounded bg-gray-50 text-gray-600 hover:bg-gray-100"
+                        ><PencilLine className="w-4 h-4" /></button>
+                      )}
                       <button
                         onClick={() => setEvaluating(i)}
                         title={actionLabel(i.status)}
@@ -364,6 +376,21 @@ export default function PainelDoCiclo({ user }: { user: any }) {
           </table>
         </div>
       </div>
+
+      {filling && (
+        <RoteiroPlayer
+          onBehalf
+          scriptId={Number(filling.script_id)}
+          instanceId={Number(filling.id)}
+          locationId={filling.location_id != null ? Number(filling.location_id) : undefined}
+          providerId={Number(filling.provider_id)}
+          initialFilter={filling.status === 'aguardando_evidencia' ? 'reanalise' : undefined}
+          onClose={async () => {
+            setFilling(null);
+            if (cycleId != null) setData(await fetchApi(`/eval/dashboard/auditor?cycle_id=${cycleId}`));
+          }}
+        />
+      )}
 
       {evaluating && (
         <AuditorPlayer

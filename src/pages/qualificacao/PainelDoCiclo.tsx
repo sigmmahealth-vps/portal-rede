@@ -22,11 +22,11 @@ const isClosedInstance = (status: string) =>
 // Prestador ainda não enviou o roteiro — nada para analisar, só acompanhar o progresso.
 const isNotSubmitted = (status: string) =>
   ['em_andamento', 'pendente'].includes(status);
-// Rótulo do botão-olho por estado. Reanálise (aguardando_evidencia) tem texto e cor próprios.
+// Rótulo (tooltip) do botão-olho por estado. Reanálise (aguardando_evidencia) tem cor própria.
 const actionLabel = (status: string) =>
   isNotSubmitted(status) ? 'Acompanhar avaliação'
   : isClosedInstance(status) ? 'Visualizar avaliação'
-  : status === 'aguardando_evidencia' ? 'Aguardando reanálise'
+  : status === 'aguardando_evidencia' ? 'Acompanhar reanálise'
   : 'Analisar avaliação';
 // Cor do botão-olho: verde só quando há o que analisar (em_analise); laranja em reanálise
 // (mesma cor do status); cinza nos demais (acompanhar/visualizar).
@@ -346,13 +346,8 @@ export default function PainelDoCiclo({ user }: { user: any }) {
                         onClick={() => setEvaluating(i)}
                         title={actionLabel(i.status)}
                         aria-label={actionLabel(i.status)}
-                        className={`inline-flex items-center gap-1 p-1.5 rounded ${actionTone(i.status)}`}
-                      >
-                        <Eye className="w-4 h-4" />
-                        {i.status === 'aguardando_evidencia' && (
-                          <span className="whitespace-nowrap text-xs font-medium">Aguardando reanálise</span>
-                        )}
-                      </button>
+                        className={`p-1.5 rounded ${actionTone(i.status)}`}
+                      ><Eye className="w-4 h-4" /></button>
                       {i.status === 'em_analise' && (
                         <button
                           onClick={() => reopen(i)}

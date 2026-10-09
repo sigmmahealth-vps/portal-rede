@@ -32,7 +32,7 @@ export default function Login() {
 
   const selectedUnit = pre?.units.find((u) => u.user_id === unitId) ?? null;
   const needsEmail = !!selectedUnit && !selectedUnit.has_email;
-  const othersWithoutEmail = !!pre && pre.units.some((u) => u.user_id !== unitId && !u.has_email);
+  const hasOtherUnits = !!pre && pre.units.length > 1;
 
   const selectUnit = (u: LoginUnit) => {
     setUnitId(u.user_id);
@@ -367,10 +367,10 @@ export default function Login() {
                 <p className="mt-1 text-xs text-gray-500">
                   Este e-mail receberá o código de verificação e os avisos desta unidade. Vamos enviar um código para confirmá-lo.
                 </p>
-                {othersWithoutEmail && (
+                {hasOtherUnits && (
                   <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
                     <input type="checkbox" className="mt-1" checked={allUnits} onChange={(e) => setAllUnits(e.target.checked)} />
-                    Usar este e-mail para todas as unidades que ainda não têm e-mail
+                    Usar este e-mail para todas as unidades
                   </label>
                 )}
               </div>

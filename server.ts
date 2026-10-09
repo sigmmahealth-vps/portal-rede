@@ -986,14 +986,21 @@ async function startServer() {
       }
       await query('UPDATE otp_codes SET consumed_at = now() WHERE id = $1', [challenge.id]);
       // Código validado no e-mail informado: agora sim ele vira o e-mail da unidade
-      // (2FA e avisos). all_units = também nas demais unidades que ainda não têm e-mail.
+      // (2FA e avisos). all_units = também em TODAS as demais unidades do prestador,
+      // inclusive as que já tinham outro e-mail (decisão da Katy, 09/10/2026).
       if (challenge.email) {
         await query(`UPDATE users SET email = $1, invite_status = 'accepted' WHERE id = $2`, [challenge.email, user.id]);
         if (challenge.all_units && user.provider_id) {
+          const args = [challenge.email, user.provider_id, user.id, PROVIDER_ACCESS_ROLES];
+          const others = `provider_id = $2 AND id <> $3 AND is_active = true AND role = ANY($4)`;
+          const replaced = `email IS NOT NULL AND LOWER(email) <> LOWER($1)`;
+          // Unidade que tinha outro e-mail: o dispositivo confiável e a sessão dela caem,
+          // como na troca de e-mail pelo admin.
+          await query(`DELETE FROM trusted_devices WHERE user_id IN (SELECT id FROM users WHERE ${others} AND ${replaced})`, args);
           await query(
-            `UPDATE users SET email = $1, invite_status = 'accepted'
-              WHERE provider_id = $2 AND id <> $3 AND is_active = true AND role = ANY($4) AND invite_status <> 'accepted'`,
-            [challenge.email, user.provider_id, user.id, PROVIDER_ACCESS_ROLES]);
+            `UPDATE users SET email = $1, invite_status = 'accepted',
+                    session_version = session_version + CASE WHEN ${replaced} THEN 1 ELSE 0 END
+              WHERE ${others}`, args);
         }
         user.email = challenge.email;
         await auditLog({

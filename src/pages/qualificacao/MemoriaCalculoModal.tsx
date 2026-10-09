@@ -112,7 +112,7 @@ export default function MemoriaCalculoModal({ instanceId, onClose }: { instanceI
 
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-secondary-900">
               <div className="flex justify-between"><span>Base (Σ obtido / Σ máx)</span><span className="font-semibold tabular-nums">{mem.totals.obtained}/{mem.totals.max} = {mem.totals.base_pct}%</span></div>
-              <div className="flex justify-between"><span>Bônus da pesquisa (pontos no numerador)</span><span className="font-semibold tabular-nums">{mem.bonus_pending ? '0 (pesquisa pendente)' : `+${mem.bonus}`}</span></div>
+              <div className="flex justify-between"><span>Bônus da pesquisa (pontos no numerador)</span><span className="font-semibold tabular-nums">{mem.bonus_pending ? '0 (pesquisa pendente)' : mem.no_survey ? '0 (sem pesquisa — enviado pela Unimed)' : `+${mem.bonus}`}</span></div>
               <div className="mt-1 flex justify-between border-t border-emerald-200 pt-1 text-base font-bold"><span>Nota final (teto 100)</span><span className="tabular-nums">{mem.bonus_pending || !mem.bonus ? '' : `(${mem.totals.obtained}+${mem.bonus})/${mem.totals.max} = `}{fmtPct(mem.final_pct)}</span></div>
               <div className="flex justify-between"><span>Selo</span><span className="font-semibold">{mem.seal}</span></div>
             </div>

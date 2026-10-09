@@ -171,7 +171,11 @@ test('buildAuditorDashboard anexa display_status (pending_count + pesquisa)', ()
     inst({ id: 2, status: 'em_analise', pending_count: 0, submitted_at: '2026-09-09T12:00:00Z', has_survey_response: false }),
     inst({ id: 3, status: 'em_analise', pending_count: 0, submitted_at: '2026-09-09T12:00:00Z', has_survey_response: true }),
     inst({ id: 4, status: 'pendente' }),
+    // Enviado pelo admin em nome do prestador: sem pesquisa, parecer liberado na hora.
+    inst({ id: 5, status: 'em_analise', pending_count: 0, submitted_at: '2026-09-09T12:00:00Z', has_survey_response: false, submitted_on_behalf: true }),
   ], [], now);
+  assert.equal(r.instances.find(i => i.id === 5)!.display_status, 'emitir_parecer');
+  assert.equal(r.instances.find(i => i.id === 5)!.survey_state, null);
   const ds = Object.fromEntries(r.instances.map(i => [i.id, i.display_status]));
   assert.equal(ds[1], 'em_analise');
   assert.equal(ds[2], 'aguardando_pesquisa');

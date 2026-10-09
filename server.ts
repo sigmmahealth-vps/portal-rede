@@ -3926,10 +3926,15 @@ async function startServer() {
 
       // Pesquisa de Satisfação nasce só no PRIMEIRO envio; reenvios (reanálise/
       // devolução) preservam submitted_at e não geram nova pesquisa.
+      // Primeiro envio feito pelo admin em nome do prestador: sem pesquisa (0058).
       const firstSubmission = !instance.submitted_at;
       await query(
-        `UPDATE eval_instances SET status = 'em_analise', submitted_at = COALESCE(submitted_at, now()) WHERE id = $1`,
-        [req.params.id],
+        `UPDATE eval_instances
+            SET status = 'em_analise',
+                submitted_on_behalf = CASE WHEN submitted_at IS NULL THEN $2 ELSE submitted_on_behalf END,
+                submitted_at = COALESCE(submitted_at, now())
+          WHERE id = $1`,
+        [req.params.id, req.user.role === 'admin'],
       );
 
       await auditLog({
@@ -4282,7 +4287,7 @@ async function startServer() {
 
       // Engajamento na Pesquisa de Satisfação (reusa computeSurveyStats).
       const { rows: availRows } = await query(
-        "SELECT COUNT(*)::int AS count FROM eval_instances WHERE submitted_at IS NOT NULL AND ($1::bigint IS NULL OR cycle_id = $1)", [cycleId]);
+        "SELECT COUNT(*)::int AS count FROM eval_instances WHERE submitted_at IS NOT NULL AND NOT submitted_on_behalf AND ($1::bigint IS NULL OR cycle_id = $1)", [cycleId]);
       const { rows: srRows } = await query(`
         SELECT sr.q1_clareza, sr.q2_portal, sr.q3_documentos, sr.q4_dificuldade,
                sr.q5_geral, sr.q6_nps, sr.within_deadline
@@ -5675,7 +5680,7 @@ async function startServer() {
 
       const { rows: [inst] } = await query(`
         SELECT ei.id, ei.status, ei.provider_id, ei.location_id, ei.cycle_id,
-               c.cert_valid_until
+               ei.submitted_on_behalf, c.cert_valid_until
           FROM eval_instances ei
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.id = $1
@@ -5688,10 +5693,11 @@ async function startServer() {
       }
 
       // Bloqueio da pesquisa (spec 5.4.6): só emite parecer quando a pesquisa foi
-      // respondida OU o prazo de 7 dias venceu.
+      // respondida OU o prazo de 7 dias venceu. Roteiro enviado pelo admin em nome
+      // do prestador não tem pesquisa: não trava e não soma bônus.
       const { rows: [survey] } = await query(
         'SELECT within_deadline, bonus_points FROM eval_survey_responses WHERE instance_id = $1', [id]);
-      if (!survey) {
+      if (!survey && !inst.submitted_on_behalf) {
         const { rows: [sub] } = await query('SELECT submitted_at FROM eval_instances WHERE id = $1', [id]);
         const { surveyDeadline } = await import('./src/lib/surveyBonus.js');
         if (sub?.submitted_at && Date.now() <= surveyDeadline(new Date(sub.submitted_at)).getTime()) {
@@ -5895,7 +5901,7 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
       const { rows: [inst] } = await query(
-        'SELECT id, status, script_id, percentual, seal, provider_id, location_id, cycle_id FROM eval_instances WHERE id = $1', [id]);
+        'SELECT id, status, script_id, percentual, seal, provider_id, location_id, cycle_id, submitted_on_behalf FROM eval_instances WHERE id = $1', [id]);
       if (!inst) return res.status(404).json({ error: 'instance not found' });
 
       const { rows: [survey] } = await query(
@@ -5920,11 +5926,13 @@ async function startServer() {
           answer_value: r.answer_value, score_obtained: r.score_obtained,
           evidence_status: r.evidence_status,
         })),
-        survey ? { within_deadline: !!survey.within_deadline } : null,
+        // Enviado pelo admin em nome do prestador: sem pesquisa → bônus 0, nada pendente.
+        survey ? { within_deadline: !!survey.within_deadline }
+          : inst.submitted_on_behalf ? { within_deadline: false } : null,
       );
 
       const CLOSED = ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'];
-      const payload: any = { ...mem };
+      const payload: any = { ...mem, no_survey: !survey && !!inst.submitted_on_behalf };
       // Item 18: mesma trava do parecer — memória mostra o selo que será gravado.
       const prevPlan = await pendingPrevPlan(
         Number(inst.provider_id), inst.location_id != null ? Number(inst.location_id) : null,
@@ -5972,7 +5980,8 @@ async function startServer() {
           JOIN providers p ON p.id = ei.provider_id
           LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
-         WHERE ei.submitted_at IS NOT NULL AND ($1::bigint IS NULL OR ei.cycle_id = $1)
+         WHERE ei.submitted_at IS NOT NULL AND NOT ei.submitted_on_behalf
+           AND ($1::bigint IS NULL OR ei.cycle_id = $1)
          ORDER BY (sr.id IS NOT NULL) DESC, ei.submitted_at DESC
       `, [cycleId]);
       res.json(rows);
@@ -5997,7 +6006,8 @@ async function startServer() {
           AVG(EXTRACT(EPOCH FROM (sr.submitted_at - ei.submitted_at)) / 86400.0) AS tempo_medio_dias
         FROM eval_instances ei
         LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
-        WHERE ei.submitted_at IS NOT NULL AND ($1::bigint IS NULL OR ei.cycle_id = $1)
+        WHERE ei.submitted_at IS NOT NULL AND NOT ei.submitted_on_behalf
+          AND ($1::bigint IS NULL OR ei.cycle_id = $1)
       `, [cycleId]);
       res.json({
         ...s,
@@ -6307,7 +6317,7 @@ async function startServer() {
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
           LEFT JOIN provider_locations pl ON pl.id = ei.location_id
           LEFT JOIN eval_survey_responses sr ON sr.instance_id = ei.id
-         WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL
+         WHERE ei.provider_id = $1 AND ei.submitted_at IS NOT NULL AND NOT ei.submitted_on_behalf
            AND ei.location_id = ANY($2::bigint[])
          ORDER BY ei.submitted_at DESC
       `, [providerId, await userLocationIds(req)]);
@@ -6348,7 +6358,7 @@ async function startServer() {
       const { rows: [inst] } = await query(`
         SELECT ei.id, ei.submitted_at
           FROM eval_instances ei
-         WHERE ei.id = $1 AND ei.provider_id = $2 AND ei.submitted_at IS NOT NULL
+         WHERE ei.id = $1 AND ei.provider_id = $2 AND ei.submitted_at IS NOT NULL AND NOT ei.submitted_on_behalf
            AND ei.location_id = ANY($3::bigint[])
            AND NOT EXISTS (SELECT 1 FROM eval_survey_responses sr WHERE sr.instance_id = ei.id)
       `, [instanceId, providerId, await userLocationIds(req)]);
@@ -6762,6 +6772,7 @@ async function startServer() {
                (ec.id IS NOT NULL) AS has_certificate,
                ec.id AS certificate_id,
                ei.submitted_at,
+               ei.submitted_on_behalf,
                ei.completed_at,
                (esr.id IS NOT NULL) AS has_survey_response,
                (SELECT count(*)::int FROM eval_answers ea
@@ -6833,6 +6844,7 @@ async function startServer() {
           submitted_at: r.submitted_at != null ? new Date(r.submitted_at).toISOString() : null,
           completed_at: r.completed_at != null ? new Date(r.completed_at).toISOString() : null,
           has_survey_response: !!r.has_survey_response,
+          submitted_on_behalf: !!r.submitted_on_behalf,
           pending_count: r.pending_count != null ? Number(r.pending_count) : null,
           prev_plan_pending: !!r.prev_plan_pending,
           prev_plan_dl: !!r.prev_plan_dl,

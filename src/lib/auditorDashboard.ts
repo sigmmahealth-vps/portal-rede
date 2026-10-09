@@ -20,6 +20,8 @@ export interface DashboardInstance {
   submitted_at?: string | null;
   completed_at?: string | null;
   has_survey_response?: boolean;
+  // Enviado pelo admin em nome do prestador (0058): sem pesquisa, sem bônus, parecer livre.
+  submitted_on_behalf?: boolean;
   survey_state?: 'aguardando' | 'finalizada' | null;
   // Item 18 (homologação 09/2026): plano de outro ciclo ainda aberto p/ o par;
   // com item de critério eliminatório pendente (prev_plan_dl) o selo trava em Bronze.
@@ -143,12 +145,14 @@ export function buildAuditorDashboard(
 
   const enriched = instances.map(i => {
     const dims = dimsByInstance.get(i.id) ?? null;
+    // Sem pesquisa (enviado pelo admin): sem data de envio p/ a regra = prazo nunca corre.
+    const surveyFrom = i.submitted_on_behalf ? null : i.submitted_at;
     return {
       ...i,
       dims,
       seguranca_pct: dims && dims['Segurança'] != null ? dims['Segurança'] : null,
-      survey_state: surveyState(i.status, i.submitted_at, i.has_survey_response, now),
-      display_status: displayStatus(i.status, i.pending_count, i.submitted_at, i.has_survey_response, now),
+      survey_state: surveyState(i.status, surveyFrom, i.has_survey_response, now),
+      display_status: displayStatus(i.status, i.pending_count, surveyFrom, i.has_survey_response, now),
     };
   });
 

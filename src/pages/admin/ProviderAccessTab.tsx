@@ -47,19 +47,12 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   const canEdit = currentRole() === 'admin';
   const [loading, setLoading] = useState(true);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [hasPassword, setHasPassword] = useState(false);
-  const [mustChange, setMustChange] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<Feedback>(null);
 
   const load = () => {
     fetchApi(`/providers/${providerId}/access`)
       .then((d) => {
         setUnits(d.units ?? []);
-        setHasPassword(!!d.has_password);
-        setMustChange(!!d.must_change_password);
         setLoadError(null);
       })
       .catch((e) => setLoadError(e.message))
@@ -67,22 +60,6 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
   };
 
   useEffect(load, [providerId]);
-
-  const setProvisionalPassword = async (e: FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setFeedback(null);
-    try {
-      await fetchApi(`/providers/${providerId}/access/password`, { method: 'POST', body: JSON.stringify({ password }) });
-      setPassword('');
-      setFeedback({ type: 'ok', msg: 'Senha provisória definida. Entregue-a ao prestador: ele troca no primeiro acesso.' });
-      load();
-    } catch (err: any) {
-      setFeedback({ type: 'err', msg: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -97,10 +74,10 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
       <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
         <ShieldCheck className="h-5 w-5 shrink-0 text-blue-600" />
         <p className="text-sm leading-relaxed text-blue-900">
-          <span className="font-semibold">Login por CPF/CNPJ, com uma senha por prestador.</span> Depois da senha, o prestador
-          escolhe a unidade e recebe o código de verificação no e-mail dela. Cada unidade cadastra o próprio e-mail no
-          primeiro acesso — o mesmo responsável pode usar um único e-mail em todas — e só enxerga as avaliações, planos e
-          certificados daquela unidade.
+          <span className="font-semibold">Login por CPF/CNPJ, com uma senha por unidade.</span> A senha digitada define em
+          qual unidade o prestador entra, e o código de verificação vai para o e-mail dela. Cada unidade troca a senha
+          provisória e cadastra o próprio e-mail no primeiro acesso, e só enxerga as avaliações, planos e certificados
+          daquela unidade.
         </p>
       </div>
 
@@ -112,52 +89,6 @@ export default function ProviderAccessTab({ providerId }: { providerId: number |
 
       {units.length === 0 && !loadError && (
         <p className="text-sm text-gray-500">Este prestador não tem endereço comercial no cadastro.</p>
-      )}
-
-      {units.length > 0 && (
-        <div className="rounded-xl border border-gray-100 p-4">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Lock className="h-4 w-4 text-gray-400" />
-            <span className="text-sm font-semibold text-gray-800">Senha do prestador</span>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              !hasPassword ? 'bg-gray-100 text-gray-600' : mustChange ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-            }`}>
-              {!hasPassword ? 'Sem senha' : mustChange ? 'Provisória — aguardando o primeiro acesso' : 'Definida pelo prestador'}
-            </span>
-          </div>
-          <FeedbackBox feedback={feedback} />
-          {canEdit ? (
-            <form onSubmit={setProvisionalPassword} className="flex flex-wrap items-end gap-3">
-              <div className="min-w-64 flex-1">
-                <label htmlFor="provisional-password" className="mb-1 block text-sm font-medium text-gray-700">Nova senha provisória</label>
-                <PasswordInput
-                  id="provisional-password"
-                  value={password}
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-[#00995D] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#007A4A] disabled:opacity-50"
-              >
-                <Save className="h-4 w-4" />
-                {saving ? 'Salvando...' : 'Definir senha provisória'}
-              </button>
-              <p className="w-full text-xs text-gray-500">
-                Vale para todas as unidades e encerra as sessões abertas. O prestador é obrigado a trocá-la no primeiro acesso.
-                Use também quando ele esquecer a senha.
-              </p>
-            </form>
-          ) : (
-            <p className="text-xs text-gray-500">Somente administradores podem definir a senha do prestador.</p>
-          )}
-        </div>
       )}
 
       {units.map((unit) => (
@@ -182,6 +113,26 @@ function UnitAccess({ providerId, unit, canEdit, onChanged }: {
   const [email, setEmail] = useState(user?.email || unit.suggested_email || '');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [password, setPassword] = useState('');
+
+  const setProvisionalPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setFeedback(null);
+    try {
+      await fetchApi(`/providers/${providerId}/access/password`, {
+        method: 'POST',
+        body: JSON.stringify({ location_id: unit.location_id, password }),
+      });
+      setPassword('');
+      setFeedback({ type: 'ok', msg: 'Senha provisória definida. Entregue-a à unidade: ela troca no próximo acesso.' });
+      onChanged();
+    } catch (err: any) {
+      setFeedback({ type: 'err', msg: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const saveEmail = async (value: string) => {
     setSaving(true);
@@ -211,6 +162,11 @@ function UnitAccess({ providerId, unit, canEdit, onChanged }: {
         {unit.sgu_location_code && <span className="text-xs text-gray-400">{unit.sgu_location_code}</span>}
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${confirmed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
           {confirmed ? 'E-mail confirmado' : 'Aguardando o primeiro acesso'}
+        </span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+          !user?.has_password ? 'bg-gray-100 text-gray-600' : user.must_change_password ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+        }`}>
+          {!user?.has_password ? 'Sem senha' : user.must_change_password ? 'Senha provisória' : 'Senha definida pela unidade'}
         </span>
         {user && !user.is_active && (
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Acesso inativo</span>
@@ -291,6 +247,38 @@ function UnitAccess({ providerId, unit, canEdit, onChanged }: {
           )}
         </div>
       </div>
+
+      {canEdit && (
+        <form onSubmit={setProvisionalPassword} className="mt-4 flex flex-wrap items-end gap-3 border-t border-gray-100 pt-4">
+          <div className="min-w-64 flex-1">
+            <label htmlFor={`provisional-password-${unit.location_id}`} className="mb-1 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              <Lock className="h-4 w-4 text-gray-400" /> Nova senha provisória desta unidade
+            </label>
+            <PasswordInput
+              id={`provisional-password-${unit.location_id}`}
+              value={password}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Mínimo 8 caracteres"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#00995D] focus:outline-none focus:ring-2 focus:ring-[#00995D]/20"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            Definir senha provisória
+          </button>
+          <p className="w-full text-xs text-gray-500">
+            Vale só para esta unidade e encerra as sessões abertas dela. A unidade é obrigada a trocá-la no próximo acesso.
+            Use também quando ela esquecer a senha e não tiver e-mail cadastrado.
+          </p>
+        </form>
+      )}
     </div>
   );
 }

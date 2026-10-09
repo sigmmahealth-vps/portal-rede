@@ -521,9 +521,9 @@ async function startServer() {
 
   // ===== Login do prestador por CPF/CNPJ (spec 2026-10-06) =====
   // O documento identifica o prestador; cada unidade segue com o seu acesso (users).
-  // A senha é única por prestador: toda gravação passa por setProviderPassword.
-  // ponytail: a mesma senha fica replicada em N linhas de users (1 por unidade), não
-  // numa tabela própria; se um dia divergirem, o login aceita a de qualquer unidade.
+  // A senha é de cada unidade (decisão da Katy, 09/10/2026): a senha digitada define
+  // em quais unidades dá para entrar. A provisória carregada pela planilha nasce igual
+  // em todas, por isso o primeiro acesso ainda mostra a escolha de unidade.
   const onlyDigits = (s: string) => s.replace(/\D/g, '');
   const maskEmail = (e: string) => {
     const [u, d] = e.split('@');
@@ -546,7 +546,7 @@ async function startServer() {
   // após a senha. E-mail confirmado = a unidade já fez o primeiro acesso ('accepted').
   const accessUnits = async (providerId: number) => {
     const { rows } = await query(
-      `SELECT u.id AS user_id, u.email, u.invite_status,
+      `SELECT u.id AS user_id, u.email, u.invite_status, u.must_change_password,
               string_agg(concat_ws(' — ', NULLIF(pl.label, ''),
                            NULLIF(concat_ws(', ', NULLIF(pl.logradouro, ''), NULLIF(pl.bairro, ''), NULLIF(pl.cidade, '')), '')),
                          ' | ' ORDER BY pl.id) AS label,
@@ -565,6 +565,7 @@ async function startServer() {
         user_id: Number(r.user_id),
         label: r.label || 'Unidade',
         has_email: hasEmail,
+        must_change_password: !!r.must_change_password,
         email: hasEmail ? String(r.email) : null,
         suggested_email: suggested && EMAIL_RE.test(suggested) ? suggested : null,
       };
@@ -574,10 +575,9 @@ async function startServer() {
   const publicUnit = ({ email, ...u }: Awaited<ReturnType<typeof accessUnits>>[number]) =>
     ({ ...u, email_masked: email ? maskEmail(email) : null });
 
-  const setProviderPassword = (providerId: number, pwHash: string, mustChange: boolean) => query(
-    `UPDATE users SET password = $1, must_change_password = $2, session_version = session_version + 1
-      WHERE provider_id = $3 AND role = ANY($4)`,
-    [pwHash, mustChange, providerId, PROVIDER_ACCESS_ROLES]);
+  const setUnitPassword = (userId: number, pwHash: string, mustChange: boolean) => query(
+    `UPDATE users SET password = $1, must_change_password = $2, session_version = session_version + 1 WHERE id = $3`,
+    [pwHash, mustChange, userId]);
 
   async function adminRecipients(): Promise<NotifyRecipient[]> {
     const { rows } = await query(
@@ -779,24 +779,25 @@ async function startServer() {
         return res.status(429).json({ error: 'Muitas tentativas. Tente novamente em alguns minutos.' });
       }
       if (!isEmail) {
-        // Prestador: confere a senha (única) e devolve as unidades para a escolha.
+        // Prestador: a senha é de cada unidade — só entram na escolha as unidades em que
+        // a senha digitada confere (uids vai assinado no pre_token).
         // Sessão só sai em /api/auth/unit, depois do código no e-mail da unidade.
         const accesses = await providerAccessesByDoc(email);
-        const ok = typeof password === 'string'
-          && accesses.some((u) => u.password && bcrypt.compareSync(password, u.password));
-        if (!ok) {
+        const uids = typeof password === 'string'
+          ? accesses.filter((u) => u.password && bcrypt.compareSync(password, u.password)).map((u) => Number(u.id))
+          : [];
+        if (!uids.length) {
           await recordAccess(null, email || null, false, req);
           return res.status(401).json({ error: 'CPF/CNPJ ou senha incorretos.' });
         }
         const providerId = Number(accesses[0].provider_id);
-        const units = await accessUnits(providerId);
+        const units = (await accessUnits(providerId)).filter((u) => uids.includes(u.user_id));
         if (!units.length) {
           return res.status(403).json({ error: 'Seu acesso está sem unidade vinculada. Procure a Unimed.' });
         }
         return res.json({
           needs_unit: true,
-          pre_token: jwt.sign({ pid: providerId, doc: email }, PRE_LOGIN_SECRET, { expiresIn: '15m' }),
-          must_change_password: accesses.some((u) => u.must_change_password),
+          pre_token: jwt.sign({ pid: providerId, doc: email, uids }, PRE_LOGIN_SECRET, { expiresIn: '15m' }),
           units: units.map(publicUnit),
         });
       }
@@ -849,17 +850,16 @@ async function startServer() {
         return res.status(401).json({ error: 'Seu login expirou. Entre novamente.' });
       }
       const providerId = Number(pre.pid);
-      const units = await accessUnits(providerId);
+      // Só as unidades em que a senha conferiu no login.
+      const uids: number[] = Array.isArray(pre.uids) ? pre.uids.map(Number) : [];
+      const units = (await accessUnits(providerId)).filter((u) => uids.includes(u.user_id));
       const chosen = units.length === 1 ? units[0] : units.find((u) => u.user_id === Number(req.body?.user_id));
       if (!chosen) return res.status(400).json({ error: 'Selecione a unidade.' });
       const { rows } = await query('SELECT * FROM users WHERE id = $1', [chosen.user_id]);
       const user = rows[0] as any;
 
       // Valida tudo antes de gravar qualquer coisa.
-      const { rows: flag } = await query(
-        `SELECT bool_or(must_change_password) AS must FROM users WHERE provider_id = $1 AND is_active = true AND role = ANY($2)`,
-        [providerId, PROVIDER_ACCESS_ROLES]);
-      const mustChange = !!flag[0]?.must;
+      const mustChange = chosen.must_change_password;
       const newPassword = req.body?.new_password;
       if (mustChange) {
         if (typeof newPassword !== 'string' || !newPassword) {
@@ -879,8 +879,7 @@ async function startServer() {
       }
 
       if (mustChange) {
-        await setProviderPassword(providerId, await bcrypt.hash(newPassword, 10), false);
-        await auditLog({
+        await setUnitPassword(user.id, await bcrypt.hash(newPassword, 10), false);        await auditLog({
           query, userId: user.id, action: 'password_set',
           meta: { kind: 'first_access', provider_id: providerId }, ip: hashClientIp(req),
         });
@@ -986,13 +985,20 @@ async function startServer() {
       }
       await query('UPDATE otp_codes SET consumed_at = now() WHERE id = $1', [challenge.id]);
       // Código validado no e-mail informado: agora sim ele vira o e-mail da unidade
-      // (2FA e avisos). all_units = também em TODAS as demais unidades do prestador,
-      // inclusive as que já tinham outro e-mail (decisão da Katy, 09/10/2026).
+      // (2FA e avisos). all_units = também nas demais unidades em que a senha do login
+      // conferiu (uids do pre_token), inclusive as que já tinham outro e-mail (decisão
+      // da Katy, 09/10/2026). Unidade com outra senha fica de fora: quem tem o e-mail
+      // dela recebe o código e o link de redefinição, ou seja, entra nela.
       if (challenge.email) {
         await query(`UPDATE users SET email = $1, invite_status = 'accepted' WHERE id = $2`, [challenge.email, user.id]);
-        if (challenge.all_units && user.provider_id) {
-          const args = [challenge.email, user.provider_id, user.id, PROVIDER_ACCESS_ROLES];
-          const others = `provider_id = $2 AND id <> $3 AND is_active = true AND role = ANY($4)`;
+        let uids: number[] = [];
+        try {
+          const pre: any = jwt.verify(String(req.body?.pre_token ?? ''), PRE_LOGIN_SECRET);
+          if (Array.isArray(pre.uids)) uids = pre.uids.map(Number);
+        } catch { /* sem pre_token válido: o e-mail vale só para a unidade do código */ }
+        if (challenge.all_units && user.provider_id && uids.length) {
+          const args = [challenge.email, user.provider_id, user.id, PROVIDER_ACCESS_ROLES, uids];
+          const others = `provider_id = $2 AND id <> $3 AND is_active = true AND role = ANY($4) AND id = ANY($5::bigint[])`;
           const replaced = `email IS NOT NULL AND LOWER(email) <> LOWER($1)`;
           // Unidade que tinha outro e-mail: o dispositivo confiável e a sessão dela caem,
           // como na troca de e-mail pelo admin.
@@ -1079,11 +1085,13 @@ async function startServer() {
     }
   });
 
-  // Esqueci a senha — sempre responde { ok: true } para evitar enumeração de logins.
+  // Esqueci a senha — responde { ok: true } sem dizer se o login existe. Exceção aceita
+  // (Katy, 09/10/2026): CPF/CNPJ com mais de uma unidade devolve a lista de unidades
+  // (endereços comerciais, já públicos) para o prestador dizer de qual esqueceu a senha.
   // Rate-limit duplo (IP e login) usa access_logs como fonte de verdade.
-  // Equipe interna (e-mail): link de redefinição. Prestador (CPF/CNPJ): link só quando
-  // tem UM local com e-mail confirmado; com mais de um local — ou sem e-mail — o pedido
-  // vira aviso para os administradores, que definem nova senha provisória.
+  // Equipe interna (e-mail): link de redefinição. Prestador: link para o e-mail da
+  // unidade, que redefine só a senha dela; unidade sem e-mail confirmado vira aviso
+  // para os administradores, que definem nova senha provisória.
   app.post('/api/auth/forgot-password', async (req: any, res) => {
     try {
       const raw = req.body?.login ?? req.body?.email;
@@ -1094,11 +1102,13 @@ async function startServer() {
       if (!emailLc) return res.json({ ok: true });
 
       const ipOk = await checkRateLimit('', hashClientIp(req) ?? '', 'password_reset_requested', 60, 10);
-      const emailOk = await checkRateLimit(emailLc, '', 'password_reset_requested', 60, 5);
+      // 10 por hora: o prestador com mais de uma unidade faz dois pedidos (lista + unidade).
+      const emailOk = await checkRateLimit(emailLc, '', 'password_reset_requested', 60, 10);
       if (!ipOk || !emailOk) return res.json({ ok: true });
 
       let user: any = null;
       let askTeam: any = null;
+      let unitLabel: string | null = null;
       if (isEmail) {
         const { rows } = await query(
           'SELECT id, email, name FROM users WHERE LOWER(email) = $1 AND is_active = true AND provider_id IS NULL',
@@ -1106,9 +1116,24 @@ async function startServer() {
         );
         user = rows[0] ?? null;
       } else {
+        // Senha por unidade: com mais de uma, o prestador diz de qual esqueceu a senha.
         const accesses = await providerAccessesByDoc(emailLc);
-        if (accesses.length === 1 && accesses[0].email && accesses[0].invite_status === 'accepted') user = accesses[0];
-        else askTeam = accesses[0] ?? null;
+        let target = accesses[0] ?? null;
+        const units = accesses.length > 1 ? await accessUnits(Number(accesses[0].provider_id)) : [];
+        if (units.length > 1) {
+          const picked = units.find((u) => u.user_id === Number(req.body?.user_id));
+          if (!picked) {
+            await auditLog({
+              query, action: 'password_reset_requested',
+              meta: { exists: true, email: emailLc, step: 'units' }, ip: hashClientIp(req),
+            });
+            return res.json({ ok: true, units: units.map(({ user_id, label }) => ({ user_id, label })) });
+          }
+          target = accesses.find((a) => Number(a.id) === picked.user_id) ?? null;
+          unitLabel = picked.label;
+        }
+        if (target?.email && target.invite_status === 'accepted') user = target;
+        else askTeam = target;
       }
 
       // meta.email é a chave que o checkRateLimit por login conta.
@@ -1119,10 +1144,11 @@ async function startServer() {
       });
 
       if (askTeam) {
-        // dedupeRef por dia: no máximo um aviso por prestador × administrador por dia.
-        await notifyEvent('senha_solicitada', { provider_name: askTeam.name, provider_id: Number(askTeam.provider_id) },
+        // dedupeRef por dia: no máximo um aviso por unidade × administrador por dia.
+        await notifyEvent('senha_solicitada',
+          { provider_name: askTeam.name, provider_id: Number(askTeam.provider_id), unit_label: unitLabel },
           await adminRecipients(),
-          { providerId: Number(askTeam.provider_id), dedupeRef: `${askTeam.provider_id}:${new Date().toISOString().slice(0, 10)}` });
+          { providerId: Number(askTeam.provider_id), dedupeRef: `${askTeam.id}:${new Date().toISOString().slice(0, 10)}` });
         return res.json({ ok: true });
       }
       if (!user) return res.json({ ok: true });
@@ -1242,12 +1268,6 @@ async function startServer() {
         await client.query(
           `UPDATE users SET password = $1, invite_status = 'accepted', must_change_password = false, session_version = session_version + 1 WHERE id = $2`,
           [pwHash, matched.user_id],
-        );
-        // Senha única do prestador: replica nos demais acessos (equipe interna não tem provider_id).
-        await client.query(
-          `UPDATE users SET password = $1, must_change_password = false, session_version = session_version + 1
-            WHERE id <> $2 AND role = ANY($3) AND provider_id = (SELECT provider_id FROM users WHERE id = $2)`,
-          [pwHash, matched.user_id, PROVIDER_ACCESS_ROLES],
         );
         if (matched.kind === 'reset') {
           await client.query(`DELETE FROM trusted_devices WHERE user_id = $1`, [matched.user_id]);
@@ -2068,8 +2088,8 @@ async function startServer() {
   // === Gestão de Acessos do prestador (Tela 4 da spec) — 1 acesso por UNIDADE ===
   // Desde a migration 0035 o acesso é do par (prestador, endereço): cada unidade
   // comercial tem seu próprio acesso, e o portal do prestador só mostra a dela.
-  // Desde a 0057 o login é o CPF/CNPJ com senha única do prestador; o que é de cada
-  // unidade é o e-mail (2FA e avisos), cadastrado por ela no primeiro acesso.
+  // Desde a 0057 o login é o CPF/CNPJ; a senha e o e-mail (2FA e avisos) são de cada
+  // unidade — o e-mail é cadastrado por ela no primeiro acesso.
   const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
   // Unidades comerciais do prestador, cada uma com o seu acesso (ou null).
@@ -2077,7 +2097,8 @@ async function startServer() {
     const { rows } = await query(
       `SELECT pl.id AS location_id, pl.label, pl.logradouro, pl.cidade, pl.uf, pl.sgu_location_code,
               LOWER(TRIM(pl.email)) AS cadastro_email,
-              u.id, u.name, u.email, u.role, u.is_active, u.last_login_at, u.last_login_ip, u.invite_status
+              u.id, u.name, u.email, u.role, u.is_active, u.last_login_at, u.last_login_ip, u.invite_status,
+              (u.password IS NOT NULL) AS has_password, u.must_change_password
          FROM provider_locations pl
          LEFT JOIN user_locations ul ON ul.location_id = pl.id
          LEFT JOIN users u ON u.id = ul.user_id AND u.role = ANY($2)
@@ -2093,6 +2114,7 @@ async function startServer() {
       user: r.id ? {
         id: Number(r.id), name: r.name, email: r.email, role: r.role, is_active: r.is_active,
         last_login_at: r.last_login_at, last_login_ip: r.last_login_ip, invite_status: r.invite_status,
+        has_password: !!r.has_password, must_change_password: !!r.must_change_password,
       } : null,
     }));
   }
@@ -2124,20 +2146,15 @@ async function startServer() {
             AND NOT EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id = u.id)
           ORDER BY id`,
         [req.params.id, PROVIDER_ACCESS_ROLES]);
-      const { rows: pw } = await query(
-        `SELECT COALESCE(bool_or(password IS NOT NULL), false) AS has_password,
-                COALESCE(bool_or(must_change_password), false) AS must_change_password
-           FROM users WHERE provider_id = $1 AND role = ANY($2) AND is_active = true`,
-        [req.params.id, PROVIDER_ACCESS_ROLES]);
-      res.json({ provider_name: provRows[0].name, units, orphans, ...pw[0] });
+      res.json({ provider_name: provRows[0].name, units, orphans });
     } catch (err: any) {
       console.error('GET /providers/:id/access:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Garante 1 acesso por unidade comercial (sem senha própria nem e-mail: a senha é a
-  // do prestador e o e-mail é cadastrado pela unidade no primeiro acesso).
+  // Garante 1 acesso por unidade comercial. Nasce sem senha nem e-mail: o admin define
+  // a senha provisória e a unidade cadastra o e-mail no primeiro acesso.
   async function ensureUnitAccesses(providerId: string) {
     const { rows: provRows } = await query('SELECT id, name, person_type, provider_group FROM providers WHERE id = $1', [providerId]);
     if (!provRows[0]) return null;
@@ -2146,9 +2163,8 @@ async function startServer() {
       if (unit.user) continue;
       const { rows: created } = await query(
         `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
-         VALUES ($1, NULL, (SELECT password FROM users WHERE provider_id = $3 AND role = ANY($4) AND password IS NOT NULL LIMIT 1),
-                 $2, $3, true, 'pending') RETURNING id`,
-        [provRows[0].name, role, providerId, PROVIDER_ACCESS_ROLES]);
+         VALUES ($1, NULL, NULL, $2, $3, true, 'pending') RETURNING id`,
+        [provRows[0].name, role, providerId]);
       await query(
         `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
         [created[0].id, unit.location_id, Number(providerId)]);
@@ -2156,18 +2172,20 @@ async function startServer() {
     return provRows[0];
   }
 
-  // Define a senha provisória do prestador (vale para todas as unidades). Só admin.
-  // O prestador é obrigado a trocá-la no primeiro acesso; sessões abertas caem.
+  // Define a senha provisória de uma unidade do prestador. Só admin.
+  // A unidade é obrigada a trocá-la no próximo acesso; as sessões abertas dela caem.
   app.post('/api/providers/:id/access/password', authenticate, requireAdmin, async (req: any, res) => {
     try {
       const providerId = req.params.id;
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
       if (password.length < 8) return res.status(400).json({ error: 'A senha deve ter ao menos 8 caracteres.' });
       if (!await ensureUnitAccesses(providerId)) return res.status(404).json({ error: 'Prestador não encontrado' });
-      await setProviderPassword(Number(providerId), await bcrypt.hash(password, 10), true);
+      const unit = await resolveUnit(providerId, req.body?.location_id);
+      if (!unit?.user) return res.status(400).json({ error: 'Informe a unidade (location_id) do acesso.' });
+      await setUnitPassword(unit.user.id, await bcrypt.hash(password, 10), true);
       await auditLog({
         query, userId: req.user.id, action: 'provider_password_set',
-        meta: { provider_id: Number(providerId), provisional: true },
+        meta: { provider_id: Number(providerId), location_id: unit.location_id, user_id: unit.user.id, provisional: true },
         ip: hashClientIp(req),
       });
       res.json({ ok: true, units: await providerUnits(providerId) });

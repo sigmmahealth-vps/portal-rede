@@ -4,7 +4,7 @@ import { AlertCircle, X, Eye, EyeOff } from 'lucide-react';
 import PasswordInput from '../components/PasswordInput';
 
 // Unidade do prestador devolvida pelo login por CPF/CNPJ (1 acesso por unidade).
-interface LoginUnit { user_id: number; label: string; has_email: boolean; email_masked: string | null; suggested_email: string | null; }
+interface LoginUnit { user_id: number; label: string; has_email: boolean; must_change_password: boolean; email_masked: string | null; suggested_email: string | null; }
 
 export default function Login() {
   const [email, setEmail] = useState(''); // CPF/CNPJ (prestador) ou e-mail (equipe interna)
@@ -17,7 +17,8 @@ export default function Login() {
   const [credenciamentoLoading, setCredenciamentoLoading] = useState(false);
   const [step, setStep] = useState<'password' | 'unit' | 'otp'>('password');
   // Etapa 'unit' (só prestador): escolha da unidade e, no primeiro acesso, nova senha e e-mail da unidade.
-  const [pre, setPre] = useState<{ pre_token: string; must_change_password: boolean; units: LoginUnit[] } | null>(null);
+  // units = só as unidades em que a senha digitada confere (a senha é de cada unidade).
+  const [pre, setPre] = useState<{ pre_token: string; units: LoginUnit[] } | null>(null);
   const [unitId, setUnitId] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [newPassword2, setNewPassword2] = useState('');
@@ -32,6 +33,7 @@ export default function Login() {
 
   const selectedUnit = pre?.units.find((u) => u.user_id === unitId) ?? null;
   const needsEmail = !!selectedUnit && !selectedUnit.has_email;
+  const mustChange = !!selectedUnit?.must_change_password;
   const hasOtherUnits = !!pre && pre.units.length > 1;
 
   const selectUnit = (u: LoginUnit) => {
@@ -69,7 +71,7 @@ export default function Login() {
     e.preventDefault();
     if (!pre) return;
     setError('');
-    if (pre.must_change_password && newPassword !== newPassword2) {
+    if (mustChange && newPassword !== newPassword2) {
       setError('As senhas não conferem.');
       return;
     }
@@ -78,7 +80,7 @@ export default function Login() {
       await enterUnit({
         pre_token: pre.pre_token,
         user_id: unitId,
-        new_password: pre.must_change_password ? newPassword : undefined,
+        new_password: mustChange ? newPassword : undefined,
         email: needsEmail ? unitEmail : undefined,
         all_units: needsEmail && allUnits,
       });
@@ -149,7 +151,7 @@ export default function Login() {
       if (data.needs_unit) {
         const units: LoginUnit[] = data.units;
         // Nada a escolher nem a cadastrar: segue direto para o código.
-        if (!data.must_change_password && units.length === 1 && units[0].has_email) {
+        if (units.length === 1 && units[0].has_email && !units[0].must_change_password) {
           await enterUnit({ pre_token: data.pre_token, user_id: units[0].user_id });
         } else {
           setPre(data);
@@ -175,7 +177,7 @@ export default function Login() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ challenge_id: challengeId, code, trust_device: trustDevice }),
+        body: JSON.stringify({ challenge_id: challengeId, code, trust_device: trustDevice, pre_token: pre?.pre_token }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Código inválido');
@@ -222,7 +224,7 @@ export default function Login() {
             <h2 className="text-2xl font-bold text-[#00995D]">Acesso</h2>
             <p className="text-sm text-gray-500 mt-1">
               {step === 'unit'
-                ? (pre?.must_change_password ? 'Primeiro acesso: defina a senha e a unidade' : 'Escolha a unidade para continuar')
+                ? (pre?.units.some((u) => u.must_change_password) ? 'Primeiro acesso: escolha a unidade e defina a senha dela' : 'Escolha a unidade para continuar')
                 : step === 'otp' ? 'Confirme o código enviado por e-mail'
                 : 'Use seu CPF/CNPJ e senha para entrar'}
             </p>
@@ -318,25 +320,6 @@ export default function Login() {
               </div>
             )}
 
-            {pre.must_change_password && (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600">
-                  Você entrou com a senha provisória. Crie a senha definitiva do prestador — ela vale para todas as unidades.
-                </p>
-                <div>
-                  <label htmlFor="new-password" className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
-                  <PasswordInput id="new-password" required autoComplete="new-password" value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)} className="block w-full px-4 py-3 bg-[#f0f0f0] border border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-[#00995D] focus:border-transparent transition-colors sm:text-sm" />
-                </div>
-                <div>
-                  <label htmlFor="new-password2" className="block text-sm font-medium text-gray-700 mb-1">Confirmar nova senha</label>
-                  <PasswordInput id="new-password2" required autoComplete="new-password" value={newPassword2}
-                    onChange={(e) => setNewPassword2(e.target.value)} className="block w-full px-4 py-3 bg-[#f0f0f0] border border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-[#00995D] focus:border-transparent transition-colors sm:text-sm" />
-                </div>
-                <p className="text-xs text-gray-500">Mínimo de 8 caracteres, com letra maiúscula, minúscula, número e símbolo.</p>
-              </div>
-            )}
-
             {pre.units.length > 1 && (
               <fieldset>
                 <legend className="block text-sm font-medium text-gray-700 mb-2">Unidade</legend>
@@ -357,6 +340,25 @@ export default function Login() {
                   ))}
                 </div>
               </fieldset>
+            )}
+
+            {mustChange && (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">
+                  Você entrou com a senha provisória. Crie a senha definitiva desta unidade — cada unidade tem a própria senha.
+                </p>
+                <div>
+                  <label htmlFor="new-password" className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
+                  <PasswordInput id="new-password" required autoComplete="new-password" value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)} className="block w-full px-4 py-3 bg-[#f0f0f0] border border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-[#00995D] focus:border-transparent transition-colors sm:text-sm" />
+                </div>
+                <div>
+                  <label htmlFor="new-password2" className="block text-sm font-medium text-gray-700 mb-1">Confirmar nova senha</label>
+                  <PasswordInput id="new-password2" required autoComplete="new-password" value={newPassword2}
+                    onChange={(e) => setNewPassword2(e.target.value)} className="block w-full px-4 py-3 bg-[#f0f0f0] border border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-[#00995D] focus:border-transparent transition-colors sm:text-sm" />
+                </div>
+                <p className="text-xs text-gray-500">Mínimo de 8 caracteres, com letra maiúscula, minúscula, número e símbolo.</p>
+              </div>
             )}
 
             {needsEmail && (

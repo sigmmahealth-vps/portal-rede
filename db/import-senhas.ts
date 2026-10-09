@@ -1,7 +1,8 @@
 // Carrega as senhas provisórias dos prestadores a partir da planilha da Unimed
-// (colunas "Código do prestador", "CPF/CNPJ" e "senha"). A senha vale para todos os
-// acessos do prestador e nasce com troca obrigatória no primeiro acesso (0057).
-// Nunca imprime senha. Prestador que já trocou a senha é pulado, salvo --overwrite.
+// (colunas "Código do prestador", "CPF/CNPJ" e "senha"). A senha é de cada unidade: a
+// provisória da planilha entra em todas as unidades do prestador que ainda não têm
+// senha própria, com troca obrigatória no primeiro acesso (0057).
+// Nunca imprime senha. Unidade que já trocou a senha é preservada, salvo --overwrite.
 // Pré-requisito: acessos criados (npm run db:provision-users).
 //
 // Uso: [APP_ENV=dev] npm run db:import-senhas -- "<planilha.xlsx>" [--commit] [--overwrite]
@@ -42,21 +43,21 @@ async function main() {
   const { rows: provs } = await query(
     `SELECT p.id, p.sgu_code, COALESCE(p.cnpj, p.cpf) AS doc,
             count(u.id)::int AS accesses,
-            COALESCE(bool_or(u.password IS NOT NULL AND NOT u.must_change_password), false) AS own_password
+            COALESCE(bool_and(u.password IS NOT NULL AND NOT u.must_change_password), false) AS own_password
        FROM providers p
        LEFT JOIN users u ON u.provider_id = p.id AND u.is_active = true AND u.role = ANY($1)
       GROUP BY p.id`, [PROVIDER_ACCESS_ROLES]);
   const byDoc = new Map(provs.map((p: any) => [p.doc, p]));
 
   const toSet: { id: number; password: string }[] = [];
-  const skipped: Record<string, string[]> = { 'fora do banco': [], 'código não bate com o documento': [], 'sem acesso criado': [], 'senha curta (< 8)': [], 'já trocou a senha': [] };
+  const skipped: Record<string, string[]> = { 'fora do banco': [], 'código não bate com o documento': [], 'sem acesso criado': [], 'senha curta (< 8)': [], 'todas as unidades já trocaram a senha': [] };
   for (const it of items) {
     const p: any = byDoc.get(it.doc);
     if (!p) skipped['fora do banco'].push(it.code);
     else if (p.sgu_code !== it.code) skipped['código não bate com o documento'].push(it.code);
     else if (!p.accesses) skipped['sem acesso criado'].push(it.code);
     else if (it.password.length < 8) skipped['senha curta (< 8)'].push(it.code);
-    else if (p.own_password && !OVERWRITE) skipped['já trocou a senha'].push(it.code);
+    else if (p.own_password && !OVERWRITE) skipped['todas as unidades já trocaram a senha'].push(it.code);
     else toSet.push({ id: Number(p.id), password: it.password });
   }
 
@@ -74,8 +75,8 @@ async function main() {
   for (const s of toSet) {
     const r = await query(
       `UPDATE users SET password = $1, must_change_password = true, session_version = session_version + 1
-        WHERE provider_id = $2 AND role = ANY($3)`,
-      [await bcrypt.hash(s.password, 10), s.id, PROVIDER_ACCESS_ROLES]);
+        WHERE provider_id = $2 AND role = ANY($3) AND ($4 OR password IS NULL OR must_change_password)`,
+      [await bcrypt.hash(s.password, 10), s.id, PROVIDER_ACCESS_ROLES, OVERWRITE]);
     users += r.rowCount ?? 0;
   }
   console.log(`[import-senhas] concluído: ${toSet.length} prestadores, ${users} acessos com senha provisória.`);

@@ -153,9 +153,9 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       return { title: `Ciclo encerrado - Avaliação não concluída${ctx.cycle_label ? ` (${ctx.cycle_label})` : ''}`,
                body: 'O ciclo de qualificação da Rede de Prestadores foi encerrado e identificamos que sua avaliação não foi concluída dentro do prazo estabelecido. Por esse motivo, a avaliação deste ciclo permanecerá registrada como não concluída.', link };
     case 'senha_solicitada':
-      // Esqueci minha senha de prestador com mais de um local ou sem e-mail confirmado (spec 2026-10-06).
+      // Esqueci minha senha de unidade sem e-mail confirmado (senha por unidade, 2026-10-09).
       return { title: `Redefinição de senha solicitada${ctx.provider_name ? ` — ${ctx.provider_name}` : ''}`,
-               body: 'O prestador pediu a redefinição da senha de acesso ao portal. Confirme a identidade de quem pediu e defina uma nova senha provisória na aba Acessos do cadastro.', link };
+               body: `O prestador pediu a redefinição da senha de acesso ao portal${ctx.unit_label ? ` da unidade ${ctx.unit_label}` : ''}. Confirme a identidade de quem pediu e defina uma nova senha provisória para essa unidade na aba Acessos do cadastro.`, link };
     default:
       return { title: String(type), body: '', link };
   }

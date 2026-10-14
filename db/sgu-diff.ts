@@ -81,8 +81,9 @@ async function main() {
       + `unidades ${report.unidades.length}, afastamentos ${report.afastamentos.length}`;
     await query(
       `INSERT INTO sgu_sync_runs (source, status, message, raw_loaded_at, report, finished_at)
-       VALUES ('sgu-raw-diff', 'success', $1, $2, $3, now())`,
-      [message, dhCarga, JSON.stringify({ ...report, manuais })]);
+       -- direto do banco: o Date do JS corta os microssegundos da dh_carga
+       VALUES ('sgu-raw-diff', 'success', $1, (SELECT max(dh_carga) FROM sgu_providers_raw), $2, now())`,
+      [message, JSON.stringify({ ...report, manuais })]);
     console.log(`\n✔ Registrado em sgu_sync_runs: ${message}`);
   } catch (err: any) {
     await query(

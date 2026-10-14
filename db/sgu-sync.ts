@@ -6,7 +6,12 @@ import 'dotenv/config';
 import { deriveProviderRole } from './provider-role.js';
 import { type ParsedLocation } from './providers-parser.js';
 import { type TabelaProvider } from './tabela-parser.js';
-import { type PlanoSync } from './sgu-sync-plan.js';
+import { pathToFileURL } from 'node:url';
+import { pool, query, withTransaction } from './db.js';
+import { pickDatabaseUrl } from './resolveDbUrl.js';
+import { dataCivil, diffProviders } from './sgu-raw.js';
+import { lerPortal } from './sgu-diff.js';
+import { checarTravas, planejarSync, type PlanoSync, type PortalPrestadorSync } from './sgu-sync-plan.js';
 
 export interface Consulta {
   query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number | null }>;
@@ -135,4 +140,106 @@ export async function suspenderERestaurar(c: Consulta): Promise<{ suspensas: num
        AND ei.status = 'suspensa' AND ${PRESTADOR_ATIVO_SQL}
        AND COALESCE((SELECT pl.active FROM provider_locations pl WHERE pl.id = ei.location_id), true)`);
   return { suspensas: s.rowCount ?? 0, restauradas: r.rowCount ?? 0 };
+}
+
+async function lerPortalSync(c: Consulta): Promise<PortalPrestadorSync[]> {
+  const { rows } = await c.query(`
+    SELECT p.id, p.sgu_code, p.status,
+           COALESCE((SELECT json_agg(json_build_object('id', l.id, 'sgu_location_code', l.sgu_location_code,
+                                                       'active', l.active))
+                       FROM provider_locations l WHERE l.provider_id = p.id), '[]'::json) AS locations
+      FROM providers p
+     WHERE p.source = 'sgu'`);
+  return rows.map((r) => ({
+    id: Number(r.id), sgu_code: r.sgu_code, status: r.status,
+    locations: r.locations.map((l: any) => ({ id: Number(l.id), sgu_location_code: l.sgu_location_code, active: l.active })),
+  }));
+}
+
+// FOR-NNN → id do roteiro (o mais recente vence), como no import-tabela.
+async function scriptPorRoteiro(c: Consulta): Promise<Map<string, number>> {
+  const { rows } = await c.query('SELECT id, source_file FROM eval_scripts ORDER BY id');
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const f = /FOR-(\d+)/i.exec(r.source_file ?? '');
+    if (f) m.set(`FOR-${f[1]}`, Number(r.id));
+  }
+  return m;
+}
+
+export type ResultadoSync = {
+  status: 'aplicado' | 'simulado' | 'sem_carga_nova' | 'ocupado';
+  message: string;
+  plano?: PlanoSync;
+  gravado?: Gravado & { suspensas: number; restauradas: number };
+};
+
+// forcar=false (job): só aplica carga ainda não tentada — sucesso ou erro na mesma dh_carga encerra.
+// forcar=true (comando manual): aplica sempre.
+export async function rodarSguSync(opts: { commit: boolean; forcar: boolean }): Promise<ResultadoSync> {
+  let carga: string | null = null;
+  try {
+    return await withTransaction(async (c): Promise<ResultadoSync> => {
+      const { rows: [lock] } = await c.query(`SELECT pg_try_advisory_xact_lock(hashtext('sgu-sync')) AS ok`);
+      if (!lock.ok) return { status: 'ocupado', message: 'outra execução em andamento' };
+      const { rows: raw } = await c.query(
+        `SELECT *, dh_carga::text AS dh_carga_txt FROM sgu_providers_raw
+          ORDER BY codigo_prestador, codigo_tipo_endereco, especialidade_grupo_servico`);
+      carga = raw[0]?.dh_carga_txt ?? null;
+      if (!opts.forcar && carga) {
+        const { rows: [ult] } = await c.query(
+          `SELECT raw_loaded_at::text AS t, status FROM sgu_sync_runs
+            WHERE source = 'sgu-sync' AND raw_loaded_at IS NOT NULL ORDER BY id DESC LIMIT 1`);
+        if (ult?.t === carga) return { status: 'sem_carga_nova', message: `carga ${carga} já processada (${ult.status})` };
+      }
+      const plano = planejarSync(raw, await lerPortalSync(c));
+      const trava = checarTravas(raw, plano);
+      if (trava) throw new Error(trava);
+      const resumo = `novos ${plano.inserir.length}, atualizados ${plano.atualizar.length}, `
+        + `excluídos por ausência ${plano.excluirPorAusencia.length}, unidades novas ${plano.unidadesNovas.length}, `
+        + `unidades inativadas ${plano.unidadesInativar.length}, ignorados `
+        + `${plano.ignorados.excluido_novo.length + plano.ignorados.grupo_27.length}`;
+      if (!opts.commit) return { status: 'simulado', message: resumo, plano };
+
+      const diff = diffProviders(raw, await lerPortal(), dataCivil(new Date())!);
+      const gravado = { ...(await executarPlano(c, plano, await scriptPorRoteiro(c))), ...(await suspenderERestaurar(c)) };
+      const message = `${resumo}; avaliações suspensas ${gravado.suspensas}, restauradas ${gravado.restauradas}`;
+      await c.query(
+        `INSERT INTO sgu_sync_runs (source, status, raw_loaded_at, providers_upserted, locations_upserted, message, report, finished_at)
+         VALUES ('sgu-sync', 'success', $1::timestamp, $2, $3, $4, $5, now())`,
+        [carga, gravado.criados + gravado.atualizados, gravado.unidades_criadas + gravado.unidades_atualizadas,
+         message, JSON.stringify({ diff, gravado, ignorados: plano.ignorados })]);
+      return { status: 'aplicado', message, plano, gravado };
+    });
+  } catch (err: any) {
+    if (opts.commit) {
+      await query(
+        `INSERT INTO sgu_sync_runs (source, status, raw_loaded_at, message, finished_at)
+         VALUES ('sgu-sync', 'error', $1::timestamp, $2, now())`,
+        [carga, String(err?.message ?? err)]).catch(() => {});
+    }
+    throw err;
+  }
+}
+
+async function main() {
+  const commit = process.argv.includes('--commit');
+  const url = pickDatabaseUrl();
+  console.log(`APP_ENV=${process.env.APP_ENV ?? '(vazio)'} | banco: ${url ? new URL(url).host : '(vazio)'} | ${commit ? 'COMMIT' : 'DRY-RUN'}`);
+  try {
+    const r = await rodarSguSync({ commit, forcar: true });
+    console.log(`${r.status}: ${r.message}`);
+    if (r.plano) {
+      console.log(`ignorados: EXCLUÍDO novo ${r.plano.ignorados.excluido_novo.length}, grupo 27 ${r.plano.ignorados.grupo_27.length}`);
+      console.log(`ativos que viram excluídos: ${r.plano.ativosQueSaem} de ${r.plano.ativos}`);
+    }
+    if (r.gravado) console.log(JSON.stringify(r.gravado));
+    if (!commit) console.log('Dry-run: nada gravado. Para aplicar: --commit');
+  } finally {
+    await pool.end();
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.error(e); process.exit(1); });
 }

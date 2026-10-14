@@ -1,4 +1,6 @@
 /**
+ * LEGADO desde 14/10/2026: a fonte do cadastro é a sgu_providers_raw (db/sgu-sync.ts).
+ * Não rodar depois do db:sgu-rekey (recriaria unidades com código posicional).
  * Recarga de prestadores a partir da aba `tabela` de Prestadores Portal.xlsx.
  * Upsert idempotente (ON CONFLICT por sgu_code / sgu_location_code) numa transação —
  * preserva providers.id e provider_locations.id entre execuções, evitando orfanar vínculos.

@@ -11,7 +11,7 @@ import { diffProviders, dataCivil, type DiffReport, type PortalProvider, type Sg
 
 const LISTA = 15;
 
-async function lerPortal(): Promise<PortalProvider[]> {
+export async function lerPortal(): Promise<PortalProvider[]> {
   const { rows } = await query<PortalProvider>(`
     SELECT p.sgu_code, p.name, p.trade_name, p.cnpj, p.cpf, p.status, p.provider_type, p.provider_group,
            p.specialties, p.responsavel_tecnico, p.roteiro_cod,

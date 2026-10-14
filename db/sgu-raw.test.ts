@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseTabela } from './tabela-parser.js';
 import {
   rawToTabelaRows, addrKey, tipoEnderecoPorChave, dataCivil, afastamentoPorPrestador,
-  type SguRawRow,
+  type SguRawRow, diffProviders, type PortalProvider,
 } from './sgu-raw.js';
 
 const HOJE = '2026-10-14';
@@ -80,4 +80,65 @@ test('afastamentoPorPrestador classifica as cinco situações', () => {
   assert.equal(m.get('4')!.situacao, 'afastamento_encerrado');
   assert.equal(m.get('5')!.situacao, 'vigente');
   assert.equal(m.get('6')!.situacao, 'inconsistente'); // ATIVO com exclusão já passada
+});
+
+// Retrato do Portal idêntico ao que a raw geraria — base "sem diferença".
+function portalDe(rows: SguRawRow[], extra: Partial<PortalProvider> = {}): PortalProvider[] {
+  return parseTabela(rawToTabelaRows(rows)).providers.map((s) => ({
+    sgu_code: s.sgu_code, name: s.name, trade_name: s.trade_name, cnpj: s.cnpj, cpf: s.cpf,
+    status: s.status, provider_type: s.provider_type, provider_group: s.provider_group,
+    specialties: s.specialties, responsavel_tecnico: s.responsavel_tecnico, roteiro_cod: s.roteiro_cod,
+    tem_avaliacao: false,
+    locations: s.locations.map(({ cep, logradouro, numero, complemento, bairro, cidade, uf, phone, email, in_medical_guide }) =>
+      ({ cep, logradouro, numero, complemento, bairro, cidade, uf, phone, email, in_medical_guide })),
+    ...extra,
+  }));
+}
+
+test('diff: mesma base não gera diferença', () => {
+  const r = diffProviders([raw()], portalDe([raw()]), HOJE);
+  assert.deepEqual([r.novos, r.ausentes, r.alterados, r.unidades, r.afastamentos], [[], [], [], [], []]);
+});
+
+test('diff: novo e ausente (com avaliação)', () => {
+  const r = diffProviders(
+    [raw(), raw({ codigo_prestador: '2000001', nome_prestador: 'NOVO', status_prestador: 'EXCLUÍDO' })],
+    [...portalDe([raw()]), ...portalDe([raw({ codigo_prestador: '3000001', nome_prestador: 'SUMIU' })], { tem_avaliacao: true })],
+    HOJE);
+  assert.deepEqual(r.novos.map((n) => [n.sgu_code, n.status]), [['2000001', 'excluído']]);
+  assert.deepEqual(r.ausentes, [{ sgu_code: '3000001', name: 'SUMIU', status: 'ativo', tem_avaliacao: true }]);
+});
+
+test('diff: campo alterado aparece com antes/depois; especialidades reordenadas e caixa não contam', () => {
+  const rows = [raw(), raw({ especialidade_grupo_servico: 'CLINICA MEDICA' })];
+  const [p] = portalDe(rows, { name: 'Sergio Luiz Bortoluzzi', specialties: ['CLINICA MEDICA', 'ANESTESIOLOGIA'], status: 'afastado' });
+  const r = diffProviders(rows, [p], HOJE);
+  assert.deepEqual(r.alterados, [{
+    sgu_code: '1000546', name: 'SERGIO LUIZ BORTOLUZZI',
+    campos: [{ campo: 'status', portal: 'afastado', sgu: 'ativo' }],
+  }]);
+});
+
+test('diff: unidade nova (com codigo_tipo_endereco), removida e alterada', () => {
+  const rows = [raw({ email_principal: 'novo@x.com' }),
+    raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' })];
+  const [p] = portalDe([raw({ email_principal: 'antigo@x.com' })]);
+  p.locations.push({ ...p.locations[0], logradouro: 'RUA VELHA', numero: '1' });
+  const r = diffProviders(rows, [p], HOJE);
+  assert.equal(r.unidades.length, 1);
+  const u = r.unidades[0];
+  assert.deepEqual(u.novas.map((l) => [l.logradouro, l.codigo_tipo_endereco]), [['RUA B', '3']]);
+  assert.deepEqual(u.removidas.map((l) => l.logradouro), ['RUA VELHA']);
+  assert.deepEqual(u.alteradas.map((a) => a.campos), [[{ campo: 'email', portal: 'antigo@x.com', sgu: 'novo@x.com' }]]);
+  assert.equal(u.alteradas[0].codigo_tipo_endereco, '2');
+});
+
+test('diff: afastamentos só de quem está no Portal e com situação diferente de nenhum', () => {
+  const afastado = raw({ status_prestador: 'AFASTADO', tipo_operacao_afastamento_exclusao: 'AFASTAMENTO',
+    data_inicio_afastamento_exclusao: new Date(2026, 0, 28) });
+  const agendado = raw({ codigo_prestador: '7', tipo_operacao_afastamento_exclusao: 'EXCLUSAO',
+    data_inicio_afastamento_exclusao: new Date(2026, 10, 1) });
+  const r = diffProviders([afastado, agendado, raw({ codigo_prestador: '8' })],
+    portalDe([afastado, agendado, raw({ codigo_prestador: '8' })]), HOJE);
+  assert.deepEqual(r.afastamentos.map((a) => [a.sgu_code, a.situacao]), [['1000546', 'vigente'], ['7', 'exclusao_agendada']]);
 });

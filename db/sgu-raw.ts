@@ -1,7 +1,7 @@
 // Leitura da sgu_providers_raw (extração do SGU carregada pela Unimed no banco do Portal)
 // e comparação com o cadastro de prestadores. Puro, sem banco — o CLI é db/sgu-diff.ts.
-import { clean, onlyDigits } from './providers-parser.js';
-import { type TabelaRow } from './tabela-parser.js';
+import { clean, onlyDigits, type ParsedLocation } from './providers-parser.js';
+import { parseTabela, type TabelaProvider, type TabelaRow } from './tabela-parser.js';
 
 export type SguRawRow = Record<string, unknown>;
 
@@ -95,4 +95,111 @@ export function afastamentoPorPrestador(rows: SguRawRow[], hoje: string): Map<st
     });
   }
   return out;
+}
+
+export interface PortalLocation {
+  cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null;
+  bairro: string | null; cidade: string | null; uf: string | null; phone: string | null; email: string | null;
+  in_medical_guide: boolean;
+}
+
+export interface PortalProvider {
+  sgu_code: string; name: string; trade_name: string | null; cnpj: string | null; cpf: string | null;
+  status: string | null; provider_type: string | null; provider_group: string | null;
+  specialties: string[]; responsavel_tecnico: string | null; roteiro_cod: string | null;
+  tem_avaliacao: boolean; locations: PortalLocation[];
+}
+
+export interface CampoDiff { campo: string; portal: unknown; sgu: unknown }
+
+export interface DiffReport {
+  novos: { sgu_code: string; name: string; status: string; provider_group: string | null;
+           roteiro_cod: string | null; unidades: number; afastamento: Afastamento | null }[];
+  ausentes: { sgu_code: string; name: string; status: string | null; tem_avaliacao: boolean }[];
+  alterados: { sgu_code: string; name: string; campos: CampoDiff[] }[];
+  unidades: { sgu_code: string; name: string;
+              novas: (PortalLocation & { codigo_tipo_endereco: string | null })[];
+              removidas: PortalLocation[];
+              alteradas: { endereco: string; codigo_tipo_endereco: string | null; campos: CampoDiff[] }[] }[];
+  afastamentos: ({ sgu_code: string; name: string } & Afastamento)[];
+  avisos: string[];
+}
+
+const txt = (v: unknown) => clean(v).toUpperCase();
+const mesmoTexto = (a: unknown, b: unknown) => txt(a) === txt(b);
+const mesmosDigitos = (a: unknown, b: unknown) => onlyDigits(a) === onlyDigits(b);
+const mesmoConjunto = (a: unknown, b: unknown) => {
+  const n = (x: unknown) => [...new Set((x as string[] ?? []).map(txt).filter(Boolean))].sort().join('|');
+  return n(a) === n(b);
+};
+
+type Campo = [string, (p: PortalProvider) => unknown, (s: TabelaProvider) => unknown, (a: unknown, b: unknown) => boolean];
+const CAMPOS: Campo[] = [
+  ['name', (p) => p.name, (s) => s.name, mesmoTexto],
+  ['trade_name', (p) => p.trade_name, (s) => s.trade_name, mesmoTexto],
+  ['cnpj', (p) => p.cnpj, (s) => s.cnpj, mesmosDigitos],
+  ['cpf', (p) => p.cpf, (s) => s.cpf, mesmosDigitos],
+  ['status', (p) => p.status, (s) => s.status, mesmoTexto],
+  ['provider_type', (p) => p.provider_type, (s) => s.provider_type, mesmoTexto],
+  ['provider_group', (p) => p.provider_group, (s) => s.provider_group, mesmoTexto],
+  ['specialties', (p) => p.specialties, (s) => s.specialties, mesmoConjunto],
+  ['responsavel_tecnico', (p) => p.responsavel_tecnico, (s) => s.responsavel_tecnico, mesmoTexto],
+  ['roteiro_cod', (p) => p.roteiro_cod, (s) => s.roteiro_cod, mesmoTexto],
+];
+
+const CAMPOS_UNIDADE = ['complemento', 'bairro', 'cidade', 'uf', 'phone', 'email'] as const;
+
+const unidade = (l: ParsedLocation): PortalLocation => ({
+  cep: l.cep, logradouro: l.logradouro, numero: l.numero, complemento: l.complemento, bairro: l.bairro,
+  cidade: l.cidade, uf: l.uf, phone: l.phone, email: l.email, in_medical_guide: l.in_medical_guide,
+});
+
+export function diffProviders(raw: SguRawRow[], portal: PortalProvider[], hoje: string): DiffReport {
+  const { providers: sgu, warnings } = parseTabela(rawToTabelaRows(raw));
+  const afast = afastamentoPorPrestador(raw, hoje);
+  const tipos = tipoEnderecoPorChave(raw);
+  const doPortal = new Map(portal.map((p) => [p.sgu_code, p]));
+  const doSgu = new Set(sgu.map((s) => s.sgu_code));
+  const r: DiffReport = { novos: [], ausentes: [], alterados: [], unidades: [], afastamentos: [], avisos: warnings };
+
+  for (const s of sgu) {
+    const a = afast.get(s.sgu_code) ?? null;
+    const p = doPortal.get(s.sgu_code);
+    if (!p) {
+      r.novos.push({ sgu_code: s.sgu_code, name: s.name, status: s.status, provider_group: s.provider_group,
+                     roteiro_cod: s.roteiro_cod, unidades: s.locations.length, afastamento: a });
+      continue;
+    }
+
+    const campos = CAMPOS.filter(([, gp, gs, igual]) => !igual(gp(p), gs(s)))
+      .map(([campo, gp, gs]) => ({ campo, portal: gp(p), sgu: gs(s) }));
+    if (campos.length) r.alterados.push({ sgu_code: s.sgu_code, name: s.name, campos });
+
+    const lp = new Map(p.locations.map((l) => [addrKey(l.cep, l.logradouro, l.numero), l]));
+    const ls = new Map(s.locations.map((l) => [addrKey(l.cep, l.logradouro, l.numero), unidade(l)]));
+    const tipo = (k: string) => tipos.get(`${s.sgu_code}#${k}`) ?? null;
+    const novas = [...ls].filter(([k]) => !lp.has(k)).map(([k, l]) => ({ ...l, codigo_tipo_endereco: tipo(k) }));
+    const removidas = [...lp].filter(([k]) => !ls.has(k)).map(([, l]) => l);
+    const alteradas = [...ls].filter(([k]) => lp.has(k)).map(([k, l]) => {
+      const antes = lp.get(k)!;
+      const c: CampoDiff[] = CAMPOS_UNIDADE.filter((f) => !mesmoTexto(antes[f], l[f]))
+        .map((f) => ({ campo: f, portal: antes[f], sgu: l[f] }));
+      if (antes.in_medical_guide !== l.in_medical_guide) {
+        c.push({ campo: 'in_medical_guide', portal: antes.in_medical_guide, sgu: l.in_medical_guide });
+      }
+      return { endereco: k, codigo_tipo_endereco: tipo(k), campos: c };
+    }).filter((x) => x.campos.length);
+    if (novas.length || removidas.length || alteradas.length) {
+      r.unidades.push({ sgu_code: s.sgu_code, name: s.name, novas, removidas, alteradas });
+    }
+
+    if (a && a.situacao !== 'nenhum') r.afastamentos.push({ sgu_code: s.sgu_code, name: s.name, ...a });
+  }
+
+  for (const p of portal) {
+    if (!doSgu.has(p.sgu_code)) {
+      r.ausentes.push({ sgu_code: p.sgu_code, name: p.name, status: p.status, tem_avaliacao: p.tem_avaliacao });
+    }
+  }
+  return r;
 }

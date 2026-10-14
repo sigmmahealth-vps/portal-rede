@@ -79,6 +79,7 @@ export function parseTabela(rows: TabelaRow[]): { providers: TabelaProvider[]; w
         email: clean(r['E-mail']) || null,
         is_primary: false,
         in_medical_guide: clean(r['Imprimir no guia médico']).toUpperCase() !== 'N',
+        sgu_tipo_endereco: clean(r['Código tipo endereço']) || null,
       });
     }
   }
@@ -105,9 +106,11 @@ export function parseTabela(rows: TabelaRow[]): { providers: TabelaProvider[]; w
     const crm = onlyDigits(acc.row['CRM']);
     const council_registry = crm && crm !== '0' ? crm : null;
 
+    // Código estável quando a fonte traz o tipo de endereço (sgu_providers_raw); a planilha antiga,
+    // sem a coluna, segue posicional.
     const locations = [...acc.addrs.values()].map((l, i) => ({
       ...l,
-      sgu_location_code: `${code}-${i + 1}`,
+      sgu_location_code: l.sgu_tipo_endereco ? `${code}-${l.sgu_tipo_endereco}` : `${code}-${i + 1}`,
       is_primary: i === 0,
     }));
     if (locations.length === 0) warnings.push(`${code}: sem endereço`);

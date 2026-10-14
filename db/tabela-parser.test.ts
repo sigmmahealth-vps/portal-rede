@@ -77,3 +77,12 @@ test('Imprimir no guia médico = N desmarca a unidade do guia; ausente mantém n
   const semColuna = parseTabela([row()]).providers[0];
   assert.equal(semColuna.locations[0].in_medical_guide, true);
 });
+
+test('Código tipo endereço define o código estável da unidade; sem a coluna, código posicional', () => {
+  const [p] = parseTabela([row({ 'Código tipo endereço': '3' })]).providers;
+  assert.equal(p.locations[0].sgu_location_code, '1000546-3');
+  assert.equal(p.locations[0].sgu_tipo_endereco, '3');
+  const [q] = parseTabela([row()]).providers;
+  assert.equal(q.locations[0].sgu_location_code, '1000546-1');
+  assert.equal(q.locations[0].sgu_tipo_endereco ?? null, null);
+});

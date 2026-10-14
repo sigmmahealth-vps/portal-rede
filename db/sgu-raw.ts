@@ -29,6 +29,7 @@ const COLUNAS: Record<string, string> = {
   'E-mail': 'email_principal',
   'Tipo de Endereço': 'tipo_endereco',
   'Imprimir no guia médico': 'imprimir_no_guia_medico',
+  'Código tipo endereço': 'codigo_tipo_endereco',
 };
 
 export function rawToTabelaRows(rows: SguRawRow[]): TabelaRow[] {

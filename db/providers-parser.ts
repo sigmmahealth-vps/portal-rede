@@ -31,6 +31,7 @@ export interface ParsedLocation {
   email: string | null;
   is_primary: boolean;
   in_medical_guide: boolean;
+  sgu_tipo_endereco?: string | null;   // codigo_tipo_endereco do SGU (chave estável da unidade)
 }
 
 export interface ParsedCertification {

@@ -35,6 +35,17 @@ test('sync em fixture: RT e e-mail de usuário preservados, unidade nova com ace
       `INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id)
        VALUES ((SELECT id FROM eval_scripts ORDER BY id LIMIT 1), $1, $2, 'em_andamento', $3) RETURNING id`,
       [p.id, l.id, cy.id]);
+    const { rows: [l2] } = await c.query(
+      `INSERT INTO provider_locations (provider_id, sgu_location_code, sgu_tipo_endereco, cep, logradouro, numero, active)
+       VALUES ($1, $2, '9', '88801250', 'RUA B', '1', true) RETURNING id`, [p.id, `${COD}-9`]);
+    const { rows: [term] } = await c.query(
+      `INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id)
+       VALUES ((SELECT id FROM eval_scripts ORDER BY id LIMIT 1), $1, $2, 'aprovado', $3) RETURNING id`,
+      [p.id, l2.id, cy.id]);
+    const { rows: [semLoc] } = await c.query(
+      `INSERT INTO eval_instances (script_id, provider_id, location_id, status, cycle_id)
+       VALUES ((SELECT id FROM eval_scripts ORDER BY id LIMIT 1), $1, NULL, 'em_andamento', $2) RETURNING id`,
+      [p.id, cy.id]);
 
     const unidade = { id: Number(l.id), sgu_location_code: `${COD}-2`, active: true };
     const afastado = [
@@ -57,7 +68,12 @@ test('sync em fixture: RT e e-mail de usuário preservados, unidade nova com ace
         WHERE pl.provider_id = $1 AND pl.id <> $2`, [p.id, l.id]);
     assert.deepEqual(novas.map((r) => ({ ...r })),
       [{ sgu_location_code: `${COD}-3`, email: 'nova@sgu.test', sem_senha: true, invite_status: 'pending' }]);
-    assert.equal(s1.suspensas, 1);
+    assert.equal(s1.suspensas, 2);
+    assert.deepEqual(await suspenderERestaurar(c), { suspensas: 0, restauradas: 0 });
+    const { rows: [t1] } = await c.query(`SELECT status, status_before_suspend FROM eval_instances WHERE id = $1`, [term.id]);
+    assert.deepEqual({ ...t1 }, { status: 'aprovado', status_before_suspend: null });
+    const { rows: [n1] } = await c.query(`SELECT status, status_before_suspend FROM eval_instances WHERE id = $1`, [semLoc.id]);
+    assert.deepEqual({ ...n1 }, { status: 'suspensa', status_before_suspend: 'em_andamento' });
     const { rows: [i1] } = await c.query(`SELECT status, status_before_suspend FROM eval_instances WHERE id = $1`, [inst.id]);
     assert.deepEqual({ ...i1 }, { status: 'suspensa', status_before_suspend: 'em_andamento' });
 
@@ -65,7 +81,9 @@ test('sync em fixture: RT e e-mail de usuário preservados, unidade nova com ace
     await executarPlano(c, planejarSync([raw({ codigo_prestador: COD })],
       [{ id: Number(p.id), sgu_code: COD, status: 'afastado', locations: [unidade] }]), new Map());
     const s2 = await suspenderERestaurar(c);
-    assert.equal(s2.restauradas, 1);
+    assert.equal(s2.restauradas, 2);
+    const { rows: [n2] } = await c.query(`SELECT status FROM eval_instances WHERE id = $1`, [semLoc.id]);
+    assert.equal(n2.status, 'em_andamento');
     const { rows: [i2] } = await c.query(`SELECT status, status_before_suspend FROM eval_instances WHERE id = $1`, [inst.id]);
     assert.deepEqual({ ...i2 }, { status: 'em_andamento', status_before_suspend: null });
   } finally {

@@ -109,7 +109,7 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
   }
   if (plano.excluirPorAusencia.length) {
     const r = await c.query(
-      `UPDATE providers SET status = 'excluído', sgu_synced_at = now() WHERE id = ANY($1::bigint[])`,
+      `UPDATE providers SET status = 'excluído', sgu_synced_at = now() WHERE id = ANY($1::bigint[]) AND source = 'sgu'`,
       [plano.excluirPorAusencia]);
     g.excluidos_por_ausencia = r.rowCount ?? 0;
   }
@@ -123,14 +123,16 @@ const NAO_SUSPENDE = `('aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado',
 export async function suspenderERestaurar(c: Consulta): Promise<{ suspensas: number; restauradas: number }> {
   const s = await c.query(`
     UPDATE eval_instances ei SET status_before_suspend = ei.status, status = 'suspensa'
-      FROM eval_cycles cy, providers p, provider_locations pl
-     WHERE cy.id = ei.cycle_id AND cy.active AND p.id = ei.provider_id AND pl.id = ei.location_id
-       AND NOT (${PRESTADOR_ATIVO_SQL} AND pl.active)
+      FROM eval_cycles cy, providers p
+     WHERE cy.id = ei.cycle_id AND cy.active AND p.id = ei.provider_id
+       AND NOT (${PRESTADOR_ATIVO_SQL}
+                AND COALESCE((SELECT pl.active FROM provider_locations pl WHERE pl.id = ei.location_id), true))
        AND ei.status NOT IN ${NAO_SUSPENDE}`);
   const r = await c.query(`
     UPDATE eval_instances ei SET status = COALESCE(ei.status_before_suspend, 'pendente'), status_before_suspend = NULL
-      FROM eval_cycles cy, providers p, provider_locations pl
-     WHERE cy.id = ei.cycle_id AND cy.active AND p.id = ei.provider_id AND pl.id = ei.location_id
-       AND ei.status = 'suspensa' AND ${PRESTADOR_ATIVO_SQL} AND pl.active`);
+      FROM eval_cycles cy, providers p
+     WHERE cy.id = ei.cycle_id AND cy.active AND p.id = ei.provider_id
+       AND ei.status = 'suspensa' AND ${PRESTADOR_ATIVO_SQL}
+       AND COALESCE((SELECT pl.active FROM provider_locations pl WHERE pl.id = ei.location_id), true)`);
   return { suspensas: s.rowCount ?? 0, restauradas: r.rowCount ?? 0 };
 }

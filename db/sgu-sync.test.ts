@@ -1,17 +1,43 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import bcrypt from 'bcryptjs';
 import { executarPlano } from './sgu-sync.js';
 import { planejarSync } from './sgu-sync-plan.js';
 import { raw } from './sgu-test-fixtures.js';
 
 function clienteFalso() {
   const sql: string[] = [];
+  const params: unknown[][] = [];
   let id = 1000;
   return {
-    sql,
-    query: async (text: string) => { sql.push(text.replace(/\s+/g, ' ')); return { rows: [{ id: ++id }], rowCount: 1 }; },
+    sql, params,
+    query: async (text: string, p: unknown[] = []) => {
+      sql.push(text.replace(/\s+/g, ' ')); params.push(p);
+      return { rows: [{ id: ++id }], rowCount: 1 };
+    },
   };
 }
+
+test('acesso novo nasce com a senha padrão (bcrypt) e troca obrigatória', async () => {
+  const plano = planejarSync([raw({ codigo_prestador: '2000001', numero_documento: '11111111111' })], []);
+  const c = clienteFalso();
+  await executarPlano(c, plano, new Map(), 'Senha@Teste1');
+  const i = c.sql.findIndex((s) => /INSERT INTO users\b/i.test(s));
+  const [, , hash, mustChange] = c.params[i] as [unknown, unknown, string, boolean];
+  assert.match(hash, /^\$2[aby]\$10\$/);
+  assert.equal(await bcrypt.compare('Senha@Teste1', hash), true);
+  assert.equal(mustChange, true);
+});
+
+test('sem senha padrão o acesso novo nasce sem senha', async () => {
+  const plano = planejarSync([raw({ codigo_prestador: '2000001', numero_documento: '11111111111' })], []);
+  const c = clienteFalso();
+  await executarPlano(c, plano, new Map(), '');
+  const i = c.sql.findIndex((s) => /INSERT INTO users\b/i.test(s));
+  const [, , hash, mustChange] = c.params[i] as [unknown, unknown, unknown, boolean];
+  assert.equal(hash, null);
+  assert.equal(mustChange, false);
+});
 
 test('executarPlano nunca altera nem apaga users/user_locations e cria 1 acesso por unidade nova', async () => {
   const plano = planejarSync([

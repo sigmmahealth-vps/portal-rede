@@ -3,6 +3,7 @@
  * Nunca altera nem apaga users/user_locations: só cria o acesso de unidade nova.
  */
 import 'dotenv/config';
+import bcrypt from 'bcryptjs';
 import { deriveProviderRole } from './provider-role.js';
 import { type ParsedLocation } from './providers-parser.js';
 import { type TabelaProvider } from './tabela-parser.js';
@@ -34,9 +35,10 @@ const colunas = (p: TabelaProvider, scriptId: number | null) => [
   p.provider_type, p.provider_group, p.status, p.responsavel_tecnico, scriptId, p.roteiro_cod, p.roteiro_confianca,
 ];
 
-// Unidade nova + o acesso dela (mesma regra do provision-users: sem senha, sem convite,
-// e-mail cadastral válido ou NULL).
-async function criarUnidade(c: Consulta, providerId: number, prestador: TabelaProvider, loc: ParsedLocation) {
+// Unidade nova + o acesso dela: sem convite, e-mail cadastral válido ou NULL; senha = a padrão da Unimed
+// (SENHA_PADRAO_PRESTADOR, troca obrigatória no 1º acesso) ou nenhuma, se a variável não existir.
+async function criarUnidade(c: Consulta, providerId: number, prestador: TabelaProvider, loc: ParsedLocation,
+                            senhaHash: string | null) {
   const { rows } = await c.query(
     `INSERT INTO provider_locations (provider_id, sgu_location_code, sgu_tipo_endereco, label, cep, logradouro,
        numero, complemento, bairro, cidade, uf, phone, email, is_primary, in_medical_guide, active)
@@ -46,15 +48,18 @@ async function criarUnidade(c: Consulta, providerId: number, prestador: TabelaPr
      loc.in_medical_guide]);
   const email = loc.email && EMAIL_RE.test(loc.email.trim()) ? loc.email.trim().toLowerCase() : null;
   const { rows: u } = await c.query(
-    `INSERT INTO users (name, email, password, role, provider_id, is_active, invite_status)
-     VALUES ($1, $2, NULL, $3, $4, true, 'pending') RETURNING id`,
-    [prestador.name, email, deriveProviderRole(prestador.person_type, prestador.provider_group), providerId]);
+    `INSERT INTO users (name, email, password, must_change_password, role, provider_id, is_active, invite_status)
+     VALUES ($1, $2, $3, $4, $5, $6, true, 'pending') RETURNING id`,
+    [prestador.name, email, senhaHash, senhaHash != null,
+     deriveProviderRole(prestador.person_type, prestador.provider_group), providerId]);
   await c.query(
     `INSERT INTO user_locations (user_id, location_id, provider_id) VALUES ($1, $2, $3)`,
     [u[0].id, rows[0].id, providerId]);
 }
 
-export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRoteiro: Map<string, number>): Promise<Gravado> {
+export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRoteiro: Map<string, number>,
+                                    senhaPadrao: string | undefined = process.env.SENHA_PADRAO_PRESTADOR): Promise<Gravado> {
+  const senhaHash = senhaPadrao ? await bcrypt.hash(senhaPadrao, 10) : null;
   const g: Gravado = { criados: 0, atualizados: 0, excluidos_por_ausencia: 0, unidades_criadas: 0,
     unidades_atualizadas: 0, unidades_inativadas: 0, acessos_criados: 0, documentos_descartados: 0 };
   const script = (p: TabelaProvider) => (p.roteiro_cod ? scriptPorRoteiro.get(p.roteiro_cod) ?? null : null);
@@ -74,7 +79,7 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
     g.criados++;
     if (rows[0].doc_descartado) g.documentos_descartados++;
     for (const loc of p.locations) {
-      await criarUnidade(c, Number(rows[0].id), p, loc);
+      await criarUnidade(c, Number(rows[0].id), p, loc, senhaHash);
       g.unidades_criadas++; g.acessos_criados++;
     }
   }
@@ -107,7 +112,7 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
   }
 
   for (const { provider_id, prestador, loc } of plano.unidadesNovas) {
-    await criarUnidade(c, provider_id, prestador, loc);
+    await criarUnidade(c, provider_id, prestador, loc, senhaHash);
     g.unidades_criadas++; g.acessos_criados++;
   }
 

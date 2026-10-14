@@ -70,3 +70,10 @@ test('CPF/CNPJ repetido entre códigos distintos é zerado no segundo, com aviso
   assert.equal(dup.cpf, null);
   assert.ok(warnings.length >= 1);
 });
+
+test('Imprimir no guia médico = N desmarca a unidade do guia; ausente mantém no guia', () => {
+  const fora = parseTabela([row({ 'Imprimir no guia médico': 'N' })]).providers[0];
+  assert.equal(fora.locations[0].in_medical_guide, false);
+  const semColuna = parseTabela([row()]).providers[0];
+  assert.equal(semColuna.locations[0].in_medical_guide, true);
+});

@@ -78,7 +78,7 @@ export function parseTabela(rows: TabelaRow[]): { providers: TabelaProvider[]; w
         phone,
         email: clean(r['E-mail']) || null,
         is_primary: false,
-        in_medical_guide: true,
+        in_medical_guide: clean(r['Imprimir no guia médico']).toUpperCase() !== 'N',
       });
     }
   }

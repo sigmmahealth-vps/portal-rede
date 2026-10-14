@@ -4,7 +4,7 @@ import { checarTravas, planejarRekey, planejarSync, type PortalPrestadorSync } f
 import { raw } from './sgu-test-fixtures.js';
 
 const portal = (over: Partial<PortalPrestadorSync> = {}): PortalPrestadorSync => ({
-  id: 10, sgu_code: '1000546', status: 'ativo',
+  id: 10, sgu_code: '1000546', status: 'ativo', source: 'sgu',
   locations: [{ id: 100, sgu_location_code: '1000546-2', active: true }], ...over,
 });
 
@@ -99,4 +99,11 @@ test('planejarRekey: duas unidades sem código não colidem no -x', () => {
   const base = { provider_id: 10, sgu_code: '1000546', sgu_tipo_endereco: null, sgu_location_code: null, cep: null, logradouro: 'X', numero: '1' };
   const r = planejarRekey([{ ...base, id: 7 }, { ...base, id: 8 }], [raw()]);
   assert.deepEqual(r.inativar, [{ id: 7, codigo: '1000546-7-x' }, { id: 8, codigo: '1000546-8-x' }]);
+});
+
+test('cadastro manual com sgu_code na raw é ignorado (não insere, não atualiza); manual ausente não é excluído', () => {
+  const p = planejarSync([raw()], [{ ...portal(), source: 'manual' }, portal({ id: 11, sgu_code: '5000001', source: 'manual', locations: [] })]);
+  assert.deepEqual(p.ignorados.manual, ['1000546']);
+  assert.deepEqual([p.inserir, p.atualizar, p.excluirPorAusencia, p.unidadesNovas], [[], [], [], []]);
+  assert.equal(p.ativos, 0);
 });

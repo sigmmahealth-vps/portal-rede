@@ -25,6 +25,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 export interface Gravado {
   criados: number; atualizados: number; excluidos_por_ausencia: number;
   unidades_criadas: number; unidades_atualizadas: number; unidades_inativadas: number; acessos_criados: number;
+  documentos_descartados: number;
 }
 
 // $2..$15 comuns ao INSERT e ao UPDATE de providers.
@@ -55,7 +56,7 @@ async function criarUnidade(c: Consulta, providerId: number, prestador: TabelaPr
 
 export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRoteiro: Map<string, number>): Promise<Gravado> {
   const g: Gravado = { criados: 0, atualizados: 0, excluidos_por_ausencia: 0, unidades_criadas: 0,
-    unidades_atualizadas: 0, unidades_inativadas: 0, acessos_criados: 0 };
+    unidades_atualizadas: 0, unidades_inativadas: 0, acessos_criados: 0, documentos_descartados: 0 };
   const script = (p: TabelaProvider) => (p.roteiro_cod ? scriptPorRoteiro.get(p.roteiro_cod) ?? null : null);
 
   for (const p of plano.inserir) {
@@ -68,9 +69,10 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
          CASE WHEN EXISTS (SELECT 1 FROM providers o WHERE o.cnpj = $5::text) THEN NULL ELSE $5::text END,
          CASE WHEN EXISTS (SELECT 1 FROM providers o WHERE o.cpf = $6::text) THEN NULL ELSE $6::text END,
          $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, 'sgu', now())
-       RETURNING id`,
+       RETURNING id, (cnpj IS NULL AND $5::text IS NOT NULL) OR (cpf IS NULL AND $6::text IS NOT NULL) AS doc_descartado`,
       [p.sgu_code, ...colunas(p, script(p))]);
     g.criados++;
+    if (rows[0].doc_descartado) g.documentos_descartados++;
     for (const loc of p.locations) {
       await criarUnidade(c, Number(rows[0].id), p, loc);
       g.unidades_criadas++; g.acessos_criados++;
@@ -78,7 +80,7 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
   }
 
   for (const { id, p } of plano.atualizar) {
-    await c.query(
+    const { rows } = await c.query(
       `UPDATE providers SET name = $2, trade_name = $3, person_type = $4,
          cnpj = CASE WHEN EXISTS (SELECT 1 FROM providers o WHERE o.cnpj = $5::text AND o.id <> $1) THEN cnpj ELSE $5::text END,
          cpf  = CASE WHEN EXISTS (SELECT 1 FROM providers o WHERE o.cpf = $6::text AND o.id <> $1) THEN cpf ELSE $6::text END,
@@ -86,9 +88,11 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
          responsavel_tecnico = COALESCE($12, responsavel_tecnico),
          eval_script_id = COALESCE($13, CASE WHEN roteiro_cod IS NOT DISTINCT FROM $14 THEN eval_script_id END),
          roteiro_cod = $14, roteiro_confianca = $15, sgu_synced_at = now()
-       WHERE id = $1`,
+       WHERE id = $1
+       RETURNING (cnpj IS DISTINCT FROM $5::text AND $5::text IS NOT NULL) OR (cpf IS DISTINCT FROM $6::text AND $6::text IS NOT NULL) AS doc_mantido`,
       [id, ...colunas(p, script(p))]);
     g.atualizados++;
+    if (rows[0]?.doc_mantido) g.documentos_descartados++;
   }
 
   for (const { id, loc } of plano.unidadesAtualizar) {
@@ -144,14 +148,14 @@ export async function suspenderERestaurar(c: Consulta): Promise<{ suspensas: num
 
 async function lerPortalSync(c: Consulta): Promise<PortalPrestadorSync[]> {
   const { rows } = await c.query(`
-    SELECT p.id, p.sgu_code, p.status,
+    SELECT p.id, p.sgu_code, p.status, p.source,
            COALESCE((SELECT json_agg(json_build_object('id', l.id, 'sgu_location_code', l.sgu_location_code,
                                                        'active', l.active))
                        FROM provider_locations l WHERE l.provider_id = p.id), '[]'::json) AS locations
       FROM providers p
-     WHERE p.source = 'sgu'`);
+     WHERE p.sgu_code IS NOT NULL`);
   return rows.map((r) => ({
-    id: Number(r.id), sgu_code: r.sgu_code, status: r.status,
+    id: Number(r.id), sgu_code: r.sgu_code, status: r.status, source: r.source,
     locations: r.locations.map((l: any) => ({ id: Number(l.id), sgu_location_code: l.sgu_location_code, active: l.active })),
   }));
 }
@@ -174,7 +178,7 @@ export type ResultadoSync = {
   gravado?: Gravado & { suspensas: number; restauradas: number };
 };
 
-// forcar=false (job): só aplica carga ainda não tentada — sucesso ou erro na mesma dh_carga encerra.
+// forcar=false (job): só pula carga já aplicada com sucesso; erro tenta de novo na próxima volta (30 min).
 // forcar=true (comando manual): aplica sempre.
 export async function rodarSguSync(opts: { commit: boolean; forcar: boolean }): Promise<ResultadoSync> {
   let carga: string | null = null;
@@ -182,15 +186,19 @@ export async function rodarSguSync(opts: { commit: boolean; forcar: boolean }): 
     return await withTransaction(async (c): Promise<ResultadoSync> => {
       const { rows: [lock] } = await c.query(`SELECT pg_try_advisory_xact_lock(hashtext('sgu-sync')) AS ok`);
       if (!lock.ok) return { status: 'ocupado', message: 'outra execução em andamento' };
+      const { rows: [{ n: semCodigo }] } = await c.query(
+        `SELECT count(*)::int AS n FROM provider_locations pl JOIN providers p ON p.id = pl.provider_id
+          WHERE p.source = 'sgu' AND pl.active AND pl.sgu_tipo_endereco IS NULL`);
+      if (semCodigo > 0) throw new Error(`${semCodigo} unidade(s) ativa(s) sem código estável — rode db:sgu-rekey antes da rotina.`);
       const { rows: raw } = await c.query(
         `SELECT *, dh_carga::text AS dh_carga_txt FROM sgu_providers_raw
           ORDER BY codigo_prestador, codigo_tipo_endereco, especialidade_grupo_servico`);
       carga = raw[0]?.dh_carga_txt ?? null;
       if (!opts.forcar && carga) {
         const { rows: [ult] } = await c.query(
-          `SELECT raw_loaded_at::text AS t, status FROM sgu_sync_runs
-            WHERE source = 'sgu-sync' AND raw_loaded_at IS NOT NULL ORDER BY id DESC LIMIT 1`);
-        if (ult?.t === carga) return { status: 'sem_carga_nova', message: `carga ${carga} já processada (${ult.status})` };
+          `SELECT raw_loaded_at::text AS t FROM sgu_sync_runs
+            WHERE source = 'sgu-sync' AND status = 'success' AND raw_loaded_at IS NOT NULL ORDER BY id DESC LIMIT 1`);
+        if (ult?.t === carga) return { status: 'sem_carga_nova', message: `carga ${carga} já aplicada` };
       }
       const plano = planejarSync(raw, await lerPortalSync(c));
       const trava = checarTravas(raw, plano);
@@ -198,7 +206,7 @@ export async function rodarSguSync(opts: { commit: boolean; forcar: boolean }): 
       const resumo = `novos ${plano.inserir.length}, atualizados ${plano.atualizar.length}, `
         + `excluídos por ausência ${plano.excluirPorAusencia.length}, unidades novas ${plano.unidadesNovas.length}, `
         + `unidades inativadas ${plano.unidadesInativar.length}, ignorados `
-        + `${plano.ignorados.excluido_novo.length + plano.ignorados.grupo_27.length}`;
+        + `${plano.ignorados.excluido_novo.length + plano.ignorados.grupo_27.length + plano.ignorados.manual.length}`;
       if (!opts.commit) return { status: 'simulado', message: resumo, plano };
 
       const diff = diffProviders(raw, await lerPortal(), dataCivil(new Date())!);
@@ -230,7 +238,7 @@ async function main() {
     const r = await rodarSguSync({ commit, forcar: true });
     console.log(`${r.status}: ${r.message}`);
     if (r.plano) {
-      console.log(`ignorados: EXCLUÍDO novo ${r.plano.ignorados.excluido_novo.length}, grupo 27 ${r.plano.ignorados.grupo_27.length}`);
+      console.log(`ignorados: EXCLUÍDO novo ${r.plano.ignorados.excluido_novo.length}, grupo 27 ${r.plano.ignorados.grupo_27.length}, cadastro manual ${r.plano.ignorados.manual.length}`);
       console.log(`ativos que viram excluídos: ${r.plano.ativosQueSaem} de ${r.plano.ativos}`);
     }
     if (r.gravado) console.log(JSON.stringify(r.gravado));

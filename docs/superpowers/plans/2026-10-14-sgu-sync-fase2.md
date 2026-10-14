@@ -44,7 +44,7 @@
 | `server.ts` | Modificar | guarda de `suspensa`, filtros de ativo no ciclo/inclusão, contagem do encerramento, job |
 | `src/lib/statusLabels.ts`, `src/lib/auditorDashboard.ts` (+test), `src/pages/qualificacao/PainelDoCiclo.tsx`, `AuditorPlayer.tsx`, `PrestadorView.tsx` | Modificar | `suspensa` nas telas |
 
-Desvios conscientes do spec (anotar no relatório final): (1) "ativo" exclui cadastros manuais da regra (`PRESTADOR_ATIVO_SQL`) para não suspender avaliações de prestador `source='manual'` com status `'Ativo'`/nulo; (2) no rekey, unidade não casada recebe o código `'<antigo>-x'` (além de `active=false`) para não colidir com o código novo de outra unidade; (3) `diffProviders` continua casando unidades por endereço (o spec previa casar por código quando houvesse `sgu_tipo_endereco`) — o relatório da fase 1 só perde a distinção "unidade mudou de endereço" vs "saiu+entrou"; (4) erro de trava também grava `raw_loaded_at`, e o job não repete a mesma carga que já deu erro (só o comando manual repete).
+Desvios conscientes do spec (anotar no relatório final): (1) "ativo" exclui cadastros manuais da regra (`PRESTADOR_ATIVO_SQL`) para não suspender avaliações de prestador `source='manual'` com status `'Ativo'`/nulo; (2) no rekey, unidade não casada recebe o código `'<antigo>-x'` (além de `active=false`) para não colidir com o código novo de outra unidade; (3) `diffProviders` continua casando unidades por endereço (o spec previa casar por código quando houvesse `sgu_tipo_endereco`) — o relatório da fase 1 só perde a distinção "unidade mudou de endereço" vs "saiu+entrou"; (4) erro de trava também grava `raw_loaded_at` (diagnóstico); o job tenta de novo a cada 30 min até um sucesso naquela carga (como o spec).
 
 ---
 

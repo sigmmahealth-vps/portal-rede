@@ -8,7 +8,7 @@ import { addrKey, ordenaRaw, rawToTabelaRows, tipoEnderecoPorChave, type SguRawR
 export const LIMITE_SAIDA = 0.10;
 
 export interface PortalUnidadeSync { id: number; sgu_location_code: string | null; active: boolean }
-export interface PortalPrestadorSync { id: number; sgu_code: string; status: string | null; locations: PortalUnidadeSync[] }
+export interface PortalPrestadorSync { id: number; sgu_code: string; status: string | null; source: string | null; locations: PortalUnidadeSync[] }
 
 export interface PlanoSync {
   inserir: TabelaProvider[];
@@ -17,7 +17,7 @@ export interface PlanoSync {
   unidadesNovas: { provider_id: number; prestador: TabelaProvider; loc: ParsedLocation }[];
   unidadesAtualizar: { id: number; loc: ParsedLocation }[];
   unidadesInativar: number[];
-  ignorados: { excluido_novo: string[]; grupo_27: string[] };
+  ignorados: { excluido_novo: string[]; grupo_27: string[]; manual: string[] };
   ativos: number;
   ativosQueSaem: number;
 }
@@ -34,13 +34,14 @@ export function planejarSync(raw: SguRawRow[], portal: PortalPrestadorSync[]): P
   const naRaw = new Set(sgu.map((s) => s.sgu_code));
   const plano: PlanoSync = {
     inserir: [], atualizar: [], excluirPorAusencia: [], unidadesNovas: [], unidadesAtualizar: [],
-    unidadesInativar: [], ignorados: { excluido_novo: [], grupo_27: [] },
-    ativos: portal.filter((p) => p.status === 'ativo').length, ativosQueSaem: 0,
+    unidadesInativar: [], ignorados: { excluido_novo: [], grupo_27: [], manual: [] },
+    ativos: portal.filter((p) => p.source === 'sgu' && p.status === 'ativo').length, ativosQueSaem: 0,
   };
 
   for (const s of sgu) {
     if (grupo27.has(s.sgu_code)) { plano.ignorados.grupo_27.push(s.sgu_code); continue; }
     const p = doPortal.get(s.sgu_code);
+    if (p && p.source !== 'sgu') { plano.ignorados.manual.push(s.sgu_code); continue; }
     if (!p) {
       if (ehExcluido(s.status)) plano.ignorados.excluido_novo.push(s.sgu_code);
       else plano.inserir.push(s);
@@ -63,7 +64,7 @@ export function planejarSync(raw: SguRawRow[], portal: PortalPrestadorSync[]): P
   }
 
   for (const p of portal) {
-    if (naRaw.has(p.sgu_code) || ehExcluido(p.status)) continue;
+    if (p.source !== 'sgu' || naRaw.has(p.sgu_code) || ehExcluido(p.status)) continue;
     plano.excluirPorAusencia.push(p.id);
     if (p.status === 'ativo') plano.ativosQueSaem++;
   }

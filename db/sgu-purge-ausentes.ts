@@ -13,6 +13,7 @@ import { pickDatabaseUrl } from './resolveDbUrl.js';
 import type { Consulta } from './sgu-sync.js';
 
 const LIMITE = 0.20; // mais que isso do cadastro sgu = raw suspeita, aborta
+class Simulacao extends Error {}
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Tabelas com FK de uma coluna (para o id de `tabela`) — segue a cascata para o backup.
@@ -77,25 +78,33 @@ async function main() {
       for (const p of alvo) console.log(`   - ${p.sgu_code} ${p.name} (${p.status})`);
       console.log('Linhas no backup (inclui vínculos que só perdem a referência):');
       for (const [t, rows] of Object.entries(backup)) console.log(`   ${t}: ${rows.length}`);
-      if (!commit) { console.log('Dry-run: nada apagado. Para apagar: --commit'); return; }
-
-      const dir = path.resolve(__dirname, '..', 'backups');
-      fs.mkdirSync(dir, { recursive: true });
-      const arq = path.join(dir, `sgu-purge-${process.env.APP_ENV ?? 'sem-env'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-      fs.writeFileSync(arq, JSON.stringify(backup, null, 1));
-      console.log(`Backup: ${arq}`);
+      let arq = '';
+      if (commit) {
+        const dir = path.resolve(__dirname, '..', 'backups');
+        fs.mkdirSync(dir, { recursive: true });
+        arq = path.join(dir, `sgu-purge-${process.env.APP_ENV ?? 'sem-env'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+        fs.writeFileSync(arq, JSON.stringify(backup, null, 1));
+        console.log(`Backup: ${arq}`);
+      }
       // Usuários primeiro capturados: providers saem antes (levam planos/eventos em cascata, que apontam
       // para esses usuários sem ON DELETE) e só então os usuários — users.provider_id vira NULL no meio.
       let p, u;
       try {
+        // Depois do DELETE de providers o provider_id some (NULL) e e-mails repetidos colidiriam em
+        // users_staff_email_uniq (0057); o backup já guarda as linhas originais.
+        await c.query(`UPDATE users SET email = NULL WHERE id = ANY($1::bigint[])`, [userIds]);
         p = await c.query(`DELETE FROM providers WHERE id = ANY($1::bigint[])`, [ids]);
         u = await c.query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [userIds]);
       } catch (e) {
-        console.error(`rollback — backup não usado: ${arq}`);
+        console.error(commit ? `rollback — backup não usado: ${arq}` : 'rollback — a simulação falhou');
         throw e;
       }
-      console.log(`✔ Apagados: ${p.rowCount} prestadores e ${u.rowCount} usuários (o resto em cascata).`);
+      console.log(`✔ ${commit ? 'Apagados' : 'Simulados'}: ${p.rowCount} prestadores e ${u.rowCount} usuários (o resto em cascata).`);
+      if (!commit) throw new Simulacao();
     });
+  } catch (e) {
+    if (!(e instanceof Simulacao)) throw e;
+    console.log('Dry-run: exclusões executadas e desfeitas (rollback) — nada apagado.');
   } finally {
     await pool.end();
   }

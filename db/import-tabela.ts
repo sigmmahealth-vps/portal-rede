@@ -113,6 +113,9 @@ async function main() {
   }
 
   assertReloadHost(pickDatabaseUrl(), process.argv.includes('--prod'));
+  const { rows: rk } = await query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM provider_locations WHERE sgu_tipo_endereco IS NOT NULL`);
+  if (rk[0].n > 0) throw new Error('Unidades já têm código estável (db:sgu-rekey): import-tabela é legado e não roda mais aqui. Use db:sgu-sync.');
   const { withTransaction, pool } = await import('./db.js');
   const scriptByCod = await resolveScriptIds();
   const naoResolvidos = new Set<string>();

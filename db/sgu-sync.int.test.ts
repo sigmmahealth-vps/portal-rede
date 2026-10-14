@@ -53,7 +53,7 @@ test('sync em fixture: RT e e-mail de usuário preservados, unidade nova com ace
       raw({ codigo_prestador: COD, status_prestador: 'AFASTADO', codigo_tipo_endereco: '3',
             logradouro: 'RUA NOVA', numero_endereco: '10', email_principal: 'Nova@SGU.test' }),
     ];
-    await executarPlano(c, planejarSync(afastado, [{ id: Number(p.id), sgu_code: COD, status: 'ativo', locations: [unidade] }]), new Map());
+    await executarPlano(c, planejarSync(afastado, [{ id: Number(p.id), sgu_code: COD, status: 'ativo', source: 'sgu', locations: [unidade] }]), new Map());
     const s1 = await suspenderERestaurar(c);
 
     const { rows: [pp] } = await c.query(`SELECT status, responsavel_tecnico FROM providers WHERE id = $1`, [p.id]);
@@ -79,7 +79,7 @@ test('sync em fixture: RT e e-mail de usuário preservados, unidade nova com ace
 
     // Volta a ATIVO na carga seguinte: restaura o status anterior.
     await executarPlano(c, planejarSync([raw({ codigo_prestador: COD })],
-      [{ id: Number(p.id), sgu_code: COD, status: 'afastado', locations: [unidade] }]), new Map());
+      [{ id: Number(p.id), sgu_code: COD, status: 'afastado', source: 'sgu', locations: [unidade] }]), new Map());
     const s2 = await suspenderERestaurar(c);
     assert.equal(s2.restauradas, 2);
     const { rows: [n2] } = await c.query(`SELECT status FROM eval_instances WHERE id = $1`, [semLoc.id]);

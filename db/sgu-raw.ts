@@ -154,8 +154,13 @@ const unidade = (l: ParsedLocation): PortalLocation => ({
   cidade: l.cidade, uf: l.uf, phone: l.phone, email: l.email, in_medical_guide: l.in_medical_guide,
 });
 
+// O SGU mantém o código antigo ("MUDOU DE CÓDIGO") como EXCLUÍDO com o mesmo CPF/CNPJ; o dedupeDocs
+// do parser fica com o documento do primeiro código visto — excluídos por último para o ativo ficar com ele.
+const excluido = (r: SguRawRow) => clean(r.status_prestador).toUpperCase().startsWith('EXCLU');
+const ativosPrimeiro = (rows: SguRawRow[]) => [...rows.filter((r) => !excluido(r)), ...rows.filter(excluido)];
+
 export function diffProviders(raw: SguRawRow[], portal: PortalProvider[], hoje: string): DiffReport {
-  const { providers: sgu, warnings } = parseTabela(rawToTabelaRows(raw));
+  const { providers: sgu, warnings } = parseTabela(rawToTabelaRows(ativosPrimeiro(raw)));
   const afast = afastamentoPorPrestador(raw, hoje);
   const tipos = tipoEnderecoPorChave(raw);
   const doPortal = new Map(portal.map((p) => [p.sgu_code, p]));

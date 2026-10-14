@@ -142,3 +142,13 @@ test('diff: afastamentos só de quem está no Portal e com situação diferente 
     portalDe([afastado, agendado, raw({ codigo_prestador: '8' })]), HOJE);
   assert.deepEqual(r.afastamentos.map((a) => [a.sgu_code, a.situacao]), [['1000546', 'vigente'], ['7', 'exclusao_agendada']]);
 });
+
+test('diff: código antigo EXCLUÍDO com o mesmo CPF não tira o documento do código ativo', () => {
+  const antigo = raw({ codigo_prestador: '19000546', status_prestador: 'EXCLUÍDO',
+    tipo_operacao_afastamento_exclusao: 'EXCLUSAO', data_inicio_afastamento_exclusao: new Date(2024, 0, 1),
+    motivo_afastamento_exclusao: 'MUDOU DE CÓDIGO' });
+  const rows = [antigo, raw()];
+  const r = diffProviders(rows, portalDe([raw()]), HOJE);
+  assert.deepEqual(r.alterados, []);
+  assert.equal(rows[0], antigo); // não reordena o array de quem chamou
+});

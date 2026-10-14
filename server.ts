@@ -28,6 +28,7 @@ import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail } from './src/lib/notifyEmail.js';
 import { canDownloadManual, isPdf, MANUAL_MAX_BYTES } from './db/script-manual.js';
+import { PRESTADOR_ATIVO_SQL, rodarSguSync } from './db/sgu-sync.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
@@ -3768,6 +3769,11 @@ async function startServer() {
       res.status(403).json({ error: 'Você não tem permissão para alterar esta avaliação' });
       return null;
     }
+    // Prestador/unidade inativo no SGU (rotina diária, spec 2026-10-14): avaliação congelada para todos.
+    if (instance.status === 'suspensa') {
+      res.status(409).json({ error: 'Avaliação suspensa: o prestador está inativo no cadastro da Unimed.' });
+      return null;
+    }
     return instance;
   };
 
@@ -5002,6 +5008,7 @@ async function startServer() {
           LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
           LEFT JOIN eval_scripts s ON s.id = COALESCE(ov.script_id, ecg.script_id, p.eval_script_id)
          WHERE pl.in_medical_guide = true
+           AND pl.active AND ${PRESTADOR_ATIVO_SQL}
            AND NOT EXISTS (SELECT 1 FROM eval_instances ei
                             WHERE ei.cycle_id = $1 AND ei.provider_id = p.id AND ei.location_id = pl.id)
            AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x
@@ -5062,6 +5069,7 @@ async function startServer() {
 
       const { rows: pair } = await query(`
         SELECT pl.in_medical_guide,
+               (pl.active AND ${PRESTADOR_ATIVO_SQL}) AS ativo,
                COALESCE(ov.script_id, ecg.script_id, p.eval_script_id) AS resolved_script_id,
                EXISTS (SELECT 1 FROM eval_instances ei
                         WHERE ei.cycle_id = $1 AND ei.provider_id = p.id AND ei.location_id = pl.id) AS has_instance,
@@ -5075,6 +5083,7 @@ async function startServer() {
       `, [cycleId, providerId, locationId]);
       if (!pair.length) return res.status(404).json({ error: 'prestador/unidade não encontrado' });
       if (!pair[0].in_medical_guide) return res.status(400).json({ error: 'unidade fora do guia médico' });
+      if (!pair[0].ativo) return res.status(409).json({ error: 'prestador ou unidade inativo no cadastro da Unimed' });
       if (pair[0].has_instance) return res.status(409).json({ error: 'par já tem avaliação neste ciclo' });
       if (pair[0].is_excluded) return res.status(409).json({ error: 'par foi excluído na abertura do ciclo' });
 
@@ -5191,6 +5200,7 @@ async function startServer() {
             LEFT JOIN eval_cycle_overrides ov
               ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
            WHERE pl.in_medical_guide = true
+             AND pl.active AND ${PRESTADOR_ATIVO_SQL}
              AND COALESCE(ov.script_id, ecg.script_id) IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x
                               WHERE x.cycle_id = $1 AND x.provider_id = p.id AND x.location_id = pl.id)
@@ -5355,9 +5365,10 @@ async function startServer() {
     if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado', inconclusive: 0 };
     if (!cy[0].active) return { ok: false, code: 409, error: 'ciclo já está encerrado', inconclusive: 0 };
 
+    // suspensa não conta como "em andamento" (prestador inativo), mas é encerrada junto.
     const { rows: pending } = await query(
       `SELECT COUNT(*)::int AS n FROM eval_instances
-        WHERE cycle_id = $1 AND status NOT IN ('aprovado', 'reprovado', 'finalizado')`,
+        WHERE cycle_id = $1 AND status NOT IN ('aprovado', 'reprovado', 'finalizado', 'suspensa')`,
       [cycleId]
     );
     const inconclusive = Number(pending[0]?.n ?? 0);
@@ -7023,6 +7034,20 @@ async function startServer() {
   }
   runAutoCycleJobs();
   setInterval(runAutoCycleJobs, 60 * 60 * 1000);
+
+  // Rotina diária do SGU (spec 2026-10-14, fase 2): aplica a sgu_providers_raw quando chega carga nova.
+  // Ligada só com SGU_SYNC_ENABLED=true (depois do db:sgu-rekey e do db:sgu-purge-ausentes no ambiente).
+  async function runSguSyncJob() {
+    if (process.env.SGU_SYNC_ENABLED !== 'true') return;
+    try {
+      const r = await rodarSguSync({ commit: true, forcar: false });
+      if (r.status === 'aplicado') console.log(`[sgu-sync] ${r.message}`);
+    } catch (e) {
+      console.error('[sgu-sync] falhou:', e);
+    }
+  }
+  runSguSyncJob();
+  setInterval(runSguSyncJob, 30 * 60 * 1000);
 
   // Job de notificações (spec 5.4.7): varre condições de prazo (disparo único via
   // dedupe_key) e re-tenta e-mails pendentes/falhos. Idempotente por construção.

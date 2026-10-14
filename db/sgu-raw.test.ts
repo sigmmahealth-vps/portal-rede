@@ -140,7 +140,7 @@ test('diff: afastamentos só de quem está no Portal e com situação diferente 
     data_inicio_afastamento_exclusao: new Date(2026, 10, 1) });
   const r = diffProviders([afastado, agendado, raw({ codigo_prestador: '8' })],
     portalDe([afastado, agendado, raw({ codigo_prestador: '8' })]), HOJE);
-  assert.deepEqual(r.afastamentos.map((a) => [a.sgu_code, a.situacao]), [['1000546', 'vigente'], ['7', 'exclusao_agendada']]);
+  assert.deepEqual(r.afastamentos.map((a) => [a.sgu_code, a.situacao]), [['7', 'exclusao_agendada'], ['1000546', 'vigente']]);
 });
 
 test('diff: código antigo EXCLUÍDO com o mesmo CPF não tira o documento do código ativo', () => {
@@ -151,4 +151,25 @@ test('diff: código antigo EXCLUÍDO com o mesmo CPF não tira o documento do c�
   const r = diffProviders(rows, portalDe([raw()]), HOJE);
   assert.deepEqual(r.alterados, []);
   assert.equal(rows[0], antigo); // não reordena o array de quem chamou
+});
+
+test('diff: resultado não depende da ordem das linhas da raw', () => {
+  const rows = [
+    raw({ email_principal: 'a@x.com', telefone: '111' }),
+    raw({ especialidade_grupo_servico: 'CLINICA MEDICA', email_principal: 'b@x.com', telefone: '111' }),
+    raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10', telefone: '222', email_principal: 'c@x.com' }),
+    raw({ codigo_prestador: '2000546', nome_prestador: 'OUTRO CODIGO', status_prestador: 'AFASTADO',
+          tipo_operacao_afastamento_exclusao: 'AFASTAMENTO', data_inicio_afastamento_exclusao: new Date(2026, 0, 28),
+          telefone: '333', email_principal: 'd@x.com' }),
+    raw({ codigo_prestador: '2000546', nome_prestador: 'OUTRO CODIGO', status_prestador: 'AFASTADO',
+          tipo_operacao_afastamento_exclusao: 'AFASTAMENTO', data_inicio_afastamento_exclusao: new Date(2026, 0, 29),
+          especialidade_grupo_servico: 'CLINICA MEDICA', telefone: '333', email_principal: 'e@x.com' }),
+    raw({ codigo_prestador: '3000001', nome_prestador: 'TERCEIRO', numero_documento: '999', status_prestador: 'ATIVO' }),
+  ];
+  const rotacionado = [...rows.slice(2), ...rows.slice(0, 2)];
+  for (const portal of [[], portalDe(rows)]) {
+    const base = diffProviders(rows, portal, HOJE);
+    assert.deepEqual(diffProviders([...rows].reverse(), portal, HOJE), base);
+    assert.deepEqual(diffProviders(rotacionado, portal, HOJE), base);
+  }
 });

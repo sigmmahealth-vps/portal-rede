@@ -157,12 +157,20 @@ const unidade = (l: ParsedLocation): PortalLocation => ({
 // O SGU mantém o código antigo ("MUDOU DE CÓDIGO") como EXCLUÍDO com o mesmo CPF/CNPJ; o dedupeDocs
 // do parser fica com o documento do primeiro código visto — excluídos por último para o ativo ficar com ele.
 const excluido = (r: SguRawRow) => clean(r.status_prestador).toUpperCase().startsWith('EXCLU');
-const ativosPrimeiro = (rows: SguRawRow[]) => [...rows.filter((r) => !excluido(r)), ...rows.filter(excluido)];
+// Ordem total e determinística (o SELECT da raw não garante ordem): o "primeiro" de cada código/endereço/documento
+// não pode depender da posição física das linhas.
+const num = (a: unknown, b: unknown) => clean(a).localeCompare(clean(b), undefined, { numeric: true });
+export const ordenaRaw = (rows: SguRawRow[]): SguRawRow[] => [...rows].sort((a, b) =>
+  Number(excluido(a)) - Number(excluido(b))
+  || num(a.codigo_prestador, b.codigo_prestador)
+  || num(a.codigo_tipo_endereco, b.codigo_tipo_endereco)
+  || clean(a.especialidade_grupo_servico).localeCompare(clean(b.especialidade_grupo_servico)));
 
 export function diffProviders(raw: SguRawRow[], portal: PortalProvider[], hoje: string): DiffReport {
-  const { providers: sgu, warnings } = parseTabela(rawToTabelaRows(ativosPrimeiro(raw)));
-  const afast = afastamentoPorPrestador(raw, hoje);
-  const tipos = tipoEnderecoPorChave(raw);
+  const rows = ordenaRaw(raw);
+  const { providers: sgu, warnings } = parseTabela(rawToTabelaRows(rows));
+  const afast = afastamentoPorPrestador(rows, hoje);
+  const tipos = tipoEnderecoPorChave(rows);
   const doPortal = new Map(portal.map((p) => [p.sgu_code, p]));
   const doSgu = new Set(sgu.map((s) => s.sgu_code));
   const r: DiffReport = { novos: [], ausentes: [], alterados: [], unidades: [], afastamentos: [], avisos: warnings };

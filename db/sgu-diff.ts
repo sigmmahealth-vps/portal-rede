@@ -45,6 +45,8 @@ function imprimir(r: DiffReport, manuais: number) {
   for (const n of r.novos.filter((x) => !x.status.startsWith('exclu')).slice(0, LISTA)) {
     console.log(`   - ${n.sgu_code} ${n.name} (${n.status}, ${n.provider_group ?? '-'}, roteiro ${n.roteiro_cod ?? 'A DEFINIR'}, ${n.unidades} unid.)`);
   }
+  const novosAtivos = r.novos.filter((x) => !x.status.startsWith('exclu')).length;
+  if (novosAtivos > LISTA) console.log(`   ... (+${novosAtivos - LISTA})`);
   lista('Ausentes (no Portal, fora da raw)', r.ausentes,
     (a) => `${a.sgu_code} ${a.name} (${a.status ?? '-'})${a.tem_avaliacao ? ' — TEM AVALIAÇÃO' : ''}`);
   console.log(`   com avaliação: ${r.ausentes.filter((a) => a.tem_avaliacao).length}`);
@@ -64,7 +66,9 @@ async function main() {
   const url = pickDatabaseUrl();
   console.log(`APP_ENV=${process.env.APP_ENV ?? '(vazio)'} | banco: ${url ? new URL(url).host : '(vazio)'}`);
   try {
-    const { rows: raw } = await query<SguRawRow>('SELECT * FROM sgu_providers_raw');
+    const { rows: raw } = await query<SguRawRow>(
+      `SELECT *, dh_carga::text AS dh_carga_txt FROM sgu_providers_raw
+        ORDER BY codigo_prestador, codigo_tipo_endereco, especialidade_grupo_servico`);
     if (!raw.length) throw new Error('sgu_providers_raw está vazia — nada a comparar.');
     const cargas = new Set(raw.map((r) => (r.dh_carga instanceof Date ? r.dh_carga.getTime() : String(r.dh_carga))));
     if (cargas.size > 1) throw new Error(`sgu_providers_raw tem ${cargas.size} cargas (dh_carga) misturadas — comparação abortada.`);
@@ -81,9 +85,9 @@ async function main() {
       + `unidades ${report.unidades.length}, afastamentos ${report.afastamentos.length}`;
     await query(
       `INSERT INTO sgu_sync_runs (source, status, message, raw_loaded_at, report, finished_at)
-       -- direto do banco: o Date do JS corta os microssegundos da dh_carga
-       VALUES ('sgu-raw-diff', 'success', $1, (SELECT max(dh_carga) FROM sgu_providers_raw), $2, now())`,
-      [message, JSON.stringify({ ...report, manuais })]);
+       -- texto da mesma leitura da raw: o Date do JS corta os microssegundos e uma carga nova entre as consultas
+       VALUES ('sgu-raw-diff', 'success', $1, $3::timestamp, $2, now())`,
+      [message, JSON.stringify({ ...report, manuais }), raw[0].dh_carga_txt]);
     console.log(`\n✔ Registrado em sgu_sync_runs: ${message}`);
   } catch (err: any) {
     await query(

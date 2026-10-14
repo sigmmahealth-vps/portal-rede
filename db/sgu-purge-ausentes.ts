@@ -59,7 +59,11 @@ async function main() {
       }
       const ids = alvo.map((r) => r.id);
       const backup: Record<string, any[]> = { providers: (await c.query(`SELECT * FROM providers WHERE id = ANY($1::bigint[])`, [ids])).rows };
-      await coletar(c, 'providers', ids, backup);
+      // Usuários saem explicitamente (provider_id é SET NULL): seus filhos em cascata também entram no backup.
+      const userIds = (await c.query(`SELECT id FROM users WHERE provider_id = ANY($1::bigint[])`, [ids])).rows.map((r) => r.id);
+      const vistos = new Map<string, Set<string>>();
+      await coletar(c, 'providers', ids, backup, vistos);
+      await coletar(c, 'users', userIds, backup, vistos);
 
       console.log(`Prestadores a apagar: ${alvo.length}`);
       for (const p of alvo) console.log(`   - ${p.sgu_code} ${p.name} (${p.status})`);
@@ -74,9 +78,8 @@ async function main() {
       console.log(`Backup: ${arq}`);
       // Usuários primeiro capturados: providers saem antes (levam planos/eventos em cascata, que apontam
       // para esses usuários sem ON DELETE) e só então os usuários — users.provider_id vira NULL no meio.
-      const { rows: us } = await c.query(`SELECT id FROM users WHERE provider_id = ANY($1::bigint[])`, [ids]);
       const p = await c.query(`DELETE FROM providers WHERE id = ANY($1::bigint[])`, [ids]);
-      const u = await c.query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [us.map((r) => r.id)]);
+      const u = await c.query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [userIds]);
       console.log(`✔ Apagados: ${p.rowCount} prestadores e ${u.rowCount} usuários (o resto em cascata).`);
     });
   } finally {

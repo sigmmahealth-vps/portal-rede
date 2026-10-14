@@ -22,21 +22,29 @@ async function filhos(c: Consulta, tabela: string): Promise<{ tabela: string; co
        FROM pg_constraint k
        JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
        JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1] AND pa.attname = 'id'
-      WHERE k.contype = 'f' AND k.confrelid = $1::regclass AND array_length(k.conkey, 1) = 1`, [tabela]);
+      WHERE k.contype = 'f' AND k.confrelid = $1::regclass AND array_length(k.conkey, 1) = 1
+      ORDER BY 1, 2`, [tabela]);
   return rows;
 }
 
-// Backup guarda todo filho (restore precisa dos SET NULL); só segue a cascata ('c') para os netos.
+// Backup guarda todo filho (restore precisa dos SET NULL), deduplicado em `vistos`; só segue a cascata ('c')
+// para os netos, e `seguidos` garante que toda linha alcançada por cascata é percorrida uma vez, mesmo que
+// antes tenha entrado no backup por um FK SET NULL.
+type PorTabela = Map<string, Set<string>>;
+const doTabela = (m: PorTabela, t: string) => m.get(t) ?? m.set(t, new Set()).get(t)!;
 async function coletar(c: Consulta, tabela: string, ids: unknown[], backup: Record<string, any[]>,
-  vistos = new Map<string, Set<string>>(), nivel = 0) {
+  vistos: PorTabela = new Map(), seguidos: PorTabela = new Map(), nivel = 0) {
   if (!ids.length || nivel > 4) return;
   for (const f of await filhos(c, tabela)) {
     const { rows } = await c.query(`SELECT * FROM ${f.tabela} WHERE ${f.coluna} = ANY($1)`, [ids]);
-    const seen = vistos.get(f.tabela) ?? vistos.set(f.tabela, new Set()).get(f.tabela)!;
+    const seen = doTabela(vistos, f.tabela);
     const novas = rows.filter((r) => r.id == null || (!seen.has(String(r.id)) && seen.add(String(r.id))));
-    if (!novas.length) continue;
-    (backup[f.tabela] ??= []).push(...novas);
-    if (f.acao === 'c') await coletar(c, f.tabela, novas.map((r) => r.id).filter((x) => x != null), backup, vistos, nivel + 1);
+    if (novas.length) (backup[f.tabela] ??= []).push(...novas);
+    if (f.acao !== 'c') continue;
+    const seg = doTabela(seguidos, f.tabela);
+    const descer = rows.map((r) => r.id).filter((x) => x != null && !seg.has(String(x)));
+    descer.forEach((x) => seg.add(String(x)));
+    await coletar(c, f.tabela, descer, backup, vistos, seguidos, nivel + 1);
   }
 }
 
@@ -61,9 +69,9 @@ async function main() {
       const backup: Record<string, any[]> = { providers: (await c.query(`SELECT * FROM providers WHERE id = ANY($1::bigint[])`, [ids])).rows };
       // Usuários saem explicitamente (provider_id é SET NULL): seus filhos em cascata também entram no backup.
       const userIds = (await c.query(`SELECT id FROM users WHERE provider_id = ANY($1::bigint[])`, [ids])).rows.map((r) => r.id);
-      const vistos = new Map<string, Set<string>>();
-      await coletar(c, 'providers', ids, backup, vistos);
-      await coletar(c, 'users', userIds, backup, vistos);
+      const vistos: PorTabela = new Map(), seguidos: PorTabela = new Map();
+      await coletar(c, 'providers', ids, backup, vistos, seguidos);
+      await coletar(c, 'users', userIds, backup, vistos, seguidos);
 
       console.log(`Prestadores a apagar: ${alvo.length}`);
       for (const p of alvo) console.log(`   - ${p.sgu_code} ${p.name} (${p.status})`);
@@ -78,8 +86,14 @@ async function main() {
       console.log(`Backup: ${arq}`);
       // Usuários primeiro capturados: providers saem antes (levam planos/eventos em cascata, que apontam
       // para esses usuários sem ON DELETE) e só então os usuários — users.provider_id vira NULL no meio.
-      const p = await c.query(`DELETE FROM providers WHERE id = ANY($1::bigint[])`, [ids]);
-      const u = await c.query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [userIds]);
+      let p, u;
+      try {
+        p = await c.query(`DELETE FROM providers WHERE id = ANY($1::bigint[])`, [ids]);
+        u = await c.query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [userIds]);
+      } catch (e) {
+        console.error(`rollback — backup não usado: ${arq}`);
+        throw e;
+      }
       console.log(`✔ Apagados: ${p.rowCount} prestadores e ${u.rowCount} usuários (o resto em cascata).`);
     });
   } finally {

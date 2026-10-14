@@ -26,6 +26,9 @@ async function main() {
       const unidades: UnidadeRekey[] = rows.map((r) => ({ ...r, id: Number(r.id), provider_id: Number(r.provider_id) }));
       const plano = planejarRekey(unidades, raw);
       console.log(`Unidades sgu: ${unidades.length} | recodificadas: ${plano.rekey.length} | inativadas: ${plano.inativar.length}`);
+      const novos = plano.rekey.filter((r) => r.mudou_endereco);
+      console.log(`   endereço novo (mesma unidade): ${novos.length}`);
+      for (const r of novos.slice(0, 30)) console.log(`   - endereço novo: unidade ${r.id} → ${r.codigo}`);
       for (const i of plano.inativar.slice(0, 30)) console.log(`   - inativa ${i.id} → ${i.codigo}`);
       if (plano.inativar.length > 30) console.log(`   ... (+${plano.inativar.length - 30})`);
       if (!commit) { console.log('Dry-run: nada gravado. Para aplicar: --commit'); return; }

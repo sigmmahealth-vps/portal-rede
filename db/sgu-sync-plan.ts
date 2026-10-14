@@ -87,7 +87,7 @@ export interface UnidadeRekey {
   id: number; provider_id: number; sgu_code: string; sgu_location_code: string | null;
   sgu_tipo_endereco: string | null; cep: string | null; logradouro: string | null; numero: string | null;
 }
-export interface PlanoRekey { rekey: { id: number; codigo: string; tipo: string }[]; inativar: { id: number; codigo: string }[] }
+export interface PlanoRekey { rekey: { id: number; codigo: string; tipo: string; mudou_endereco?: boolean }[]; inativar: { id: number; codigo: string }[] }
 
 // Troca o código posicional (<código>-N) pelo estável (<código>-<tipo de endereço>), casando pelo
 // endereço e mantendo o id. Quem não casa (ou repete um tipo já tomado) fica inativo com '-x' no
@@ -108,5 +108,30 @@ export function planejarRekey(unidades: UnidadeRekey[], raw: SguRawRow[]): Plano
       plano.inativar.push({ id: u.id, codigo: `${u.sgu_location_code ?? `${u.sgu_code}-${u.id}`}-x` });
     }
   }
+  // Sobrou exatamente 1 unidade do portal e exatamente 1 endereço do SGU no prestador: é a mesma
+  // unidade com endereço novo — mantém o id (e a senha/avaliação) em vez de inativar.
+  const sguTipos = new Map<string, Set<string>>();
+  for (const r of ordenaRaw(raw)) {
+    const c = String(r.codigo_prestador ?? '').trim();
+    if (!sguTipos.has(c)) sguTipos.set(c, new Set());
+    sguTipos.get(c)!.add(String(r.codigo_tipo_endereco ?? '').trim());
+  }
+  const porId = new Map(unidades.map((u) => [u.id, u]));
+  const sobraPortal = new Map<number, number[]>();
+  for (const i of plano.inativar) {
+    const u = porId.get(i.id)!;
+    sobraPortal.set(u.provider_id, [...(sobraPortal.get(u.provider_id) ?? []), u.id]);
+  }
+  for (const [pid, ids] of sobraPortal) {
+    const u = porId.get(ids[0])!;
+    const sobraSgu = [...(sguTipos.get(u.sgu_code) ?? [])].filter((t) => t && !ocupados.has(`${pid}#${t}`));
+    if (ids.length !== 1 || sobraSgu.length !== 1) continue;
+    const tipo = sobraSgu[0];
+    ocupados.add(`${pid}#${tipo}`);
+    plano.inativar = plano.inativar.filter((i) => i.id !== u.id);
+    plano.rekey.push({ id: u.id, codigo: `${u.sgu_code}-${tipo}`, tipo, mudou_endereco: true });
+  }
+  plano.rekey.sort((a, b) => a.id - b.id);
+  plano.inativar.sort((a, b) => a.id - b.id);
   return plano;
 }

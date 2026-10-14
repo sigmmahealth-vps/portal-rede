@@ -38,7 +38,7 @@ export function rawToTabelaRows(rows: SguRawRow[]): TabelaRow[] {
 }
 
 export const addrKey = (cep: unknown, logradouro: unknown, numero: unknown): string =>
-  `${onlyDigits(cep)}|${clean(logradouro).toUpperCase()}|${clean(numero)}`;
+  `${onlyDigits(cep)}|${clean(logradouro).toUpperCase()}|${clean(numero).replace(/^0+(?=\d)/, '')}`;
 
 export function tipoEnderecoPorChave(rows: SguRawRow[]): Map<string, string> {
   const m = new Map<string, string>();

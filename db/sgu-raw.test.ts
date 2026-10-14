@@ -160,3 +160,8 @@ test('raw traduzida leva o codigo_tipo_endereco ao código da unidade', () => {
   const [p] = parseTabela(rawToTabelaRows([raw({ codigo_tipo_endereco: '4' })])).providers;
   assert.equal(p.locations[0].sgu_location_code, '1000546-4');
 });
+
+test('addrKey: zeros à esquerda do número são ignorados', () => {
+  assert.equal(addrKey('88840000', 'Rua X', '09'), addrKey('88840000', 'RUA X', '9'));
+  assert.equal(addrKey('1', 'x', '0'), '1|X|0');
+});

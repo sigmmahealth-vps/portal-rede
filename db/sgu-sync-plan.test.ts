@@ -107,3 +107,31 @@ test('cadastro manual com sgu_code na raw é ignorado (não insere, não atualiz
   assert.deepEqual([p.inserir, p.atualizar, p.excluirPorAusencia, p.unidadesNovas], [[], [], [], []]);
   assert.equal(p.ativos, 0);
 });
+
+test('planejarRekey: único par sobrando é a mesma unidade com endereço novo', () => {
+  const base = { provider_id: 10, sgu_code: '1000546', sgu_tipo_endereco: null };
+  const r = planejarRekey(
+    [{ ...base, id: 1, sgu_location_code: '1000546-1', cep: '88811560', logradouro: 'RUA AUGUSTO DOS ANJOS', numero: '270' }],
+    [raw({ codigo_tipo_endereco: '10', cep: '88811660', logradouro: 'RUA GUERRA JUNQUEIRA', numero_endereco: '235' })]);
+  assert.deepEqual(r.rekey, [{ id: 1, codigo: '1000546-10', tipo: '10', mudou_endereco: true }]);
+  assert.deepEqual(r.inativar, []);
+});
+
+test('planejarRekey: sobra ambígua (2 endereços novos para 1 unidade) continua inativando', () => {
+  const base = { provider_id: 10, sgu_code: '1000546', sgu_tipo_endereco: null };
+  const r = planejarRekey(
+    [{ ...base, id: 1, sgu_location_code: '1000546-1', cep: '1', logradouro: 'VELHA', numero: '1' }],
+    [raw({ codigo_tipo_endereco: '3', cep: '2', logradouro: 'A', numero_endereco: '1' }),
+     raw({ codigo_tipo_endereco: '4', cep: '3', logradouro: 'B', numero_endereco: '1' })]);
+  assert.deepEqual(r.rekey, []);
+  assert.deepEqual(r.inativar, [{ id: 1, codigo: '1000546-1-x' }]);
+});
+
+test('planejarRekey: número com zero à esquerda casa pelo endereço', () => {
+  const base = { provider_id: 10, sgu_code: '1000546', sgu_tipo_endereco: null };
+  const r = planejarRekey(
+    [{ ...base, id: 1, sgu_location_code: '1000546-1', cep: '88840000', logradouro: 'RUA BARAO DO RIO BRANCO', numero: '9' }],
+    [raw({ codigo_tipo_endereco: '2', cep: '88840000', logradouro: 'RUA BARAO DO RIO BRANCO', numero_endereco: '09' }),
+     raw({ codigo_tipo_endereco: '6', cep: '88803020', logradouro: 'RUA MAESTRO JACO', numero_endereco: '357' })]);
+  assert.deepEqual(r.rekey, [{ id: 1, codigo: '1000546-2', tipo: '2' }]);
+});

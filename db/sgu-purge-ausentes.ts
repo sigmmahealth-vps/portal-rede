@@ -15,23 +15,28 @@ import type { Consulta } from './sgu-sync.js';
 const LIMITE = 0.20; // mais que isso do cadastro sgu = raw suspeita, aborta
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Tabelas com FK de uma coluna para `tabela` — segue a cascata para o backup.
-async function filhos(c: Consulta, tabela: string): Promise<{ tabela: string; coluna: string }[]> {
+// Tabelas com FK de uma coluna (para o id de `tabela`) — segue a cascata para o backup.
+async function filhos(c: Consulta, tabela: string): Promise<{ tabela: string; coluna: string; acao: string }[]> {
   const { rows } = await c.query(
-    `SELECT k.conrelid::regclass::text AS tabela, a.attname AS coluna
+    `SELECT k.conrelid::regclass::text AS tabela, quote_ident(a.attname) AS coluna, k.confdeltype AS acao
        FROM pg_constraint k
        JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
+       JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1] AND pa.attname = 'id'
       WHERE k.contype = 'f' AND k.confrelid = $1::regclass AND array_length(k.conkey, 1) = 1`, [tabela]);
   return rows;
 }
 
-async function coletar(c: Consulta, tabela: string, ids: unknown[], backup: Record<string, any[]>, nivel = 0) {
+// Backup guarda todo filho (restore precisa dos SET NULL); só segue a cascata ('c') para os netos.
+async function coletar(c: Consulta, tabela: string, ids: unknown[], backup: Record<string, any[]>,
+  vistos = new Map<string, Set<string>>(), nivel = 0) {
   if (!ids.length || nivel > 4) return;
   for (const f of await filhos(c, tabela)) {
     const { rows } = await c.query(`SELECT * FROM ${f.tabela} WHERE ${f.coluna} = ANY($1)`, [ids]);
-    if (!rows.length) continue;
-    (backup[f.tabela] ??= []).push(...rows);
-    await coletar(c, f.tabela, rows.map((r) => r.id).filter((x) => x != null), backup, nivel + 1);
+    const seen = vistos.get(f.tabela) ?? vistos.set(f.tabela, new Set()).get(f.tabela)!;
+    const novas = rows.filter((r) => r.id == null || (!seen.has(String(r.id)) && seen.add(String(r.id))));
+    if (!novas.length) continue;
+    (backup[f.tabela] ??= []).push(...novas);
+    if (f.acao === 'c') await coletar(c, f.tabela, novas.map((r) => r.id).filter((x) => x != null), backup, vistos, nivel + 1);
   }
 }
 
@@ -58,7 +63,7 @@ async function main() {
 
       console.log(`Prestadores a apagar: ${alvo.length}`);
       for (const p of alvo) console.log(`   - ${p.sgu_code} ${p.name} (${p.status})`);
-      console.log('Linhas que saem junto (backup):');
+      console.log('Linhas no backup (inclui vínculos que só perdem a referência):');
       for (const [t, rows] of Object.entries(backup)) console.log(`   ${t}: ${rows.length}`);
       if (!commit) { console.log('Dry-run: nada apagado. Para apagar: --commit'); return; }
 
@@ -67,8 +72,11 @@ async function main() {
       const arq = path.join(dir, `sgu-purge-${process.env.APP_ENV ?? 'sem-env'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
       fs.writeFileSync(arq, JSON.stringify(backup, null, 1));
       console.log(`Backup: ${arq}`);
-      const u = await c.query(`DELETE FROM users WHERE provider_id = ANY($1::bigint[])`, [ids]);
+      // Usuários primeiro capturados: providers saem antes (levam planos/eventos em cascata, que apontam
+      // para esses usuários sem ON DELETE) e só então os usuários — users.provider_id vira NULL no meio.
+      const { rows: us } = await c.query(`SELECT id FROM users WHERE provider_id = ANY($1::bigint[])`, [ids]);
       const p = await c.query(`DELETE FROM providers WHERE id = ANY($1::bigint[])`, [ids]);
+      const u = await c.query(`DELETE FROM users WHERE id = ANY($1::bigint[])`, [us.map((r) => r.id)]);
       console.log(`✔ Apagados: ${p.rowCount} prestadores e ${u.rowCount} usuários (o resto em cascata).`);
     });
   } finally {

@@ -94,3 +94,9 @@ test('planejarRekey: casa por endereço mantendo id; não casado e endereço rep
   assert.deepEqual(r.rekey, [{ id: 1, codigo: '1000546-2', tipo: '2' }, { id: 2, codigo: '1000546-3', tipo: '3' }]);
   assert.deepEqual(r.inativar, [{ id: 3, codigo: '1000546-3-x' }, { id: 4, codigo: '1000546-4-x' }]);
 });
+
+test('planejarRekey: duas unidades sem código não colidem no -x', () => {
+  const base = { provider_id: 10, sgu_code: '1000546', sgu_tipo_endereco: null, sgu_location_code: null, cep: null, logradouro: 'X', numero: '1' };
+  const r = planejarRekey([{ ...base, id: 7 }, { ...base, id: 8 }], [raw()]);
+  assert.deepEqual(r.inativar, [{ id: 7, codigo: '1000546-7-x' }, { id: 8, codigo: '1000546-8-x' }]);
+});

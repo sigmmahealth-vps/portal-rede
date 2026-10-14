@@ -104,7 +104,7 @@ export function planejarRekey(unidades: UnidadeRekey[], raw: SguRawRow[]): Plano
       ocupados.add(chave);
       plano.rekey.push({ id: u.id, codigo: `${u.sgu_code}-${tipo}`, tipo });
     } else {
-      plano.inativar.push({ id: u.id, codigo: `${u.sgu_location_code ?? u.sgu_code}-x` });
+      plano.inativar.push({ id: u.id, codigo: `${u.sgu_location_code ?? `${u.sgu_code}-${u.id}`}-x` });
     }
   }
   return plano;

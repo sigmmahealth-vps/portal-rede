@@ -176,7 +176,8 @@ const answerPill = (v: string | null | undefined) => {
 // reabrir/reavaliar mudaria o certificado. Espelha o read-only do prestador.
 const CLOSED_STATUSES = ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'];
 // Enquanto o prestador não enviou (pendente/em_andamento) não há o que analisar — abre só leitura.
-const READONLY_STATUSES = [...CLOSED_STATUSES, 'em_andamento', 'pendente'];
+// Suspensa (prestador inativo no SGU) também é só leitura.
+const READONLY_STATUSES = [...CLOSED_STATUSES, 'em_andamento', 'pendente', 'suspensa'];
 
 // --- Componente principal ----------------------------------------------------
 

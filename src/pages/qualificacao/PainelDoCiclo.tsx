@@ -18,7 +18,7 @@ const NO_SEAL_COLOR = '#A5B4FC';
 // Dimensões exibidas ao lado do total (Segurança já consolida Documento Legal no backend).
 const DIMENSOES: [string, string][] = [['Seg', 'Segurança'], ['Conf', 'Conforto'], ['Exp', 'Experiência do Cliente']];
 const isClosedInstance = (status: string) =>
-  ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado'].includes(status);
+  ['aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado', 'suspensa'].includes(status);
 // Prestador ainda não enviou o roteiro — nada para analisar, só acompanhar o progresso.
 const isNotSubmitted = (status: string) =>
   ['em_andamento', 'pendente'].includes(status);
@@ -47,6 +47,7 @@ function statusPill(status: string) {
     reprovado: 'bg-red-100 text-red-700',
     finalizado: 'bg-emerald-100 text-emerald-800',
     ciclo_encerrado: 'bg-slate-200 text-slate-700',
+    suspensa: 'bg-gray-200 text-gray-700',
   };
   return map[status] || 'bg-gray-100 text-gray-600';
 }

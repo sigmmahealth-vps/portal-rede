@@ -160,7 +160,7 @@ export default function PrestadorView({ user }: { user: any }) {
     url.searchParams.delete('corrigir');
     window.history.replaceState({}, '', url.toString());
     const inst = instances.find(i => String(i.id) === id);
-    if (inst && !OPEN_STATES.includes(inst.status)) {
+    if (inst && !OPEN_STATES.includes(inst.status) && inst.status !== 'suspensa') {
       setActivePlayer({ scriptId: inst.script_id, instanceId: inst.id, locationId: inst.location_id ?? undefined, readOnly: false, initialFilter: 'reanalise' });
     }
   }, [loading, instances]);

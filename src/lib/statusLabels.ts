@@ -13,6 +13,7 @@ export const STATUS_LABEL: Record<string, string> = {
   reprovado:             'Concluído',
   finalizado:            'Concluído',
   ciclo_encerrado:       'Ciclo Encerrado',
+  suspensa:              'Suspensa (prestador inativo)',   // rotina diária do SGU (spec 2026-10-14)
 };
 
 export function statusLabel(status: string): string {

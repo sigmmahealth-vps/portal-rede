@@ -193,3 +193,13 @@ test('displayStatus: sem contagem de pendentes (dado ausente) mantém o status g
   ], [], now);
   assert.equal(r.instances[0].display_status, 'em_analise');
 });
+
+test('suspensa: não é pendente, não é enviada e não entra na média', () => {
+  const r = buildAuditorDashboard(cycle, [
+    inst({ id: 1, status: 'suspensa', percentual: 0 }),
+    inst({ id: 2, status: 'aprovado', percentual: 80 }),
+  ], []);
+  assert.equal(r.kpis.pending, 0);
+  assert.equal(r.kpis.sent, 1);
+  assert.equal(r.kpis.avg_score, 80);
+});

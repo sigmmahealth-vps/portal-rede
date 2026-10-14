@@ -108,7 +108,7 @@ export function buildAuditorDashboard(
     if (PENDING_STATUSES.has(inst.status)) pending++;
     if (inst.status === 'em_analise') in_review++;
     if (inst.status === 'aguardando_evidencia') awaiting_provider++;
-    if (inst.status !== 'em_andamento') scores.push(Number(inst.percentual) || 0);
+    if (inst.status !== 'em_andamento' && inst.status !== 'suspensa') scores.push(Number(inst.percentual) || 0);
 
     if (inst.seal && seal_distribution[inst.seal] !== undefined) seal_distribution[inst.seal]++;
     else if (!inst.seal && inst.status === 'reprovado') seal_distribution['Não Qualificado']++;

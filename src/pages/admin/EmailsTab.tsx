@@ -198,9 +198,7 @@ export default function EmailsTab() {
             <tr className="bg-gray-50 border-b border-gray-100 text-xs text-gray-600">
               <th className="p-3 font-semibold">Data/hora</th>
               <th className="p-3 font-semibold">Destinatário</th>
-              <th className="p-3 font-semibold">Prestador</th>
               <th className="p-3 font-semibold">Tipo</th>
-              <th className="p-3 font-semibold">Assunto</th>
               <th className="p-3 font-semibold">Status</th>
               <th className="p-3 font-semibold text-center">Tent.</th>
               <th className="p-3 font-semibold text-right">Ações</th>
@@ -208,19 +206,32 @@ export default function EmailsTab() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="p-6 text-center text-gray-500">Carregando...</td></tr>
+              <tr><td colSpan={6} className="p-6 text-center text-gray-500">Carregando...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={8} className="p-6 text-center text-gray-500">Nenhum e-mail no período/filtro.</td></tr>
+              <tr><td colSpan={6} className="p-6 text-center text-gray-500">Nenhum e-mail no período/filtro.</td></tr>
             ) : items.map(row => {
               const st = STATUS[row.email_status] ?? { label: row.email_status, cls: 'bg-gray-100 text-gray-600' };
+              const prestador = row.provider_name
+                ? `${row.provider_name}${row.provider_code ? ` · ${row.provider_code}` : ''}` : null;
               return (
-                <tr key={row.id} className="border-b border-gray-50">
-                  <td className="p-3 whitespace-nowrap text-gray-600">{fmtDataHora(row.created_at)}</td>
-                  <td className="p-3 whitespace-nowrap">{row.email_to}</td>
-                  <td className="p-3">{row.provider_name ? <span>{row.provider_name}{row.provider_code ? <span className="text-gray-400"> · {row.provider_code}</span> : null}</span> : <span className="text-gray-300">—</span>}</td>
-                  <td className="p-3 whitespace-nowrap">{TYPE_LABELS[row.type] ?? row.type}</td>
-                  <td className="p-3 max-w-xs truncate" title={row.title}>{row.title}</td>
-                  <td className="p-3"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${st.cls}`}>{st.label}</span></td>
+                <tr key={row.id} className="border-b border-gray-50 align-top">
+                  <td className="p-3 whitespace-nowrap text-gray-600 tabular-nums">
+                    {(() => { const [data, hora] = fmtDataHora(row.created_at).split(', ');
+                      return <><div>{data}</div><div className="text-xs text-gray-400">{hora}</div></>; })()}
+                  </td>
+                  {/* Destinatário + prestador numa célula só: a coluna própria do prestador era espremida
+                      pelas vizinhas sem quebra e virava uma palavra por linha. */}
+                  <td className="p-3 min-w-0 max-w-[17rem]">
+                    <div className="truncate text-gray-900" title={row.email_to}>{row.email_to}</div>
+                    <div className="truncate text-xs text-gray-500" title={prestador ?? undefined}>
+                      {prestador ?? <span className="text-gray-300">—</span>}
+                    </div>
+                  </td>
+                  <td className="p-3 min-w-0 max-w-[15rem]">
+                    <div className="whitespace-nowrap text-gray-900">{TYPE_LABELS[row.type] ?? row.type}</div>
+                    <div className="truncate text-xs text-gray-500" title={row.title}>{row.title}</div>
+                  </td>
+                  <td className="p-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${st.cls}`}>{st.label}</span></td>
                   <td className="p-3 text-center tabular-nums text-gray-600">{row.email_attempts}</td>
                   <td className="p-3 text-right">
                     {TRANSACTIONAL_TYPES.has(row.type) ? (

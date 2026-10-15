@@ -79,7 +79,7 @@ export default function RightSidebar() {
         <div className="p-5">
           <h3 className="text-sm font-bold text-gray-800 mb-2">Precisa de ajuda?</h3>
           <p className="text-xs text-gray-500 mb-4">Nossa equipe de suporte está pronta para te auxiliar com qualquer dúvida.</p>
-          <a href="https://wa.me/5548999999999" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+          <a href="https://wa.me/554834315941" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
             <WhatsAppIcon className="h-4 w-4 text-[#25D366]" /> Falar no WhatsApp
           </a>
         </div>

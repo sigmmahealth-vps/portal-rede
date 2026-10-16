@@ -11,8 +11,12 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // A validade dos certificados trava assim que o ciclo é aberto (tem instâncias).
   const opened = (initial?.instances_count ?? 0) > 0;
+  // A validade congela no 1º certificado emitido; com o ciclo aberto e sem certificado, só o admin ajusta.
+  const emitted = (initial?.certificates_count ?? 0) > 0;
+  const isAdmin = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null')?.role === 'admin'; } catch { return false; } })();
+  const validityLocked = emitted || (opened && !isAdmin);
+  const validityPast = !!certValidUntil && certValidUntil < new Date().toLocaleDateString('sv-SE');
   // Ciclo encerrado com instâncias não reativa pelo modal (o PATCH devolve 409) —
   // a reabertura é pelos botões Reabrir/Prorrogar, que restauram as avaliações.
   const lockedClosed = opened && initial && !initial.active;
@@ -20,8 +24,9 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
   const save = async () => {
     setErr(null); setSaving(true);
     try {
-      // Não reenvia cert_valid_until em ciclo já aberto (o back rejeita).
-      const cvu = opened ? undefined : certValidUntil;
+      // Só reenvia cert_valid_until quando pode mudar e, em ciclo aberto, só se mudou (o back rejeita os outros casos).
+      const unchanged = certValidUntil === (initial?.cert_valid_until?.slice(0, 10) || '');
+      const cvu = validityLocked || (opened && unchanged) ? undefined : certValidUntil;
       if (initial?.id) {
         await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active: lockedClosed ? undefined : active, cert_valid_until: cvu }) });
       } else {
@@ -55,7 +60,7 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
           </div>
           <label className="block">
             <span className="text-sm text-gray-600">Validade dos certificados</span>
-            {opened ? (
+            {validityLocked ? (
               <div className="mt-1 w-full rounded border bg-gray-100 px-3 py-2 text-gray-700">
                 {certValidUntil ? fmtData(certValidUntil) : '—'}
               </div>
@@ -68,10 +73,17 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
               />
             )}
             <span className="mt-1 block text-xs text-gray-500">
-              {opened
-                ? 'Ciclo já aberto — a validade não pode mais ser alterada.'
-                : 'Todos os certificados emitidos neste ciclo valerão até esta data. Trava ao abrir o ciclo.'}
+              {emitted
+                ? 'Já há certificado emitido neste ciclo — a validade não pode mais ser alterada.'
+                : validityLocked
+                  ? 'Ciclo já aberto — só o administrador altera a validade (até o 1º certificado emitido).'
+                  : 'Todos os certificados emitidos neste ciclo valerão até esta data. Trava no 1º certificado emitido.'}
             </span>
+            {opened && !emitted && validityPast && (
+              <span className="mt-1 block text-xs font-semibold text-red-700">
+                Esta data já passou: os pareceres finais deste ciclo ficam bloqueados até a validade ser ajustada.
+              </span>
+            )}
           </label>
           {lockedClosed ? (
             <p className="text-xs text-gray-500">Ciclo encerrado — para reativar use Reabrir ou Prorrogar na lista de ciclos.</p>
@@ -85,7 +97,7 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
         </div>
         <div className="p-4 bg-gray-50 rounded-b-xl flex justify-end gap-2">
           <button onClick={onClose} className="btn btn-outline">Cancelar</button>
-          <button onClick={save} disabled={saving || !label || !start || !end || (!opened && !certValidUntil)} className="btn btn-primary">
+          <button onClick={save} disabled={saving || !label || !start || !end || (!validityLocked && !certValidUntil)} className="btn btn-primary">
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>

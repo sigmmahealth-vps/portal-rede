@@ -4410,7 +4410,9 @@ async function startServer() {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const { rows } = await query(`
         SELECT c.id, c.label, c.start_date, c.end_date, c.active, c.cert_valid_until,
-               (SELECT COUNT(*)::int FROM eval_instances ei WHERE ei.cycle_id = c.id) AS instances_count
+               (SELECT COUNT(*)::int FROM eval_instances ei WHERE ei.cycle_id = c.id) AS instances_count,
+               (SELECT COUNT(*)::int FROM eval_certificates ec JOIN eval_instances ei ON ei.id = ec.instance_id
+                 WHERE ei.cycle_id = c.id) AS certificates_count
           FROM eval_cycles c
          ORDER BY c.active DESC, c.start_date DESC, c.id DESC
       `);
@@ -4486,10 +4488,17 @@ async function startServer() {
         }
       }
       if (cert_valid_until != null) {
-        // A validade dos certificados trava assim que o ciclo é aberto (tem instâncias).
-        const { rows: refs } = await query('SELECT 1 FROM eval_instances WHERE cycle_id = $1 LIMIT 1', [id]);
-        if (refs.length) {
-          return res.status(409).json({ error: 'Ciclo já aberto — validade dos certificados não pode ser alterada.' });
+        // A validade congela no 1º certificado emitido. Com o ciclo aberto (tem instâncias) e
+        // nenhum certificado, só o admin ajusta — ex.: validade passou e o parecer está bloqueado.
+        const { rows: [uso] } = await query(`
+          SELECT EXISTS (SELECT 1 FROM eval_instances WHERE cycle_id = $1) AS aberto,
+                 EXISTS (SELECT 1 FROM eval_certificates ec JOIN eval_instances i ON i.id = ec.instance_id
+                          WHERE i.cycle_id = $1) AS emitido`, [id]);
+        if (uso.emitido) {
+          return res.status(409).json({ error: 'Já há certificado emitido neste ciclo — a validade não pode mais ser alterada.' });
+        }
+        if (uso.aberto && req.user.role !== 'admin') {
+          return res.status(403).json({ error: 'Com o ciclo aberto, só o administrador altera a validade dos certificados.' });
         }
       }
       const { rows } = await query(
@@ -5716,12 +5725,21 @@ async function startServer() {
 
       const { rows: [inst] } = await query(`
         SELECT ei.id, ei.status, ei.provider_id, ei.location_id, ei.cycle_id,
-               ei.submitted_on_behalf, c.cert_valid_until
+               ei.submitted_on_behalf, c.cert_valid_until,
+               (c.cert_valid_until < CURRENT_DATE) AS validade_vencida
           FROM eval_instances ei
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.id = $1
       `, [id]);
       if (!inst) return res.status(404).json({ error: 'instance not found' });
+      // Certificado não nasce vencido: com a validade do ciclo no passado, o parecer espera o admin ajustá-la.
+      if (inst.validade_vencida) {
+        const d = String(inst.cert_valid_until).slice(0, 10).split('-').reverse().join('/');
+        return res.status(409).json({
+          error: `A validade dos certificados deste ciclo (${d}) já passou — o certificado nasceria vencido. `
+            + 'Peça ao administrador para ajustar a validade em Ciclos (Editar ciclo) e emita o parecer em seguida.',
+        });
+      }
       // aguardando_evidencia também emite (spec 2026-09-11): a trava real é "todos os
       // critérios terminais" (abaixo) — decididos, nada resta editável pelo prestador.
       if (!['em_analise', 'aguardando_evidencia'].includes(inst.status)) {

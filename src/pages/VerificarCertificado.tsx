@@ -41,7 +41,7 @@ export default function VerificarCertificado() {
           Verificação de Certificado
         </h1>
         <p className="mt-1 text-center text-xs text-gray-500">
-          Qualificação da Rede Credenciada — Unimed Criciúma
+          Qualificação da Rede de Prestadores — Unimed Criciúma
         </p>
 
         <div className="mt-6">

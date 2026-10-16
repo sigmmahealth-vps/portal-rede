@@ -434,7 +434,7 @@ export default function PrestadorView({ user }: { user: any }) {
       {/* Cabeçalho do módulo */}
       <div>
         <h1 className="text-2xl font-bold text-secondary-900">Qualificação da Rede</h1>
-        <p className="text-gray-500">Gestão do ciclo de qualificação da rede credenciada Unimed Criciúma</p>
+        <p className="text-gray-500">Gestão do ciclo de qualificação da rede de prestadores Unimed Criciúma</p>
       </div>
 
       {/* Barra de abas */}

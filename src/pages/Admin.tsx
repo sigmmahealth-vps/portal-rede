@@ -1453,7 +1453,7 @@ function RedeOverview({ rede, loading }: { rede: RedeStats; loading: boolean }) 
               <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">Total de prestadores</span>
             </div>
             <div className="mt-2 text-4xl font-bold tabular-nums text-gray-900">{nf(rede.total)}</div>
-            <p className="mt-1 text-sm text-gray-500">Rede credenciada da Unimed Criciúma</p>
+            <p className="mt-1 text-sm text-gray-500">Rede de prestadores da Unimed Criciúma</p>
           </div>
 
           <div className="p-6">

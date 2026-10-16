@@ -86,7 +86,7 @@ export default function GestorDashboard({ user }: { user: any }) {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard de Qualificação</h1>
-          <p className="text-sm text-gray-500">Visão Estratégica da Rede Prestadora - RN 630</p>
+          <p className="text-sm text-gray-500">Visão Estratégica da Rede de Prestadores - RN 630</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-gray-600">

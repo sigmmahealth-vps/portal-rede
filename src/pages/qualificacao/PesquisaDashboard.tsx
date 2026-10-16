@@ -190,7 +190,7 @@ export default function PesquisaDashboard({ user }: { user: any }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Pesquisa de Satisfação</h1>
-          <p className="text-sm text-gray-500">Indicadores da rede credenciada por ciclo</p>
+          <p className="text-sm text-gray-500">Indicadores da rede de prestadores por ciclo</p>
         </div>
         {cycles.length > 0 && (
           <select className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"

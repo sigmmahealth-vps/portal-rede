@@ -125,7 +125,7 @@ export default function CertificadosTab() {
                 <div className={`flex items-start justify-between bg-gradient-to-br ${style.grad} p-5`}>
                   <div>
                     <p className={`text-[10px] font-bold uppercase tracking-widest ${style.text} opacity-70`}>
-                      Qualificação Rede Credenciada
+                      Qualificação Rede de Prestadores
                     </p>
                     <p className={`text-2xl font-extrabold ${style.text}`}>{c.seal}</p>
                   </div>

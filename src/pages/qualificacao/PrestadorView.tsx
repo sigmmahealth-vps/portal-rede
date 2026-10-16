@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { fetchApi, manualHref } from '../../lib/api';
 import { fmtData, fmtPct } from '../../lib/formatDate';
 import {
@@ -149,6 +150,17 @@ export default function PrestadorView({ user }: { user: any }) {
     loadData();
     loadSurvey();
   }, []);
+
+  // Link com ?aba= clicado já dentro da Qualificação (ex.: "Ver meu certificado" da barra lateral):
+  // a tela não remonta, então a aba segue a navegação. location.key muda até no clique repetido na mesma URL.
+  const location = useLocation();
+  useEffect(() => {
+    const p = new URLSearchParams(location.search).get('aba');
+    const tab = TABS.find(t => t.key === p)?.key;
+    if (!tab) return;
+    setActivePlayer(null);
+    setActiveTab(tab);
+  }, [location.key]);
 
   // ?corrigir=<instância> (notificação de reanálise): abre o roteiro direto na correção,
   // como o botão "Corrigir" do Início. Consome o parâmetro para não reabrir ao voltar.

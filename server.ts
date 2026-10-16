@@ -24,6 +24,7 @@ import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/prov
 import { questionOnly } from './src/lib/questionText.js';
 import { PRIVACY_POLICY_VERSION } from './src/lib/privacyPolicy.js';
 import { TERMO_EVIDENCIAS_VERSION, termoEvidenciasTexto } from './src/lib/termoEvidencias.js';
+import { parecerBlock, validityVsEndError } from './src/lib/cycleRules.js';
 import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail } from './src/lib/notifyEmail.js';
@@ -3996,36 +3997,8 @@ async function startServer() {
   // ponytail: legado. O selo agora é calculado exclusivamente em POST /parecer.
   // O campo `seal` do body é ignorado. Mantido para compat com o AuditorEvaluationModal
   // antigo até a Task 11 refatorar.
-  app.put('/api/eval/instances/:id/status', authenticate, async (req: any, res) => {
-    try {
-      const instance = await loadInstanceForWrite(req, res);
-      if (!instance) return;
-
-      const { status, score, percentual, max_possible_score, seal } = req.body;
-      const now = new Date().toISOString();
-      await query(`
-        UPDATE eval_instances
-        SET status = $1, score = $2, max_possible_score = $3, percentual = $4,
-            completed_at = CASE WHEN $5 IN ('pendente', 'finalizado') THEN $6 ELSE completed_at END
-        WHERE id = $7
-      `, [status, score || 0, max_possible_score || 0, percentual || 0, status, now, req.params.id]);
-
-      await auditLog({
-        query, userId: req.user.id, action: 'evaluation_status_changed',
-        meta: {
-          provider_id: Number(instance.provider_id),
-          instance_id: Number(req.params.id),
-          location_id: instance.location_id ?? null,
-          status, seal: seal || null,
-        },
-        ip: hashClientIp(req),
-      });
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  // (Removido 2026-10-16) PUT /api/eval/instances/:id/status: sem uso nas telas e deixava o próprio
+  // prestador gravar status/nota da avaliação (até tirá-la de ciclo_encerrado). Status muda só pelos fluxos.
 
   app.post('/api/eval/instances/:id/reopen', authenticate, async (req: any, res) => {
     try {
@@ -4448,6 +4421,8 @@ async function startServer() {
       if (new Date(end_date) < new Date(start_date)) {
         return res.status(400).json({ error: 'end_date < start_date' });
       }
+      const erroValidade = validityVsEndError(end_date, cert_valid_until);
+      if (erroValidade) return res.status(400).json({ error: erroValidade });
       if (active) {
         const other = await findConflictingActiveCycle();
         if (other != null) {
@@ -4487,19 +4462,27 @@ async function startServer() {
           return res.status(409).json({ error: 'Ciclo encerrado com avaliações — use Reabrir ou Prorrogar na lista de ciclos.' });
         }
       }
+      const { rows: [uso] } = await query(`
+        SELECT c.active, c.end_date, c.cert_valid_until,
+               EXISTS (SELECT 1 FROM eval_instances WHERE cycle_id = c.id) AS aberto,
+               EXISTS (SELECT 1 FROM eval_certificates ec JOIN eval_instances i ON i.id = ec.instance_id
+                        WHERE i.cycle_id = c.id) AS emitido
+          FROM eval_cycles c WHERE c.id = $1`, [id]);
+      if (!uso) return res.status(404).json({ error: 'not found' });
       if (cert_valid_until != null) {
         // A validade congela no 1º certificado emitido. Com o ciclo aberto (tem instâncias) e
         // nenhum certificado, só o admin ajusta — ex.: validade passou e o parecer está bloqueado.
-        const { rows: [uso] } = await query(`
-          SELECT EXISTS (SELECT 1 FROM eval_instances WHERE cycle_id = $1) AS aberto,
-                 EXISTS (SELECT 1 FROM eval_certificates ec JOIN eval_instances i ON i.id = ec.instance_id
-                          WHERE i.cycle_id = $1) AS emitido`, [id]);
         if (uso.emitido) {
           return res.status(409).json({ error: 'Já há certificado emitido neste ciclo — a validade não pode mais ser alterada.' });
         }
         if (uso.aberto && req.user.role !== 'admin') {
           return res.status(403).json({ error: 'Com o ciclo aberto, só o administrador altera a validade dos certificados.' });
         }
+      }
+      if (end_date != null || cert_valid_until != null) {
+        // Validade ≥ fim do ciclo: todo certificado emitido dentro do prazo nasce válido (cycleRules).
+        const erro = validityVsEndError(end_date ?? uso.end_date, cert_valid_until ?? uso.cert_valid_until, uso.emitido);
+        if (erro) return res.status(400).json({ error: erro });
       }
       const { rows } = await query(
         `UPDATE eval_cycles
@@ -4511,23 +4494,23 @@ async function startServer() {
                 auto_close = COALESCE($6, auto_close),
                 cert_valid_until = COALESCE($8, cert_valid_until)
           WHERE id = $7 RETURNING *`,
-        [label ?? null, start_date ?? null, end_date ?? null, active ?? null,
+        // Desativar passa pelo closeCycleCore (abaixo), não por este UPDATE.
+        [label ?? null, start_date ?? null, end_date ?? null, active === true ? true : null,
          typeof auto_open === 'boolean' ? auto_open : null,
          typeof auto_close === 'boolean' ? auto_close : null, id, cert_valid_until ?? null]
       );
       if (!rows[0]) return res.status(404).json({ error: 'not found' });
-      // Ao desativar o ciclo por PATCH, garante o mesmo efeito do /encerrar:
-      // instâncias não-terminais viram 'ciclo_encerrado' (viram histórico).
-      if (active === false) {
-        await query(
-          `UPDATE eval_instances
-              SET status_before_close = status,
-                  status = 'ciclo_encerrado', completed_at = COALESCE(completed_at, now())
-            WHERE cycle_id = $1
-              AND status NOT IN ('aprovado', 'reprovado', 'finalizado', 'ciclo_encerrado')`,
-          [id]
-        );
-        await notifyCycleClosed(id);   // B-04: avisa quem ficou sem avaliação processada
+      // Desativar pelo Editar ciclo = Encerrar: avaliações não-terminais viram 'ciclo_encerrado',
+      // planos abertos 'encerrado sem conclusão', aviso aos prestadores e trilha de auditoria.
+      if (active === false && uso.active) {
+        const r = await closeCycleCore(id, true);
+        if (!r.ok) return res.status(r.code || 500).json({ error: r.error });
+        await auditLog({
+          query, userId: req.user.id, action: 'cycle_closed',
+          meta: { cycle_id: id, forced: true, inconclusive: r.inconclusive, via: 'editar_ciclo' },
+          ip: hashClientIp(req),
+        });
+        rows[0].active = false;
       }
       res.json(rows[0]);
     } catch (err: any) {
@@ -5281,18 +5264,30 @@ async function startServer() {
       // "Confirmar abertura" ativa o ciclo no mesmo passo. Se estiver inativo e não
       // houver conflito (regra 1-ativo, spec 5.4.2.1), ativa antes de abrir. Se já
       // existe outro ativo, devolve mensagem clara em vez do genérico 'não está ativo'.
-      const { rows: cy } = await query('SELECT active FROM eval_cycles WHERE id = $1', [cycleId]);
+      const { rows: cy } = await query(`SELECT active, EXISTS (SELECT 1 FROM eval_instances WHERE cycle_id = $1) AS aberto
+                                          FROM eval_cycles WHERE id = $1`, [cycleId]);
       if (!cy.length) return res.status(404).json({ error: 'ciclo não encontrado' });
+      // Ciclo encerrado com avaliações só volta por Reabrir/Prorrogar (restauram as avaliações);
+      // antes, este passo ativava o ciclo e só depois recusava, deixando-o ativo com tudo encerrado.
+      if (!cy[0].active && cy[0].aberto) {
+        return res.status(409).json({ error: 'Ciclo encerrado com avaliações — use Reabrir ou Prorrogar na lista de ciclos.' });
+      }
+      let ativou = false;
       if (!cy[0].active) {
         const other = await findConflictingActiveCycle(cycleId);
         if (other != null) {
           return res.status(409).json({ error: 'Existe outro ciclo ativo — encerre-o antes de abrir este.', active_cycle_id: other });
         }
         await query('UPDATE eval_cycles SET active = true WHERE id = $1', [cycleId]);
+        ativou = true;
       }
 
       const result = await openCycleCore(cycleId);
-      if (!result.ok) return res.status(result.code || 500).json({ error: result.error });
+      if (!result.ok) {
+        // Abertura falhou: não deixa ativado um ciclo que não abriu.
+        if (ativou) await query('UPDATE eval_cycles SET active = false WHERE id = $1', [cycleId]);
+        return res.status(result.code || 500).json({ error: result.error });
+      }
 
       await auditLog({
         query, userId: req.user.id, action: 'cycle_opened',
@@ -5433,7 +5428,11 @@ async function startServer() {
   // Reabre um ciclo encerrado (spec 2026-09-11): reativa e restaura as instâncias
   // 'ciclo_encerrado' ao status anterior. newEndDate presente = prorrogação.
   async function reopenCycleCore(cycleId: number, newEndDate: string | null): Promise<{ ok: boolean; code?: number; error?: string; restored?: number; endDate?: string; label?: string; reopened?: Array<{ id: number; provider_id: number; location_id: number | null; status: string }> }> {
-    const { rows: cy } = await query('SELECT id, label, active, start_date, end_date FROM eval_cycles WHERE id = $1', [cycleId]);
+    const { rows: cy } = await query(`
+      SELECT id, label, active, start_date, end_date, cert_valid_until,
+             EXISTS (SELECT 1 FROM eval_certificates ec JOIN eval_instances i ON i.id = ec.instance_id
+                      WHERE i.cycle_id = eval_cycles.id) AS emitido
+        FROM eval_cycles WHERE id = $1`, [cycleId]);
     if (!cy.length) return { ok: false, code: 404, error: 'ciclo não encontrado' };
     if (cy[0].active) return { ok: false, code: 409, error: 'ciclo já está ativo — para prorrogar, edite a data fim' };
     const other = await findConflictingActiveCycle(cycleId);
@@ -5447,6 +5446,12 @@ async function startServer() {
     }
     if (newEndDate && newEndDate < toISO(cy[0].start_date)) {
       return { ok: false, code: 400, error: 'A nova data fim não pode ser anterior ao início do ciclo.' };
+    }
+    // Prorrogar além da validade deixaria os pareceres do fim do prazo sem certificado válido.
+    const erroValidade = validityVsEndError(effectiveEnd, cy[0].cert_valid_until ? toISO(cy[0].cert_valid_until) : null, !!cy[0].emitido);
+    if (erroValidade) {
+      return { ok: false, code: 409, error: cy[0].emitido ? erroValidade
+        : `${erroValidade} Ajuste a validade em Editar ciclo antes de reabrir/prorrogar.` };
     }
 
     let reopened: Array<{ id: number; provider_id: number; location_id: number | null; status: string }> = [];
@@ -5726,20 +5731,16 @@ async function startServer() {
       const { rows: [inst] } = await query(`
         SELECT ei.id, ei.status, ei.provider_id, ei.location_id, ei.cycle_id,
                ei.submitted_on_behalf, c.cert_valid_until,
-               (c.cert_valid_until < CURRENT_DATE) AS validade_vencida
+               COALESCE(c.active, false) AS cycle_active, c.end_date AS cycle_end, CURRENT_DATE::text AS hoje
           FROM eval_instances ei
           LEFT JOIN eval_cycles c ON c.id = ei.cycle_id
          WHERE ei.id = $1
       `, [id]);
       if (!inst) return res.status(404).json({ error: 'instance not found' });
-      // Certificado não nasce vencido: com a validade do ciclo no passado, o parecer espera o admin ajustá-la.
-      if (inst.validade_vencida) {
-        const d = String(inst.cert_valid_until).slice(0, 10).split('-').reverse().join('/');
-        return res.status(409).json({
-          error: `A validade dos certificados deste ciclo (${d}) já passou — o certificado nasceria vencido. `
-            + 'Peça ao administrador para ajustar a validade em Ciclos (Editar ciclo) e emita o parecer em seguida.',
-        });
-      }
+      // Ciclo encerrado ou fora do prazo não emite certificado, e certificado não nasce vencido (cycleRules).
+      const bloqueio = parecerBlock(
+        { active: !!inst.cycle_active, end_date: inst.cycle_end, cert_valid_until: inst.cert_valid_until }, inst.hoje);
+      if (bloqueio) return res.status(409).json({ error: bloqueio });
       // aguardando_evidencia também emite (spec 2026-09-11): a trava real é "todos os
       // critérios terminais" (abaixo) — decididos, nada resta editável pelo prestador.
       if (!['em_analise', 'aguardando_evidencia'].includes(inst.status)) {

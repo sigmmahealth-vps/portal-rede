@@ -150,7 +150,7 @@ export default function PesquisaSatisfacao() {
             <p className="mt-1 text-xs text-gray-400">1 = Muito ruim | 5 = Excelente</p>
           </div>
           <div>
-            <p className="font-semibold text-secondary-900">6. De 0 a 10, o quanto você recomendaria o Portal da Rede Credenciada da Unimed Criciúma a outro prestador?</p>
+            <p className="font-semibold text-secondary-900">6. De 0 a 10, o quanto você recomendaria o Portal da Rede Prestadora da Unimed Criciúma a outro prestador?</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {Array.from({ length: 11 }, (_, n) => (
                 <button key={n} type="button" onClick={() => set({ q6_nps: n })}

@@ -211,7 +211,7 @@ export async function rodarSguSync(opts: { commit: boolean; forcar: boolean }): 
       const resumo = `novos ${plano.inserir.length}, atualizados ${plano.atualizar.length}, `
         + `excluídos por ausência ${plano.excluirPorAusencia.length}, unidades novas ${plano.unidadesNovas.length}, `
         + `unidades inativadas ${plano.unidadesInativar.length}, ignorados `
-        + `${plano.ignorados.excluido_novo.length + plano.ignorados.grupo_27.length + plano.ignorados.manual.length}`;
+        + `${plano.ignorados.excluido_novo.length + plano.ignorados.grupo_27.length + plano.ignorados.intercambio.length + plano.ignorados.manual.length}`;
       if (!opts.commit) return { status: 'simulado', message: resumo, plano };
 
       const diff = diffProviders(raw, await lerPortal(), dataCivil(new Date())!);
@@ -243,7 +243,7 @@ async function main() {
     const r = await rodarSguSync({ commit, forcar: true });
     console.log(`${r.status}: ${r.message}`);
     if (r.plano) {
-      console.log(`ignorados: EXCLUÍDO novo ${r.plano.ignorados.excluido_novo.length}, grupo 27 ${r.plano.ignorados.grupo_27.length}, cadastro manual ${r.plano.ignorados.manual.length}`);
+      console.log(`ignorados: EXCLUÍDO novo ${r.plano.ignorados.excluido_novo.length}, grupo 27 ${r.plano.ignorados.grupo_27.length}, intercâmbio ${r.plano.ignorados.intercambio.length}, cadastro manual ${r.plano.ignorados.manual.length}`);
       console.log(`ativos que viram excluídos: ${r.plano.ativosQueSaem} de ${r.plano.ativos}`);
     }
     if (r.gravado) console.log(JSON.stringify(r.gravado));

@@ -17,29 +17,35 @@ export interface PlanoSync {
   unidadesNovas: { provider_id: number; prestador: TabelaProvider; loc: ParsedLocation }[];
   unidadesAtualizar: { id: number; loc: ParsedLocation }[];
   unidadesInativar: number[];
-  ignorados: { excluido_novo: string[]; grupo_27: string[]; manual: string[] };
+  ignorados: { excluido_novo: string[]; grupo_27: string[]; intercambio: string[]; manual: string[] };
   ativos: number;
   ativosQueSaem: number;
 }
 
 const ehExcluido = (status: unknown) => clean(status).toLowerCase().startsWith('exclu');
 const GRUPO_27 = /^\s*27\s*-/;
+// Tipo "07 - INTERCÂMBIO" (prestadores de outras Unimeds) não é a rede da Unimed Criciúma:
+// fica fora como o grupo 27 (Katy, 17/10/2026).
+export const TIPO_INTERCAMBIO = /^\s*0?7\s*-|INTERC[ÂA]MBIO/i;
 
 export function planejarSync(raw: SguRawRow[], portal: PortalPrestadorSync[]): PlanoSync {
   const rows = ordenaRaw(raw);
   const { providers: sgu } = parseTabela(rawToTabelaRows(rows));
   const grupo27 = new Set(rows.filter((r) => GRUPO_27.test(clean(r.grupo_prestador)))
     .map((r) => clean(r.codigo_prestador)));
+  const intercambio = new Set(rows.filter((r) => TIPO_INTERCAMBIO.test(clean(r.tipo_prestador)))
+    .map((r) => clean(r.codigo_prestador)));
   const doPortal = new Map(portal.map((p) => [p.sgu_code, p]));
   const naRaw = new Set(sgu.map((s) => s.sgu_code));
   const plano: PlanoSync = {
     inserir: [], atualizar: [], excluirPorAusencia: [], unidadesNovas: [], unidadesAtualizar: [],
-    unidadesInativar: [], ignorados: { excluido_novo: [], grupo_27: [], manual: [] },
+    unidadesInativar: [], ignorados: { excluido_novo: [], grupo_27: [], intercambio: [], manual: [] },
     ativos: portal.filter((p) => p.source === 'sgu' && p.status === 'ativo').length, ativosQueSaem: 0,
   };
 
   for (const s of sgu) {
     if (grupo27.has(s.sgu_code)) { plano.ignorados.grupo_27.push(s.sgu_code); continue; }
+    if (intercambio.has(s.sgu_code)) { plano.ignorados.intercambio.push(s.sgu_code); continue; }
     const p = doPortal.get(s.sgu_code);
     if (p && p.source !== 'sgu') { plano.ignorados.manual.push(s.sgu_code); continue; }
     if (!p) {

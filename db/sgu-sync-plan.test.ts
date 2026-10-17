@@ -34,6 +34,15 @@ test('grupo 27: ignorado como novo e não tocado como existente', () => {
   assert.deepEqual([p.inserir, p.atualizar, p.excluirPorAusencia, p.unidadesInativar], [[], [], [], []]);
 });
 
+test('tipo 07 - INTERCÂMBIO: ignorado como novo e não tocado como existente', () => {
+  const ic = { tipo_prestador: '07 - INTERCÂMBIO', grupo_prestador: '-' };
+  const p = planejarSync([raw(ic), raw({ ...ic, codigo_prestador: '2000001', numero_documento: '1' }),
+    raw({ codigo_prestador: '2000002', numero_documento: '2' })], [portal()]);
+  assert.deepEqual(p.ignorados.intercambio.sort(), ['1000546', '2000001']);
+  assert.deepEqual(p.inserir.map((s) => s.sgu_code), ['2000002']);
+  assert.deepEqual([p.atualizar, p.excluirPorAusencia, p.unidadesInativar], [[], [], []]);
+});
+
 test('ausente vira exclusão (conta na saída se ativo); ausente já excluído não', () => {
   const p = planejarSync([raw()], [portal(),
     portal({ id: 11, sgu_code: '5000001', locations: [] }),

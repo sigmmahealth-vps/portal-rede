@@ -3,6 +3,8 @@
  * que não estão na sgu_providers_raw, com os usuários deles. Backup JSON antes. Rodar depois do rekey.
  *   APP_ENV=dev npx tsx db/sgu-purge-ausentes.ts            # dry-run
  *   APP_ENV=dev npx tsx db/sgu-purge-ausentes.ts --commit
+ * --intercambio (Katy, 17/10/2026): em vez dos ausentes, apaga os prestadores sgu que na raw são só
+ * "07 - INTERCÂMBIO" (a rotina passou a ignorá-los) — recusa se algum já tiver avaliação ou login.
  */
 import 'dotenv/config';
 import * as fs from 'node:fs';
@@ -11,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pool, withTransaction } from './db.js';
 import { pickDatabaseUrl } from './resolveDbUrl.js';
 import type { Consulta } from './sgu-sync.js';
+import { TIPO_INTERCAMBIO } from './sgu-sync-plan.js';
 
 const LIMITE = 0.20; // mais que isso do cadastro sgu = raw suspeita, aborta
 class Simulacao extends Error {}
@@ -51,19 +54,39 @@ async function coletar(c: Consulta, tabela: string, ids: unknown[], backup: Reco
 
 async function main() {
   const commit = process.argv.includes('--commit');
+  const modoIntercambio = process.argv.includes('--intercambio');
   const url = pickDatabaseUrl();
-  console.log(`APP_ENV=${process.env.APP_ENV ?? '(vazio)'} | banco: ${url ? new URL(url).host : '(vazio)'} | ${commit ? 'COMMIT' : 'DRY-RUN'}`);
+  console.log(`APP_ENV=${process.env.APP_ENV ?? '(vazio)'} | banco: ${url ? new URL(url).host : '(vazio)'} | ${commit ? 'COMMIT' : 'DRY-RUN'}`
+    + (modoIntercambio ? ' | modo INTERCÂMBIO' : ''));
   try {
     await withTransaction(async (c) => {
       const { rows: [{ n: nRaw }] } = await c.query(`SELECT count(*)::int AS n FROM sgu_providers_raw`);
       if (!nRaw) throw new Error('sgu_providers_raw vazia — nada é apagado.');
-      const { rows: alvo } = await c.query(
-        `SELECT p.id, p.sgu_code, p.name, p.status FROM providers p
-          WHERE p.source = 'sgu'
-            AND NOT EXISTS (SELECT 1 FROM sgu_providers_raw r WHERE r.codigo_prestador::text = p.sgu_code)
-          ORDER BY p.sgu_code`);
+      const { rows: alvo } = modoIntercambio
+        ? await c.query(
+          `SELECT p.id, p.sgu_code, p.name, p.status,
+                  EXISTS (SELECT 1 FROM eval_instances i WHERE i.provider_id = p.id) AS tem_avaliacao,
+                  EXISTS (SELECT 1 FROM users u WHERE u.provider_id = p.id AND u.last_login_at IS NOT NULL) AS tem_login
+             FROM providers p
+            WHERE p.source = 'sgu'
+              AND EXISTS (SELECT 1 FROM sgu_providers_raw r WHERE r.codigo_prestador::text = p.sgu_code)
+              AND NOT EXISTS (SELECT 1 FROM sgu_providers_raw r WHERE r.codigo_prestador::text = p.sgu_code
+                                AND NOT (COALESCE(r.tipo_prestador, '') ~* $1))
+            ORDER BY p.sgu_code`, [TIPO_INTERCAMBIO.source])
+        : await c.query(
+          `SELECT p.id, p.sgu_code, p.name, p.status FROM providers p
+            WHERE p.source = 'sgu'
+              AND NOT EXISTS (SELECT 1 FROM sgu_providers_raw r WHERE r.codigo_prestador::text = p.sgu_code)
+            ORDER BY p.sgu_code`);
       const { rows: [{ n: total }] } = await c.query(`SELECT count(*)::int AS n FROM providers WHERE source = 'sgu'`);
-      if (alvo.length > LIMITE * total) {
+      if (modoIntercambio) {
+        // Sem trava de %: o alvo é definido pelo tipo na raw, não por ausência. Uso real não se apaga.
+        const usados = alvo.filter((r) => r.tem_avaliacao || r.tem_login);
+        if (usados.length) {
+          throw new Error(`${usados.length} prestador(es) de intercâmbio já têm avaliação ou login — nada é apagado: `
+            + usados.map((r) => r.sgu_code).join(', '));
+        }
+      } else if (alvo.length > LIMITE * total) {
         throw new Error(`${alvo.length} de ${total} prestadores seriam apagados (limite ${LIMITE * 100}%) — confira a raw.`);
       }
       const ids = alvo.map((r) => r.id);
@@ -82,7 +105,7 @@ async function main() {
       if (commit) {
         const dir = path.resolve(__dirname, '..', 'backups');
         fs.mkdirSync(dir, { recursive: true });
-        arq = path.join(dir, `sgu-purge-${process.env.APP_ENV ?? 'sem-env'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+        arq = path.join(dir, `sgu-purge-${modoIntercambio ? 'intercambio-' : ''}${process.env.APP_ENV ?? 'sem-env'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
         fs.writeFileSync(arq, JSON.stringify(backup, null, 1));
         console.log(`Backup: ${arq}`);
       }

@@ -30,6 +30,7 @@ import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } 
 import { renderNotificationEmail } from './src/lib/notifyEmail.js';
 import { canDownloadManual, isPdf, MANUAL_MAX_BYTES } from './db/script-manual.js';
 import { PRESTADOR_ATIVO_SQL, rodarSguSync } from './db/sgu-sync.js';
+import { copiarCargaSeAtrasada } from './db/sgu-raw-copia.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
@@ -7058,6 +7059,16 @@ async function startServer() {
   // Ligada só com SGU_SYNC_ENABLED=true (depois do db:sgu-rekey e do db:sgu-purge-ausentes no ambiente).
   async function runSguSyncJob() {
     if (process.env.SGU_SYNC_ENABLED !== 'true') return;
+    // Fallback (Katy, 17/10/2026): se a carga da Unimed não chegou aqui mas chegou no banco de
+    // SGU_RAW_FONTE_URL (o homolog), recebe a mesma carga antes da rotina. Falha na cópia não impede a rotina.
+    if (process.env.SGU_RAW_FONTE_URL) {
+      try {
+        const c = await withTransaction((t) => copiarCargaSeAtrasada(t, process.env.SGU_RAW_FONTE_URL as string, { commit: true }));
+        if (c.copiou) console.log(`[sgu-raw-copia] ${c.linhas} linhas — ${c.motivo}`);
+      } catch (e) {
+        console.error('[sgu-raw-copia] falhou:', e);
+      }
+    }
     try {
       const r = await rodarSguSync({ commit: true, forcar: false });
       if (r.status === 'aplicado') console.log(`[sgu-sync] ${r.message}`);

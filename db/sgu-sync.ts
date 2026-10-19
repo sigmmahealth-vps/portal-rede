@@ -21,6 +21,16 @@ export interface Consulta {
 // Inativo pela rotina = só cadastro vindo do SGU fora de 'ativo'; cadastro manual nunca é suspenso.
 export const PRESTADOR_ATIVO_SQL = `(p.source IS DISTINCT FROM 'sgu' OR p.status = 'ativo')`;
 
+// Unidade elegível ao ciclo (regra da Unimed, 19/10/2026 — antes era "imprimir no guia médico"): fica fora
+// quem na carga do SGU tem divulga_a400 = N ou suspende_atendimento = S; o resto entra. Cadastro manual
+// (fora do SGU) segue pelo guia médico. Aliases: p = providers, pl = provider_locations.
+const RAW_DA_UNIDADE = `sgu_providers_raw r WHERE r.codigo_prestador::text || '-' || r.codigo_tipo_endereco::text = pl.sgu_location_code`;
+export const UNIDADE_ELEGIVEL_SQL = `(CASE WHEN p.source = 'sgu' THEN
+    EXISTS (SELECT 1 FROM ${RAW_DA_UNIDADE})
+    AND NOT EXISTS (SELECT 1 FROM ${RAW_DA_UNIDADE}
+      AND (upper(btrim(coalesce(r.divulga_a400, ''))) = 'N' OR upper(btrim(coalesce(r.suspende_atendimento, ''))) = 'S'))
+  ELSE pl.in_medical_guide END)`;
+
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export interface Gravado {

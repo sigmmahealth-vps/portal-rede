@@ -29,7 +29,7 @@ import { buildScoreMemory } from './src/lib/scoreMemory.js';
 import { renderNotification, dedupeKey, roteiroReminderMarco, type NotifyType } from './src/lib/notifyCatalog.js';
 import { renderNotificationEmail } from './src/lib/notifyEmail.js';
 import { canDownloadManual, isPdf, MANUAL_MAX_BYTES } from './db/script-manual.js';
-import { PRESTADOR_ATIVO_SQL, rodarSguSync } from './db/sgu-sync.js';
+import { PRESTADOR_ATIVO_SQL, UNIDADE_ELEGIVEL_SQL, rodarSguSync } from './db/sgu-sync.js';
 import { copiarCargaSeAtrasada } from './db/sgu-raw-copia.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 
@@ -4643,7 +4643,7 @@ async function startServer() {
         JOIN providers p ON p.id = pl.provider_id
         LEFT JOIN eval_cycle_overrides ov
           ON ov.cycle_id = $2 AND ov.provider_id = p.id AND ov.location_id = pl.id
-       WHERE pl.in_medical_guide = true
+       WHERE ${UNIDADE_ELEGIVEL_SQL}
          AND (p.provider_group = ANY($1::text[]) OR ov.script_id IS NOT NULL)
          AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x
                           WHERE x.cycle_id = $2 AND x.provider_id = p.id AND x.location_id = pl.id)
@@ -4849,7 +4849,7 @@ async function startServer() {
           LEFT JOIN eval_scripts s_override ON s_override.id = ov.script_id
           LEFT JOIN eval_cycle_exclusions x ON x.cycle_id = $1 AND x.provider_id = p.id AND x.location_id = pl.id
           LEFT JOIN users ux ON ux.id = x.created_by
-         WHERE pl.in_medical_guide = true
+         WHERE ${UNIDADE_ELEGIVEL_SQL}
            AND p.provider_group IS NOT NULL
            -- Só mostra prestadores de grupos participantes (na eff_groups) OU com override
            -- explícito. Grupo excluído do ciclo → prestadores somem da tabela.
@@ -5000,7 +5000,7 @@ async function startServer() {
           LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
           LEFT JOIN eval_cycle_overrides ov ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
           LEFT JOIN eval_scripts s ON s.id = COALESCE(ov.script_id, ecg.script_id, p.eval_script_id)
-         WHERE pl.in_medical_guide = true
+         WHERE ${UNIDADE_ELEGIVEL_SQL}
            AND pl.active AND ${PRESTADOR_ATIVO_SQL}
            AND NOT EXISTS (SELECT 1 FROM eval_instances ei
                             WHERE ei.cycle_id = $1 AND ei.provider_id = p.id AND ei.location_id = pl.id)
@@ -5061,7 +5061,7 @@ async function startServer() {
       if (!opened.length) return res.status(409).json({ error: 'ciclo ainda não foi aberto — inclua pela abertura' });
 
       const { rows: pair } = await query(`
-        SELECT pl.in_medical_guide,
+        SELECT ${UNIDADE_ELEGIVEL_SQL} AS elegivel,
                (pl.active AND ${PRESTADOR_ATIVO_SQL}) AS ativo,
                COALESCE(ov.script_id, ecg.script_id, p.eval_script_id) AS resolved_script_id,
                EXISTS (SELECT 1 FROM eval_instances ei
@@ -5075,7 +5075,7 @@ async function startServer() {
          WHERE p.id = $2 AND pl.id = $3
       `, [cycleId, providerId, locationId]);
       if (!pair.length) return res.status(404).json({ error: 'prestador/unidade não encontrado' });
-      if (!pair[0].in_medical_guide) return res.status(400).json({ error: 'unidade fora do guia médico' });
+      if (!pair[0].elegivel) return res.status(400).json({ error: 'unidade fora do ciclo pela regra da Unimed (divulga A400 = N ou suspende atendimento = S)' });
       if (!pair[0].ativo) return res.status(409).json({ error: 'prestador ou unidade inativo no cadastro da Unimed' });
       if (pair[0].has_instance) return res.status(409).json({ error: 'par já tem avaliação neste ciclo' });
       if (pair[0].is_excluded) return res.status(409).json({ error: 'par foi excluído na abertura do ciclo' });
@@ -5192,7 +5192,7 @@ async function startServer() {
             LEFT JOIN eval_cycle_groups ecg ON ecg.cycle_id = $1 AND ecg.provider_group = p.provider_group
             LEFT JOIN eval_cycle_overrides ov
               ON ov.cycle_id = $1 AND ov.provider_id = p.id AND ov.location_id = pl.id
-           WHERE pl.in_medical_guide = true
+           WHERE ${UNIDADE_ELEGIVEL_SQL}
              AND pl.active AND ${PRESTADOR_ATIVO_SQL}
              AND COALESCE(ov.script_id, ecg.script_id) IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM eval_cycle_exclusions x

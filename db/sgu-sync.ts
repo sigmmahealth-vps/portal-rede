@@ -112,15 +112,12 @@ export async function executarPlano(c: Consulta, plano: PlanoSync, scriptPorRote
 
   for (const { id, loc } of plano.unidadesAtualizar) {
     await c.query(
-      // sgu_location_code sempre vem do loc: no update normal é o mesmo (o match foi por ele); numa
-      // relocação 1↔1 (planejarSync) o código mudou, e é aqui que a unidade é recodificada no lugar.
-      `UPDATE provider_locations SET sgu_location_code = $15, sgu_tipo_endereco = $2, label = $3, cep = $4,
-         logradouro = $5, numero = $6, complemento = $7, bairro = $8, cidade = $9, uf = $10, phone = $11,
-         email = $12, is_primary = $13, in_medical_guide = $14, active = true
+      `UPDATE provider_locations SET sgu_tipo_endereco = $2, label = $3, cep = $4, logradouro = $5, numero = $6,
+         complemento = $7, bairro = $8, cidade = $9, uf = $10, phone = $11, email = $12, is_primary = $13,
+         in_medical_guide = $14, active = true
        WHERE id = $1`,
       [id, loc.sgu_tipo_endereco ?? null, loc.label, loc.cep, loc.logradouro, loc.numero, loc.complemento,
-       loc.bairro, loc.cidade, loc.uf, loc.phone, loc.email, loc.is_primary, loc.in_medical_guide,
-       loc.sgu_location_code]);
+       loc.bairro, loc.cidade, loc.uf, loc.phone, loc.email, loc.is_primary, loc.in_medical_guide]);
     g.unidades_atualizadas++;
   }
 

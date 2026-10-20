@@ -72,38 +72,18 @@ test('existente ativo que vem EXCLUÍDO conta na saída', () => {
   assert.equal(p.atualizar[0].p.status, 'excluído');
 });
 
-test('unidades: novas (com o prestador), sumida ativa inativa, sumida já inativa não', () => {
-  // 2 novas e 1 sumida = ambíguo: não casa 1↔1, cria as novas e inativa a sumida.
+test('unidades: nova (com o prestador), sumida ativa inativa, sumida já inativa não', () => {
+  // Relocação (regra B): endereço com código novo cria unidade nova; a sumida ativa é inativada (histórico).
   const p = planejarSync(
-    [raw(),
-     raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' }),
-     raw({ codigo_tipo_endereco: '4', logradouro: 'RUA C', numero_endereco: '20' })],
+    [raw(), raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' })],
     [portal({ locations: [
       { id: 100, sgu_location_code: '1000546-2', active: true },
       { id: 101, sgu_location_code: '1000546-9', active: true },
       { id: 102, sgu_location_code: '1000546-8', active: false },
     ] })]);
   assert.deepEqual(p.unidadesNovas.map((u) => [u.provider_id, u.prestador.sgu_code, u.loc.sgu_location_code]),
-    [[10, '1000546', '1000546-3'], [10, '1000546', '1000546-4']]);
+    [[10, '1000546', '1000546-3']]);
   assert.deepEqual(p.unidadesInativar, [101]);
-});
-
-test('relocação 1↔1: 1 sai e 1 entra = recodifica no lugar (mantém id), sem nova nem inativada', () => {
-  const p = planejarSync(
-    [raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' })],
-    [portal()]);  // unidade existente 1000546-2 ativa
-  assert.deepEqual(p.unidadesAtualizar.map((u) => [u.id, u.loc.sgu_location_code]), [[100, '1000546-3']]);
-  assert.deepEqual([p.unidadesNovas, p.unidadesInativar], [[], []]);
-});
-
-test('relocação ambígua (1 sai, 2 entram): não casa, cria as novas e inativa a sumida', () => {
-  const p = planejarSync(
-    [raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' }),
-     raw({ codigo_tipo_endereco: '4', logradouro: 'RUA C', numero_endereco: '20' })],
-    [portal()]);
-  assert.deepEqual(p.unidadesNovas.map((u) => u.loc.sgu_location_code), ['1000546-3', '1000546-4']);
-  assert.deepEqual(p.unidadesInativar, [100]);
-  assert.deepEqual(p.unidadesAtualizar, []);
 });
 
 test('unidade inativa que volta na raw é atualizada (reativa), não recriada', () => {

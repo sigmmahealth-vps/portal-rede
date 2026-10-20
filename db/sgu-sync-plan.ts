@@ -62,24 +62,19 @@ export function planejarSync(raw: SguRawRow[], portal: PortalPrestadorSync[]): P
     plano.atualizar.push({ id: p.id, p: s });
     if (p.status === 'ativo' && ehExcluido(s.status)) plano.ativosQueSaem++;
 
+    // Relocação = reavaliar (regra da Unidade, B): endereço com código novo cria unidade NOVA (ativa,
+    // reavaliação do zero) e a antiga é inativada — mantida como histórico (avaliação segue visível ao
+    // admin/auditor; o gate de login barra a inativa). NÃO recodifica no lugar.
     const atuais = new Map(p.locations.map((l) => [l.sgu_location_code, l]));
     const codigos = new Set<string>();
-    const novas: ParsedLocation[] = [];
     for (const loc of s.locations) {
       codigos.add(loc.sgu_location_code);
       const u = atuais.get(loc.sgu_location_code);
       if (u) plano.unidadesAtualizar.push({ id: u.id, loc });
-      else novas.push(loc);
+      else plano.unidadesNovas.push({ provider_id: p.id, prestador: s, loc });
     }
-    const inativar = p.locations.filter((l) => l.active && !codigos.has(l.sgu_location_code ?? '')).map((l) => l.id);
-    // Relocação 1↔1: exatamente 1 unidade sairia e 1 entraria = é a mesma unidade com endereço (e
-    // código) novo. Recodifica no lugar mantendo o id — logo o acesso/senha/avaliação seguem com ela,
-    // em vez de criar acesso novo (senha provisória) e deixar o velho órfão. Mesma regra do planejarRekey.
-    if (novas.length === 1 && inativar.length === 1) {
-      plano.unidadesAtualizar.push({ id: inativar[0], loc: novas[0] });
-    } else {
-      for (const loc of novas) plano.unidadesNovas.push({ provider_id: p.id, prestador: s, loc });
-      plano.unidadesInativar.push(...inativar);
+    for (const l of p.locations) {
+      if (l.active && !codigos.has(l.sgu_location_code ?? '')) plano.unidadesInativar.push(l.id);
     }
   }
 

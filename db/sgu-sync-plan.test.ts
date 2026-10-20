@@ -34,6 +34,20 @@ test('grupo 27: ignorado como novo e não tocado como existente', () => {
   assert.deepEqual([p.inserir, p.atualizar, p.excluirPorAusencia, p.unidadesInativar], [[], [], [], []]);
 });
 
+test('gêmeo intercâmbio sai antes do parse: o real de mesmo CNPJ mantém o documento', () => {
+  // Antes da correção, o gêmeo (código menor) vencia o dedupeDocs e zerava o CNPJ do real.
+  const real = raw({ codigo_prestador: '2000002', tipo_prestador: '05 - CLÍNICAS',
+    grupo_prestador: '13 - CLINICAS', numero_documento: '12345678000190' });
+  const gemeo = raw({ codigo_prestador: '1000001', tipo_prestador: '07 - INTERCÂMBIO',
+    grupo_prestador: ' - ', numero_documento: '12345678000190' });
+  const p = planejarSync([gemeo, real], []);
+  assert.deepEqual(p.ignorados.intercambio, ['1000001']);
+  assert.equal(p.inserir.length, 1);
+  assert.equal(p.inserir[0].sgu_code, '2000002');
+  assert.equal(p.inserir[0].cnpj, '12345678000190');  // não foi zerado pelo gêmeo
+  assert.equal(p.inserir[0].cpf, null);
+});
+
 test('tipo 07 - INTERCÂMBIO: ignorado como novo e não tocado como existente', () => {
   const ic = { tipo_prestador: '07 - INTERCÂMBIO', grupo_prestador: '-' };
   const p = planejarSync([raw(ic), raw({ ...ic, codigo_prestador: '2000001', numero_documento: '1' }),
@@ -58,17 +72,38 @@ test('existente ativo que vem EXCLUÍDO conta na saída', () => {
   assert.equal(p.atualizar[0].p.status, 'excluído');
 });
 
-test('unidades: nova (com o prestador), sumida ativa inativa, sumida já inativa não', () => {
+test('unidades: novas (com o prestador), sumida ativa inativa, sumida já inativa não', () => {
+  // 2 novas e 1 sumida = ambíguo: não casa 1↔1, cria as novas e inativa a sumida.
   const p = planejarSync(
-    [raw(), raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' })],
+    [raw(),
+     raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' }),
+     raw({ codigo_tipo_endereco: '4', logradouro: 'RUA C', numero_endereco: '20' })],
     [portal({ locations: [
       { id: 100, sgu_location_code: '1000546-2', active: true },
       { id: 101, sgu_location_code: '1000546-9', active: true },
       { id: 102, sgu_location_code: '1000546-8', active: false },
     ] })]);
   assert.deepEqual(p.unidadesNovas.map((u) => [u.provider_id, u.prestador.sgu_code, u.loc.sgu_location_code]),
-    [[10, '1000546', '1000546-3']]);
+    [[10, '1000546', '1000546-3'], [10, '1000546', '1000546-4']]);
   assert.deepEqual(p.unidadesInativar, [101]);
+});
+
+test('relocação 1↔1: 1 sai e 1 entra = recodifica no lugar (mantém id), sem nova nem inativada', () => {
+  const p = planejarSync(
+    [raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' })],
+    [portal()]);  // unidade existente 1000546-2 ativa
+  assert.deepEqual(p.unidadesAtualizar.map((u) => [u.id, u.loc.sgu_location_code]), [[100, '1000546-3']]);
+  assert.deepEqual([p.unidadesNovas, p.unidadesInativar], [[], []]);
+});
+
+test('relocação ambígua (1 sai, 2 entram): não casa, cria as novas e inativa a sumida', () => {
+  const p = planejarSync(
+    [raw({ codigo_tipo_endereco: '3', logradouro: 'RUA B', numero_endereco: '10' }),
+     raw({ codigo_tipo_endereco: '4', logradouro: 'RUA C', numero_endereco: '20' })],
+    [portal()]);
+  assert.deepEqual(p.unidadesNovas.map((u) => u.loc.sgu_location_code), ['1000546-3', '1000546-4']);
+  assert.deepEqual(p.unidadesInativar, [100]);
+  assert.deepEqual(p.unidadesAtualizar, []);
 });
 
 test('unidade inativa que volta na raw é atualizada (reativa), não recriada', () => {

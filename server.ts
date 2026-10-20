@@ -540,6 +540,8 @@ async function startServer() {
     const { rows } = await query(
       `SELECT u.* FROM users u JOIN providers p ON p.id = u.provider_id
         WHERE COALESCE(p.cnpj, p.cpf) = $1 AND u.is_active = true AND u.role = ANY($2)
+          AND EXISTS (SELECT 1 FROM user_locations ul JOIN provider_locations pl ON pl.id = ul.location_id
+                       WHERE ul.user_id = u.id AND pl.active)
         ORDER BY u.id`,
       [doc, PROVIDER_ACCESS_ROLES]);
     return rows;
@@ -558,6 +560,7 @@ async function startServer() {
          JOIN user_locations ul ON ul.user_id = u.id
          JOIN provider_locations pl ON pl.id = ul.location_id
         WHERE u.provider_id = $1 AND u.is_active = true AND u.role = ANY($2)
+          AND pl.active
         GROUP BY u.id
         ORDER BY bool_or(pl.is_primary) DESC, u.id`,
       [providerId, PROVIDER_ACCESS_ROLES]);
@@ -1971,7 +1974,7 @@ async function startServer() {
                                          WHERE ei.location_id = pl.id AND ec.valid_until >= CURRENT_DATE
                                          ORDER BY ec.valid_until DESC, ec.issued_at DESC LIMIT 1))
                              ORDER BY pl.is_primary DESC NULLS LAST, pl.id)
-                      FROM provider_locations pl WHERE pl.provider_id = p.id),
+                      FROM provider_locations pl WHERE pl.provider_id = p.id AND pl.active),
                    '[]'::jsonb
                  ) AS locais
           FROM providers p
@@ -2031,7 +2034,7 @@ async function startServer() {
       }
 
       const { rows: locations } = await query(
-        'SELECT * FROM provider_locations WHERE provider_id = $1 ORDER BY is_primary DESC, id ASC',
+        'SELECT * FROM provider_locations WHERE provider_id = $1 AND active ORDER BY is_primary DESC, id ASC',
         [providerId]
       );
       const { rows: certifications } = await query(
@@ -2105,7 +2108,7 @@ async function startServer() {
          FROM provider_locations pl
          LEFT JOIN user_locations ul ON ul.location_id = pl.id
          LEFT JOIN users u ON u.id = ul.user_id AND u.role = ANY($2)
-        WHERE pl.provider_id = $1
+        WHERE pl.provider_id = $1 AND pl.active
           AND COALESCE(pl.label,'') NOT ILIKE 'residencial%'
           AND COALESCE(pl.sgu_location_code,'') !~ '-RES$'
         ORDER BY pl.is_primary DESC NULLS LAST, pl.id`,

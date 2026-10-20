@@ -30,22 +30,28 @@ export const TIPO_INTERCAMBIO = /^\s*0?7\s*-|INTERC[ÂA]MBIO/i;
 
 export function planejarSync(raw: SguRawRow[], portal: PortalPrestadorSync[]): PlanoSync {
   const rows = ordenaRaw(raw);
-  const { providers: sgu } = parseTabela(rawToTabelaRows(rows));
-  const grupo27 = new Set(rows.filter((r) => GRUPO_27.test(clean(r.grupo_prestador)))
-    .map((r) => clean(r.codigo_prestador)));
-  const intercambio = new Set(rows.filter((r) => TIPO_INTERCAMBIO.test(clean(r.tipo_prestador)))
-    .map((r) => clean(r.codigo_prestador)));
+  const cods = (pred: (r: SguRawRow) => boolean) =>
+    new Set(rows.filter(pred).map((r) => clean(r.codigo_prestador)).filter(Boolean));
+  const grupo27 = cods((r) => GRUPO_27.test(clean(r.grupo_prestador)));
+  const intercambio = cods((r) => TIPO_INTERCAMBIO.test(clean(r.tipo_prestador)));
+  // Descarta intercâmbio e grupo 27 ANTES do parse: se passassem pelo parseTabela, o gêmeo
+  // intercâmbio (mesmo documento, código menor) entraria no dedupeDocs e zeraria o CNPJ do
+  // prestador real. Os códigos seguem em naRaw (continuam presentes na raw) para não virarem
+  // exclusão por ausência.
+  const ignorarCod = new Set([...grupo27, ...intercambio]);
+  const { providers: sgu } = parseTabela(
+    rawToTabelaRows(rows.filter((r) => !ignorarCod.has(clean(r.codigo_prestador)))));
   const doPortal = new Map(portal.map((p) => [p.sgu_code, p]));
-  const naRaw = new Set(sgu.map((s) => s.sgu_code));
+  const naRaw = new Set(rows.map((r) => clean(r.codigo_prestador)).filter(Boolean));
   const plano: PlanoSync = {
     inserir: [], atualizar: [], excluirPorAusencia: [], unidadesNovas: [], unidadesAtualizar: [],
-    unidadesInativar: [], ignorados: { excluido_novo: [], grupo_27: [], intercambio: [], manual: [] },
+    unidadesInativar: [],
+    ignorados: { excluido_novo: [], grupo_27: [...grupo27],
+      intercambio: [...intercambio].filter((c) => !grupo27.has(c)), manual: [] },
     ativos: portal.filter((p) => p.source === 'sgu' && p.status === 'ativo').length, ativosQueSaem: 0,
   };
 
   for (const s of sgu) {
-    if (grupo27.has(s.sgu_code)) { plano.ignorados.grupo_27.push(s.sgu_code); continue; }
-    if (intercambio.has(s.sgu_code)) { plano.ignorados.intercambio.push(s.sgu_code); continue; }
     const p = doPortal.get(s.sgu_code);
     if (p && p.source !== 'sgu') { plano.ignorados.manual.push(s.sgu_code); continue; }
     if (!p) {
@@ -58,14 +64,22 @@ export function planejarSync(raw: SguRawRow[], portal: PortalPrestadorSync[]): P
 
     const atuais = new Map(p.locations.map((l) => [l.sgu_location_code, l]));
     const codigos = new Set<string>();
+    const novas: ParsedLocation[] = [];
     for (const loc of s.locations) {
       codigos.add(loc.sgu_location_code);
       const u = atuais.get(loc.sgu_location_code);
       if (u) plano.unidadesAtualizar.push({ id: u.id, loc });
-      else plano.unidadesNovas.push({ provider_id: p.id, prestador: s, loc });
+      else novas.push(loc);
     }
-    for (const l of p.locations) {
-      if (l.active && !codigos.has(l.sgu_location_code ?? '')) plano.unidadesInativar.push(l.id);
+    const inativar = p.locations.filter((l) => l.active && !codigos.has(l.sgu_location_code ?? '')).map((l) => l.id);
+    // Relocação 1↔1: exatamente 1 unidade sairia e 1 entraria = é a mesma unidade com endereço (e
+    // código) novo. Recodifica no lugar mantendo o id — logo o acesso/senha/avaliação seguem com ela,
+    // em vez de criar acesso novo (senha provisória) e deixar o velho órfão. Mesma regra do planejarRekey.
+    if (novas.length === 1 && inativar.length === 1) {
+      plano.unidadesAtualizar.push({ id: inativar[0], loc: novas[0] });
+    } else {
+      for (const loc of novas) plano.unidadesNovas.push({ provider_id: p.id, prestador: s, loc });
+      plano.unidadesInativar.push(...inativar);
     }
   }
 

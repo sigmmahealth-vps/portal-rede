@@ -4054,7 +4054,7 @@ async function startServer() {
       });
 
       void (async () => {
-        await notifyEvent('reanalise_solicitada', { integral: true, instance_id: id, end_date: await instanceCycleEnd(id) },
+        await notifyEvent('reanalise_solicitada', { integral: true, instance_id: id, end_date: await reanalysisNoticeDate(id) },
           await prestadorRecipients(Number(reopened.provider_id), reopened.location_id ?? null),
           { providerId: Number(reopened.provider_id) });
       })().catch((e) => console.error('[notify] site reanalise_solicitada (reopen):', e));
@@ -4386,7 +4386,7 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const { rows } = await query(`
-        SELECT c.id, c.label, c.start_date, c.end_date, c.active, c.cert_valid_until,
+        SELECT c.id, c.label, c.start_date, c.end_date, c.active, c.cert_valid_until, c.reanalysis_notice_date,
                (SELECT COUNT(*)::int FROM eval_instances ei WHERE ei.cycle_id = c.id) AS instances_count,
                (SELECT COUNT(*)::int FROM eval_certificates ec JOIN eval_instances ei ON ei.id = ec.instance_id
                  WHERE ei.cycle_id = c.id) AS certificates_count
@@ -4449,7 +4449,10 @@ async function startServer() {
     try {
       if (!isStaff(req.user.role)) return res.status(403).json({ error: 'Unauthorized' });
       const id = Number(req.params.id);
-      const { label, start_date, end_date, active, auto_open, auto_close, cert_valid_until } = req.body || {};
+      const { label, start_date, end_date, active, auto_open, auto_close, cert_valid_until, reanalysis_notice_date } = req.body || {};
+      // undefined = não mexe; '' / null = limpa (avisos voltam a usar a data fim).
+      const setNotice = reanalysis_notice_date !== undefined;
+      const notice = reanalysis_notice_date ? String(reanalysis_notice_date).slice(0, 10) : null;
       if (active === true) {
         const other = await findConflictingActiveCycle(id);
         if (other != null) {
@@ -4488,6 +4491,10 @@ async function startServer() {
         const erro = validityVsEndError(end_date ?? uso.end_date, cert_valid_until ?? uso.cert_valid_until, uso.emitido);
         if (erro) return res.status(400).json({ error: erro });
       }
+      const fim = String(end_date ?? uso.end_date).slice(0, 10);
+      if (notice && notice > fim) {
+        return res.status(400).json({ error: 'O prazo da reanálise não pode passar da data fim do ciclo.' });
+      }
       const { rows } = await query(
         `UPDATE eval_cycles
             SET label      = COALESCE($1, label),
@@ -4496,12 +4503,14 @@ async function startServer() {
                 active     = COALESCE($4, active),
                 auto_open  = COALESCE($5, auto_open),
                 auto_close = COALESCE($6, auto_close),
-                cert_valid_until = COALESCE($8, cert_valid_until)
+                cert_valid_until = COALESCE($8, cert_valid_until),
+                reanalysis_notice_date = CASE WHEN $9 THEN $10::date ELSE reanalysis_notice_date END
           WHERE id = $7 RETURNING *`,
         // Desativar passa pelo closeCycleCore (abaixo), não por este UPDATE.
         [label ?? null, start_date ?? null, end_date ?? null, active === true ? true : null,
          typeof auto_open === 'boolean' ? auto_open : null,
-         typeof auto_close === 'boolean' ? auto_close : null, id, cert_valid_until ?? null]
+         typeof auto_close === 'boolean' ? auto_close : null, id, cert_valid_until ?? null,
+         setNotice, notice]
       );
       if (!rows[0]) return res.status(404).json({ error: 'not found' });
       // Desativar pelo Editar ciclo = Encerrar: avaliações não-terminais viram 'ciclo_encerrado',
@@ -5490,13 +5499,16 @@ async function startServer() {
     return { ok: true, restored: reopened.length, endDate: effectiveEnd, label: cy[0].label, reopened };
   }
 
-  // Fim do ciclo da instância = prazo máximo de resposta (envio do roteiro / reenvio
-  // de reanálise). null se a instância não tiver ciclo. Usado nas notificações (E-03).
-  async function instanceCycleEnd(instanceId: number): Promise<string | null> {
+  // Prazo informado nos avisos de reanálise (E-03): o "prazo da reanálise" do ciclo
+  // enquanto não passou (0061 — só texto, não bloqueia), senão o fim do ciclo.
+  // null se a instância não tiver ciclo.
+  async function reanalysisNoticeDate(instanceId: number): Promise<string | null> {
     const { rows } = await query(
-      `SELECT c.end_date FROM eval_instances ei JOIN eval_cycles c ON c.id = ei.cycle_id WHERE ei.id = $1`,
+      `SELECT COALESCE(CASE WHEN c.reanalysis_notice_date >= CURRENT_DATE THEN c.reanalysis_notice_date END,
+                       c.end_date) AS prazo
+         FROM eval_instances ei JOIN eval_cycles c ON c.id = ei.cycle_id WHERE ei.id = $1`,
       [instanceId]);
-    return rows[0]?.end_date ?? null;
+    return rows[0]?.prazo ?? null;
   }
 
   // ==========================================================================
@@ -5638,7 +5650,7 @@ async function startServer() {
       void (async () => {
         const items = marked.map((m: any) => ({ code: m.code, text: questionOnly(m.text ?? '') }));
         await notifyEvent('reanalise_solicitada',
-          { items, instance_id: id, end_date: await instanceCycleEnd(id) },
+          { items, instance_id: id, end_date: await reanalysisNoticeDate(id) },
           await prestadorRecipients(Number(inst.provider_id), inst.location_id ?? null),
           { providerId: Number(inst.provider_id), dedupeRef: `reanalise-lote:${id}:${Date.now()}` });
       })().catch((e) => console.error('[notify] site reanalise_solicitada (lote):', e));

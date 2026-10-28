@@ -7,6 +7,7 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
   const [start, setStart] = useState(initial?.start_date?.slice(0, 10) || '');
   const [end, setEnd] = useState(initial?.end_date?.slice(0, 10) || '');
   const [certValidUntil, setCertValidUntil] = useState(initial?.cert_valid_until?.slice(0, 10) || '');
+  const [noticeDate, setNoticeDate] = useState(initial?.reanalysis_notice_date?.slice(0, 10) || '');
   const [active, setActive] = useState(!!initial?.active);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
       const unchanged = certValidUntil === (initial?.cert_valid_until?.slice(0, 10) || '');
       const cvu = validityLocked || (opened && unchanged) ? undefined : certValidUntil;
       if (initial?.id) {
-        await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active: lockedClosed ? undefined : active, cert_valid_until: cvu }) });
+        await fetchApi(`/eval/cycles/${initial.id}`, { method: 'PATCH', body: JSON.stringify({ label, start_date: start, end_date: end, active: lockedClosed ? undefined : active, cert_valid_until: cvu, reanalysis_notice_date: noticeDate }) });
       } else {
         await fetchApi('/eval/cycles', { method: 'POST', body: JSON.stringify({ label, start_date: start, end_date: end, active, cert_valid_until: cvu }) });
       }
@@ -85,6 +86,16 @@ export default function NovoCicloModal({ initial, onClose, onSaved }: { initial?
               </span>
             )}
           </label>
+          {initial?.id && (
+            <label className="block">
+              <span className="text-sm text-gray-600">Prazo informado nos avisos de reanálise (opcional)</span>
+              <input type="date" value={noticeDate} max={end || undefined} onChange={e => setNoticeDate(e.target.value)}
+                className="mt-1 w-full border rounded px-3 py-2" />
+              <span className="mt-1 block text-xs text-gray-500">
+                Só muda a data escrita nos e-mails e avisos de reanálise — não bloqueia o reenvio. Vazio ou já passado: os avisos usam a data fim do ciclo.
+              </span>
+            </label>
+          )}
           {lockedClosed ? (
             <p className="text-xs text-gray-500">Ciclo encerrado — para reativar use Reabrir ou Prorrogar na lista de ciclos.</p>
           ) : (

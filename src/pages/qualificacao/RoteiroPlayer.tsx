@@ -345,14 +345,20 @@ export default function RoteiroPlayer({
   };
 
   const handleAnswerChange = (questionId: number, value: string, score: number) => {
-    setAnswers(prev => ({
-      ...prev,
-      [questionId]: {
-        ...prev[questionId],
-        answer_value: value,
-        score_obtained: score,
-      },
-    }));
+    setAnswers(prev => {
+      const cur = prev[questionId];
+      // Ao mudar para Sim, o motivo do Não / N/A deixa de valer: o campo volta em branco.
+      const limpaObservacao = value === 'sim' && cur?.answer_value !== 'sim';
+      return {
+        ...prev,
+        [questionId]: {
+          ...cur,
+          answer_value: value,
+          score_obtained: score,
+          ...(limpaObservacao ? { provider_observation: '' } : {}),
+        },
+      };
+    });
   };
 
   const handleObservationChange = (questionId: number, value: string) => {
@@ -948,12 +954,14 @@ export default function RoteiroPlayer({
                           </div>
                         )}
 
-                        {/* Observação obrigatória para Não e N/A */}
-                        {(isNao || isNa) && (
+                        {/* Observação: obrigatória para Não e N/A, opcional para Sim */}
+                        {answered && (
                           <div className="mt-4">
                             <label className="mb-1 block text-sm font-semibold text-secondary-900">
-                              {isNa ? 'Justificativa' : 'Observação'}{' '}
-                              <span className="font-normal text-red-600">(obrigatória)</span>
+                              {isNa ? 'Justificativa' : isSim ? 'Descrição' : 'Observação'}{' '}
+                              <span className={`font-normal ${isSim ? 'text-gray-500' : 'text-red-600'}`}>
+                                ({isSim ? 'opcional' : 'obrigatória'})
+                              </span>
                               <span className="ml-2 text-xs font-normal text-gray-400">
                                 — salva ao sair do campo (ou Ctrl+Enter)
                               </span>
@@ -961,9 +969,11 @@ export default function RoteiroPlayer({
                             <ObservationField
                               initial={ans?.provider_observation || ''}
                               placeholder={
-                                isNa
-                                  ? 'Explique por que este critério não se aplica ao seu estabelecimento.'
-                                  : 'Descreva o motivo da não conformidade.'
+                                isSim
+                                  ? 'Se quiser, descreva como este critério é atendido. Não informe dados de pacientes.'
+                                  : isNa
+                                    ? 'Explique por que este critério não se aplica ao seu estabelecimento.'
+                                    : 'Descreva o motivo da não conformidade.'
                               }
                               onCommit={(v) => handleObservationChange(q.id, v)}
                             />

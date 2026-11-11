@@ -22,3 +22,6 @@ backups/
 # Ferramentas locais (Claude launch config, cache do plugin impeccable)
 .claude/
 .impeccable/
+
+# Planilhas com dados reais (export de produção / cargas SGU) — nunca versionar (LGPD)
+*.xlsx

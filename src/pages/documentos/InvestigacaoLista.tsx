@@ -7,7 +7,7 @@ import { providerAudience } from '../../lib/providerAudience.js';
 interface Doc {
   id: number; provider_id: number; provider_name?: string; type?: string;
   status: string; upload_date?: string; expiry_date?: string | null;
-  person_type?: string | null; provider_group?: string | null; rejection_reason?: string | null; file_url?: string | null;
+  person_type?: string | null; provider_group?: string | null; rejection_reason?: string | null; file_url?: string | null; type_id?: number | null;
 }
 const STATUS_LABEL: Record<StatusDoc, string> = {
   pendente: 'Pendente', aprovado: 'Aprovado', vencido: 'Vencido', reprovado: 'Reprovado', historico: 'Histórico',
@@ -29,9 +29,12 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
     fetchApi('/documents').then(setDocs).catch(e => setErro(e.message));
   }, [reloadKey]);
 
-  const hoje = new Date();
-  const linhas = useMemo(() => docs
-    .filter(d => (d as any).type_id != null)                 // só gestão documental
+  useEffect(() => { setFGrupo(''); }, [audiencia]);
+
+  const linhas = useMemo(() => {
+    const hoje = new Date();
+    return docs
+    .filter(d => d.type_id != null)                // só gestão documental
     .map(d => ({ d, st: statusDocumento(d, hoje) }))
     .filter(x => x.st !== 'historico')
     .filter(x => providerAudience(x.d.person_type ?? null, x.d.provider_group ?? null) === audiencia)
@@ -40,7 +43,8 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
     .filter(x => {
       const q = busca.trim().toLowerCase();
       return !q || (x.d.provider_name ?? '').toLowerCase().includes(q) || (x.d.type ?? '').toLowerCase().includes(q);
-    }), [docs, audiencia, fStatus, fGrupo, busca]);
+    });
+  }, [docs, audiencia, fStatus, fGrupo, busca]);
 
   const grupos = useMemo(() => Array.from(new Set(docs
     .filter(d => providerAudience(d.person_type ?? null, d.provider_group ?? null) === audiencia)

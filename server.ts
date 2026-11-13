@@ -22,6 +22,7 @@ import { SESSION, isAbsoluteExpired, isRevoked } from './auth/session.js';
 import { purgeExpiredLogs } from './db/purgeExpiredLogs.js';
 import { PROVIDER_EDIT_STATUSES, providerCanEditCriterion } from './src/lib/providerEdit.js';
 import { questionOnly } from './src/lib/questionText.js';
+import { isAcceptedDocFormat, DOC_MAX_BYTES } from './src/lib/documentTypeRules.js';
 import { PRIVACY_POLICY_VERSION } from './src/lib/privacyPolicy.js';
 import { TERMO_EVIDENCIAS_VERSION, termoEvidenciasTexto } from './src/lib/termoEvidencias.js';
 import { parecerBlock, validityVsEndError } from './src/lib/cycleRules.js';
@@ -79,6 +80,22 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage: storage });
+
+// Upload de documentos (Gestão Documental): mesmo disk storage, mas com limite de
+// 20 MB e filtro de formato (PDF/JPG/PNG/DOCX). Substitui o `upload` cru na rota.
+const docUpload = (req: any, res: any, next: any) => {
+  multer({
+    storage,
+    limits: { fileSize: DOC_MAX_BYTES },
+    fileFilter: (_req, file, cb) => cb(null, isAcceptedDocFormat(file.originalname)),
+  }).single('file')(req, res, (err: any) => {
+    if (err) {
+      const isSize = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
+      return res.status(400).json({ error: isSize ? 'Arquivo maior que 20 MB' : (err.message || 'Falha no upload') });
+    }
+    next();
+  });
+};
 
 // Upload em memória, só para .xlsx (parse de roteiro). Limite de 5 MB.
 const uploadMemory = multer({
@@ -2280,32 +2297,94 @@ async function startServer() {
     }
   });
 
-  app.post('/api/documents', authenticate, upload.single('file'), async (req: any, res) => {
+  // Catálogo de tipos — leitura para o dropdown de upload (só ativos).
+  app.get('/api/document-types', authenticate, async (_req: any, res) => {
+    const { rows } = await query(
+      'SELECT id, nome, categoria, escopo, obrigatorio, ordem FROM document_types WHERE ativo = true ORDER BY categoria NULLS LAST, ordem, nome');
+    res.json(rows);
+  });
+
+  // Catálogo — administração (lista tudo, inclusive inativos).
+  app.get('/api/admin/document-types', authenticate, requireAdmin, async (_req: any, res) => {
+    const { rows } = await query(
+      'SELECT id, nome, categoria, obrigatorio, escopo, ativo, ordem FROM document_types ORDER BY ordem, nome');
+    res.json(rows);
+  });
+
+  const CATEGORIAS = ['obrigatoria', 'tecnica', 'regulatoria', 'contratual'];
+  const ESCOPOS = ['prestador', 'profissional'];
+
+  app.post('/api/admin/document-types', authenticate, requireAdmin, async (req: any, res) => {
+    const { nome, categoria, obrigatorio, escopo, ordem } = req.body;
+    if (!nome || !String(nome).trim()) return res.status(400).json({ error: 'Nome é obrigatório' });
+    if (categoria != null && !CATEGORIAS.includes(categoria)) return res.status(400).json({ error: 'Categoria inválida' });
+    if (escopo != null && !ESCOPOS.includes(escopo)) return res.status(400).json({ error: 'Escopo inválido' });
+    try {
+      const { rows } = await query(
+        `INSERT INTO document_types (nome, categoria, obrigatorio, escopo, ordem)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id, nome, categoria, obrigatorio, escopo, ativo, ordem`,
+        [String(nome).trim(), categoria ?? null, !!obrigatorio, escopo ?? 'prestador', Number(ordem) || 0]);
+      res.json(rows[0]);
+    } catch (err: any) {
+      if (err.code === '23505') return res.status(400).json({ error: 'Já existe um tipo com esse nome' });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/admin/document-types/:id', authenticate, requireAdmin, async (req: any, res) => {
+    const { nome, categoria, obrigatorio, escopo, ativo, ordem } = req.body;
+    if (!nome || !String(nome).trim()) return res.status(400).json({ error: 'Nome é obrigatório' });
+    if (categoria != null && !CATEGORIAS.includes(categoria)) return res.status(400).json({ error: 'Categoria inválida' });
+    if (escopo != null && !ESCOPOS.includes(escopo)) return res.status(400).json({ error: 'Escopo inválido' });
+    try {
+      const { rows } = await query(
+        `UPDATE document_types SET nome=$1, categoria=$2, obrigatorio=$3, escopo=$4, ativo=$5, ordem=$6
+          WHERE id=$7 RETURNING id, nome, categoria, obrigatorio, escopo, ativo, ordem`,
+        [String(nome).trim(), categoria ?? null, !!obrigatorio, escopo ?? 'prestador', ativo !== false, Number(ordem) || 0, req.params.id]);
+      if (!rows.length) return res.status(404).json({ error: 'Tipo não encontrado' });
+      res.json(rows[0]);
+    } catch (err: any) {
+      if (err.code === '23505') return res.status(400).json({ error: 'Já existe um tipo com esse nome' });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE: soft (ativo=false) se já houver documentos usando o tipo; hard se nenhum usa.
+  app.delete('/api/admin/document-types/:id', authenticate, requireAdmin, async (req: any, res) => {
+    const { id } = req.params;
+    const { rows: used } = await query('SELECT 1 FROM documents WHERE type_id = $1 LIMIT 1', [id]);
+    if (used.length) {
+      await query('UPDATE document_types SET ativo = false WHERE id = $1', [id]);
+      return res.json({ soft: true });
+    }
+    await query('DELETE FROM document_types WHERE id = $1', [id]);
+    res.json({ soft: false });
+  });
+
+  app.post('/api/documents', authenticate, docUpload, async (req: any, res) => {
     try {
       const { provider_id, role, id: user_id } = req.user;
-      const { type, issue_date, expiry_date } = req.body;
+      const { type_id, issue_date, expiry_date } = req.body;
 
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      if (!type_id) return res.status(400).json({ error: 'Tipo de documento é obrigatório' });
 
-      // Determine the provider ID to use (admins might upload for a provider, but for now let's assume provider uploads their own)
+      const { rows: tipoRows } = await query('SELECT nome FROM document_types WHERE id = $1 AND ativo = true', [type_id]);
+      if (!tipoRows.length) return res.status(400).json({ error: 'Tipo de documento inválido ou inativo' });
+      const type = tipoRows[0].nome;
+
       const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
-
-      if (!targetProviderId) {
-        return res.status(400).json({ error: 'Provider ID is required' });
-      }
+      if (!targetProviderId) return res.status(400).json({ error: 'Provider ID is required' });
 
       const file_url = '/uploads/' + req.file.filename;
-      const status = 'pendente'; // New documents are pending approval
+      const status = 'pendente';
       const upload_date = new Date().toISOString();
 
-      // Mark previous documents of the same type as 'historico'
-      await query("UPDATE documents SET status = 'historico' WHERE provider_id = $1 AND type = $2 AND status != 'historico'", [targetProviderId, type]);
+      await query("UPDATE documents SET status = 'historico' WHERE provider_id = $1 AND type_id = $2 AND status != 'historico'", [targetProviderId, type_id]);
 
       const { rows } = await query(
-        'INSERT INTO documents (provider_id, type, issue_date, expiry_date, status, file_url, upload_date, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-        [targetProviderId, type, issue_date || null, expiry_date || null, status, file_url, upload_date, user_id]
+        'INSERT INTO documents (provider_id, type_id, type, issue_date, expiry_date, status, file_url, upload_date, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+        [targetProviderId, type_id, type, issue_date || null, expiry_date || null, status, file_url, upload_date, user_id]
       );
 
       const { rows: newDocRows } = await query('SELECT * FROM documents WHERE id = $1', [rows[0].id]);

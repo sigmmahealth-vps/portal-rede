@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import { FileText, Upload, CheckCircle, XCircle, Clock, Eye, Check, X, Search, Filter, Download, ZoomIn, ZoomOut } from 'lucide-react';
+import GestaoDocumental from './documentos/GestaoDocumental';
 
 export default function Documentos() {
   const [documents, setDocuments] = useState<any[]>([]);
@@ -259,6 +260,7 @@ export default function Documentos() {
 
   if (loading) return <div className="p-8 text-center text-gray-500">Carregando documentos...</div>;
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
+  if (isAdmin) return <GestaoDocumental />;
 
   // Calculate compliance status
   const today = new Date();

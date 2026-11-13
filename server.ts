@@ -87,7 +87,10 @@ const docUpload = (req: any, res: any, next: any) => {
   multer({
     storage,
     limits: { fileSize: DOC_MAX_BYTES },
-    fileFilter: (_req, file, cb) => cb(null, isAcceptedDocFormat(file.originalname)),
+    fileFilter: (_req, file, cb) => {
+      if (isAcceptedDocFormat(file.originalname)) return cb(null, true);
+      cb(new Error('Formato não aceito. Envie PDF, JPG, PNG ou DOCX'));
+    },
   }).single('file')(req, res, (err: any) => {
     if (err) {
       const isSize = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE';
@@ -2299,16 +2302,24 @@ async function startServer() {
 
   // Catálogo de tipos — leitura para o dropdown de upload (só ativos).
   app.get('/api/document-types', authenticate, async (_req: any, res) => {
-    const { rows } = await query(
-      'SELECT id, nome, categoria, escopo, obrigatorio, ordem FROM document_types WHERE ativo = true ORDER BY categoria NULLS LAST, ordem, nome');
-    res.json(rows);
+    try {
+      const { rows } = await query(
+        'SELECT id, nome, categoria, escopo, obrigatorio, ordem FROM document_types WHERE ativo = true ORDER BY categoria NULLS LAST, ordem, nome');
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Catálogo — administração (lista tudo, inclusive inativos).
   app.get('/api/admin/document-types', authenticate, requireAdmin, async (_req: any, res) => {
-    const { rows } = await query(
-      'SELECT id, nome, categoria, obrigatorio, escopo, ativo, ordem FROM document_types ORDER BY ordem, nome');
-    res.json(rows);
+    try {
+      const { rows } = await query(
+        'SELECT id, nome, categoria, obrigatorio, escopo, ativo, ordem FROM document_types ORDER BY ordem, nome');
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   const CATEGORIAS = ['obrigatoria', 'tecnica', 'regulatoria', 'contratual'];
@@ -2332,15 +2343,16 @@ async function startServer() {
   });
 
   app.put('/api/admin/document-types/:id', authenticate, requireAdmin, async (req: any, res) => {
+    if (!Number.isInteger(Number(req.params.id))) return res.status(400).json({ error: 'ID inválido' });
     const { nome, categoria, obrigatorio, escopo, ativo, ordem } = req.body;
     if (!nome || !String(nome).trim()) return res.status(400).json({ error: 'Nome é obrigatório' });
     if (categoria != null && !CATEGORIAS.includes(categoria)) return res.status(400).json({ error: 'Categoria inválida' });
     if (escopo != null && !ESCOPOS.includes(escopo)) return res.status(400).json({ error: 'Escopo inválido' });
     try {
       const { rows } = await query(
-        `UPDATE document_types SET nome=$1, categoria=$2, obrigatorio=$3, escopo=$4, ativo=$5, ordem=$6
+        `UPDATE document_types SET nome=$1, categoria=$2, obrigatorio=$3, escopo=$4, ativo=COALESCE($5, ativo), ordem=$6
           WHERE id=$7 RETURNING id, nome, categoria, obrigatorio, escopo, ativo, ordem`,
-        [String(nome).trim(), categoria ?? null, !!obrigatorio, escopo ?? 'prestador', ativo !== false, Number(ordem) || 0, req.params.id]);
+        [String(nome).trim(), categoria ?? null, !!obrigatorio, escopo ?? 'prestador', typeof ativo === 'boolean' ? ativo : null, Number(ordem) || 0, req.params.id]);
       if (!rows.length) return res.status(404).json({ error: 'Tipo não encontrado' });
       res.json(rows[0]);
     } catch (err: any) {
@@ -2351,14 +2363,19 @@ async function startServer() {
 
   // DELETE: soft (ativo=false) se já houver documentos usando o tipo; hard se nenhum usa.
   app.delete('/api/admin/document-types/:id', authenticate, requireAdmin, async (req: any, res) => {
-    const { id } = req.params;
-    const { rows: used } = await query('SELECT 1 FROM documents WHERE type_id = $1 LIMIT 1', [id]);
-    if (used.length) {
-      await query('UPDATE document_types SET ativo = false WHERE id = $1', [id]);
-      return res.json({ soft: true });
+    if (!Number.isInteger(Number(req.params.id))) return res.status(400).json({ error: 'ID inválido' });
+    try {
+      const { id } = req.params;
+      const { rows: used } = await query('SELECT 1 FROM documents WHERE type_id = $1 LIMIT 1', [id]);
+      if (used.length) {
+        await query('UPDATE document_types SET ativo = false WHERE id = $1', [id]);
+        return res.json({ soft: true });
+      }
+      await query('DELETE FROM document_types WHERE id = $1', [id]);
+      res.json({ soft: false });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
-    await query('DELETE FROM document_types WHERE id = $1', [id]);
-    res.json({ soft: false });
   });
 
   app.post('/api/documents', authenticate, docUpload, async (req: any, res) => {

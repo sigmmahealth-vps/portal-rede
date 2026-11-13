@@ -40,6 +40,10 @@ export default function Documentos() {
   const [showViewerModal, setShowViewerModal] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
 
+  // Hoje em YYYY-MM-DD (local) — base das validações de data do envio.
+  const hojeISO = new Date().toLocaleDateString('en-CA');
+  const validadeVencida = !!expiryDate && expiryDate < hojeISO;
+
   const loadDocs = async () => {
     try {
       const data = await fetchApi('/documents');
@@ -103,6 +107,7 @@ export default function Documentos() {
     if (!file && !editingDocId) return alert('Selecione um arquivo');
 
     if (!uploadTypeId) return alert('Selecione o tipo de documento');
+    if (issueDate && issueDate > hojeISO) return alert('A data de emissão não pode ser futura.');
 
     setUploading(true);
     const formData = new FormData();
@@ -565,8 +570,9 @@ export default function Documentos() {
               <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Data de Emissão <span className="text-gray-400 font-normal">(opcional)</span></label>
-                    <input 
-                      type="date" 
+                    <input
+                      type="date"
+                      max={hojeISO}
                       className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-emerald-500 focus:border-emerald-500"
                       value={issueDate}
                       onChange={(e) => setIssueDate(e.target.value)}
@@ -576,10 +582,11 @@ export default function Documentos() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Data de Validade <span className="text-gray-400 font-normal">(opcional)</span></label>
                     <input
                       type="date"
-                      className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-emerald-500 focus:border-emerald-500"
+                      className={`w-full rounded-lg shadow-sm ${validadeVencida ? 'border-red-400 text-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-emerald-500 focus:border-emerald-500'}`}
                       value={expiryDate}
                       onChange={(e) => setExpiryDate(e.target.value)}
                     />
+                    {validadeVencida && <p className="mt-1 text-xs text-red-600">Validade já vencida.</p>}
                   </div>
                 </div>
               <div>

@@ -557,10 +557,9 @@ export default function Documentos() {
                   ))}
                 </select>
               </div>
-              {isAdmin && (
-                <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data de Emissão</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data de Emissão <span className="text-gray-400 font-normal">(opcional)</span></label>
                     <input 
                       type="date" 
                       className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-emerald-500 focus:border-emerald-500"
@@ -569,16 +568,15 @@ export default function Documentos() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data de Validade</label>
-                    <input 
-                      type="date" 
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data de Validade <span className="text-gray-400 font-normal">(opcional)</span></label>
+                    <input
+                      type="date"
                       className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-emerald-500 focus:border-emerald-500"
                       value={expiryDate}
                       onChange={(e) => setExpiryDate(e.target.value)}
                     />
                   </div>
                 </div>
-              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Arquivo (PDF, Imagem)</label>
                 <input 

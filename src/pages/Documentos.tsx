@@ -18,7 +18,7 @@ export default function Documentos() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadTypeId, setUploadTypeId] = useState<number | ''>('');
   const [docTypes, setDocTypes] = useState<Array<{ id: number; nome: string; categoria: string | null }>>([]);
-  useEffect(() => { fetchApi('/document-types').then(setDocTypes).catch(() => {}); }, []);
+  useEffect(() => { fetchApi('/document-types').then(setDocTypes).catch((e: any) => setError(e?.message || 'Falha ao carregar os tipos de documento')); }, []);
   const [issueDate, setIssueDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [selectedProviderId, setSelectedProviderId] = useState('');
@@ -155,7 +155,7 @@ export default function Documentos() {
 
   const openEditModal = (doc: any) => {
     setEditingDocId(doc.id);
-    setUploadTypeId(docTypes.find((t) => t.nome === doc.type)?.id ?? '');
+    setUploadTypeId(doc.type_id ?? '');
     setIssueDate(doc.issue_date ? new Date(doc.issue_date).toISOString().split('T')[0] : '');
     setExpiryDate(doc.expiry_date ? new Date(doc.expiry_date).toISOString().split('T')[0] : '');
     setSelectedProviderId(doc.provider_id ? String(doc.provider_id) : '');
@@ -486,7 +486,7 @@ export default function Documentos() {
                         <button 
                           onClick={() => {
                             setEditingDocId(null);
-                            setUploadTypeId(docTypes.find((t) => t.nome === doc.type)?.id ?? '');
+                            setUploadTypeId(doc.type_id ?? '');
                             setIssueDate('');
                             setExpiryDate('');
                             setSelectedProviderId('');

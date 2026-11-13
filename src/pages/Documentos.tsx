@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
-import { FileText, Upload, CheckCircle, XCircle, Clock, Eye, Check, X, Search, Filter, Download, ZoomIn, ZoomOut } from 'lucide-react';
+import { FileText, Upload, CheckCircle, XCircle, Clock, Eye, Check, X, Search, Filter, Download, ZoomIn, ZoomOut, Pencil, Trash2 } from 'lucide-react';
 import GestaoDocumental from './documentos/GestaoDocumental';
 
 export default function Documentos() {
@@ -445,47 +445,51 @@ export default function Documentos() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-right text-sm font-medium">
-                    <div className="flex items-center justify-end gap-3 flex-wrap">
-                      <button 
+                  <td className="px-5 py-4">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
                         onClick={() => {
                           setSelectedDoc(doc);
                           setZoomLevel(1);
                           setShowViewerModal(true);
                         }}
-                        className="text-emerald-600 hover:text-emerald-900 inline-flex items-center"
+                        title="Visualizar" aria-label="Visualizar"
+                        className="rounded-lg p-2 text-emerald-600 transition-colors hover:bg-emerald-50"
                       >
-                        <Eye className="h-4 w-4 mr-1" /> Visualizar
+                        <Eye className="h-[18px] w-[18px]" />
                       </button>
-                      
+
                       {isAdmin && getComputedStatus(doc) === 'pendente' && (
-                        <button 
+                        <button
                           onClick={() => openAdminModal(doc)}
-                          className="text-blue-600 hover:text-blue-900 inline-flex items-center"
+                          title="Avaliar" aria-label="Avaliar"
+                          className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50"
                         >
-                          Avaliar
+                          <CheckCircle className="h-[18px] w-[18px]" />
                         </button>
                       )}
 
                       {getComputedStatus(doc) === 'pendente' && (
                         <>
-                          <button 
+                          <button
                             onClick={() => openEditModal(doc)}
-                            className="text-amber-600 hover:text-amber-900 inline-flex items-center"
+                            title="Editar" aria-label="Editar"
+                            className="rounded-lg p-2 text-amber-600 transition-colors hover:bg-amber-50"
                           >
-                            Editar
+                            <Pencil className="h-[18px] w-[18px]" />
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDelete(doc.id)}
-                            className="text-red-600 hover:text-red-900 inline-flex items-center"
+                            title="Excluir" aria-label="Excluir"
+                            className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50"
                           >
-                            Excluir
+                            <Trash2 className="h-[18px] w-[18px]" />
                           </button>
                         </>
                       )}
 
                       {!isAdmin && (getComputedStatus(doc) === 'vencido' || getComputedStatus(doc) === 'reprovado') && (
-                        <button 
+                        <button
                           onClick={() => {
                             setEditingDocId(null);
                             setUploadTypeId(doc.type_id ?? '');
@@ -495,9 +499,10 @@ export default function Documentos() {
                             setFile(null);
                             setShowUploadModal(true);
                           }}
-                          className="text-blue-600 hover:text-blue-900 inline-flex items-center"
+                          title="Enviar nova versão" aria-label="Enviar nova versão"
+                          className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50"
                         >
-                          Atualizar
+                          <Upload className="h-[18px] w-[18px]" />
                         </button>
                       )}
                     </div>

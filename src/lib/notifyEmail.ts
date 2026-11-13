@@ -442,6 +442,13 @@ export function notificationBlocks(
         cta: { ...cta, label: 'Abrir o cadastro' },
       };
       break;
+    case 'documento_atualizacao':
+      b = {
+        banner: 'Atualização de documento solicitada',
+        paragraphs: [String(ctx.message ?? 'Por favor, envie uma nova versão do documento solicitado.')],
+        cta: { label: 'Acessar documentos', url: `${appUrl}${ctx.link ?? '/documentos'}` },
+      };
+      break;
     default:
       b = { banner: String(type), paragraphs: [''], cta };
   }

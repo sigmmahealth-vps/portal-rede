@@ -12,7 +12,7 @@ test('todos os tipos renderizam título, corpo e link', () => {
     });
     assert.ok(c.title.length > 0, t);
     assert.ok(c.body.length > 0, t);
-    assert.ok(c.link.startsWith('/qualificacao'), t);
+    assert.ok(c.link.startsWith(t === 'documento_atualizacao' ? '/documentos' : '/qualificacao'), t);
   }
 });
 
@@ -181,4 +181,11 @@ test('NOTIFY_TYPE_LABELS: todo tipo tem nome no padrão (sem código cru, sem ab
     assert.equal(l[0], l[0].toUpperCase(), `1ª letra maiúscula: ${l}`);
     assert.equal(l.slice(1), l.slice(1).toLowerCase(), `só a 1ª maiúscula: ${l}`);
   }
+});
+
+test('documento_atualizacao usa a mensagem do ctx', () => {
+  const c = renderNotification('documento_atualizacao', { message: 'Envie o Alvará Sanitário atualizado.' });
+  assert.equal(c.title, 'Atualização de documento solicitada');
+  assert.equal(c.body, 'Envie o Alvará Sanitário atualizado.');
+  assert.equal(c.link, '/documentos');
 });

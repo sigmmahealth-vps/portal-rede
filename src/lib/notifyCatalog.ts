@@ -6,7 +6,7 @@ export const NOTIFY_TYPES = [
   'parecer_aprovado', 'parecer_reprovado', 'certificado_emitido',
   'plano_gerado', 'acao_aguardando_validacao',
   'acao_vencendo', 'acao_atrasada', 'roteiro_pendente', 'certificado_vencendo',
-  'ciclo_encerrado_sem_avaliacao', 'senha_solicitada',
+  'ciclo_encerrado_sem_avaliacao', 'senha_solicitada', 'documento_atualizacao',
 ] as const;
 export type NotifyType = typeof NOTIFY_TYPES[number];
 
@@ -28,6 +28,7 @@ export const NOTIFY_TYPE_LABELS: Record<NotifyType, string> = {
   acao_vencendo: 'Ação a vencer',
   acao_atrasada: 'Ação atrasada',
   senha_solicitada: 'Redefinição de senha solicitada',
+  documento_atualizacao: 'Atualização de documento solicitada',
 };
 
 export interface NotifyContent { title: string; body: string; link: string; }
@@ -156,6 +157,12 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
       // Esqueci minha senha de unidade sem e-mail confirmado (senha por unidade, 2026-10-09).
       return { title: `Redefinição de senha solicitada${ctx.provider_name ? ` — ${ctx.provider_name}` : ''}`,
                body: `O prestador pediu a redefinição da senha de acesso ao portal${ctx.unit_label ? ` da unidade ${ctx.unit_label}` : ''}. Confirme a identidade de quem pediu e defina uma nova senha provisória para essa unidade na aba Acessos do cadastro.`, link };
+    case 'documento_atualizacao':
+      return {
+        title: 'Atualização de documento solicitada',
+        body: String(ctx.message ?? 'Por favor, envie uma nova versão do documento solicitado.'),
+        link: String(ctx.link ?? '/documentos'),
+      };
     default:
       return { title: String(type), body: '', link };
   }

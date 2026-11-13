@@ -29,7 +29,7 @@ export default function GestaoDocumental() {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200">
-        {([['lista', 'Investigação & Lista'], ['bi', 'BI Painéis'], ['matriz', 'Matriz Legal']] as [Aba, string][]).map(([id, label]) => (
+        {([['bi', 'Painel de Controle'], ['lista', 'Investigação & Lista'], ['matriz', 'Matriz Legal']] as [Aba, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setAba(id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${aba === id ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {label}
@@ -38,7 +38,7 @@ export default function GestaoDocumental() {
       </div>
 
       {aba === 'lista' && <InvestigacaoLista audiencia={audiencia} onAnalisar={setAnalisar} onNotificar={setNotificar} reloadKey={reloadKey} />}
-      {aba === 'bi' && <EmBreve titulo="BI Painéis" />}
+      {aba === 'bi' && <EmBreve titulo="Painel de Controle" />}
       {aba === 'matriz' && <EmBreve titulo="Matriz Legal" />}
 
       {analisar && <AnalisarModal doc={analisar} onClose={() => setAnalisar(null)} onDone={() => { setAnalisar(null); setReloadKey(k => k + 1); }} />}

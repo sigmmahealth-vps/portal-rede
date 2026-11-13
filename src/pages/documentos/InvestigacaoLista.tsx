@@ -82,7 +82,7 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
               <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <th className="px-5 py-3.5">Prestador</th><th className="px-5 py-3.5">Documento</th>
                 <th className="px-5 py-3.5 whitespace-nowrap">Data Envio</th><th className="px-5 py-3.5">Validade</th>
-                <th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5 text-right">Ações</th>
+                <th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -94,7 +94,7 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
                   <td className="px-5 py-4 text-sm text-gray-500 whitespace-nowrap">{fmt(d.expiry_date)}</td>
                   <td className="px-5 py-4"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COR[st]}`}>{STATUS_LABEL[st]}</span></td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center gap-1">
                       {st === 'pendente' && (
                         <button onClick={() => onAnalisar(d)} title="Analisar" aria-label="Analisar"
                           className="rounded-lg p-2 text-emerald-700 transition-colors hover:bg-emerald-50"><FileSearch className="h-[18px] w-[18px]" /></button>

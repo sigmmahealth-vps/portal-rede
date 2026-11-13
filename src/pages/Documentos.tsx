@@ -445,7 +445,7 @@ export default function Documentos() {
                       )}
                     </div>
                   </td>
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-4">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => {

@@ -18,7 +18,9 @@ test('todos os tipos com canal e-mail renderizam subject e html no padrão', () 
     assert.ok(e.html.includes("'Unimed Sans'"), t);                  // fonte da marca
     assert.ok(e.html.includes(`${APP}/fonts/Unimed-Regular.woff2`), t);
     assert.ok(e.html.includes('Olá, <strong>Fulano</strong>'), t);   // saudação
-    assert.ok(e.html.includes(`${APP}/qualificacao`), t);            // CTA
+    // CTA: documento_atualizacao leva à Gestão Documental; os demais, à qualificação.
+    const ctaEsperado = t === 'documento_atualizacao' ? `${APP}/documentos` : `${APP}/qualificacao`;
+    assert.ok(e.html.includes(ctaEsperado), t);
     assert.ok(e.html.includes('Cooperativa de Trabalho Médico'), t); // rodapé
     assert.ok(e.html.includes(`${APP}/logo-unimed-email.png`), t);   // logo do rodapé (alta resolução)
   }

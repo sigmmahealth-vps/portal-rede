@@ -48,7 +48,7 @@ export default function Layout() {
 
   // Módulos ainda não liberados para os acessos de prestador (cliente, 25/09): aparecem
   // no menu como "Em breve", sem link, e a URL direta volta para o Dashboard.
-  const PROVIDER_SOON = ['/documentos', '/contratos'];
+  const PROVIDER_SOON = ['/contratos'];
 
   const filteredNavigation = navigation
     .filter(item => !((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin))

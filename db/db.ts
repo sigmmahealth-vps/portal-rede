@@ -31,6 +31,13 @@ export const pool = new Pool({
   max: Number(process.env.PG_POOL_MAX ?? 10),
 });
 
+// Railway (e proxies em geral) derrubam conexões ociosas do pool. Sem este handler,
+// o evento 'error' de um cliente ocioso vira exceção não tratada e DERRUBA o processo.
+// Com o handler, o pg descarta o cliente quebrado e o pool segue (reconecta sob demanda).
+pool.on('error', (err) => {
+  console.error('[pg] erro em conexão ociosa do pool (descartada):', err.message);
+});
+
 // Helper de query parametrizada ($1, $2, ...). Sempre use placeholders — nunca
 // concatene valores na string SQL (prevenção de SQL injection).
 export function query<T = any>(text: string, params?: unknown[]) {

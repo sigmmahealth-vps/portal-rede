@@ -395,42 +395,42 @@ export default function Documentos() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo de Documento</th>
-                {isAdmin && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prestador</th>}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emissão</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validade</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Envio</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo de Documento</th>
+                {isAdmin && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prestador</th>}
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emissão</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validade</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Envio</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredDocuments.map((doc) => (
                 <tr key={doc.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <FileText className="h-5 w-5 text-gray-400 mr-3" />
                       <div className="text-sm font-medium text-gray-900">{doc.type}</div>
                     </div>
                   </td>
                   {isAdmin && (
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {doc.provider_name}
                     </td>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                     {doc.issue_date ? new Date(doc.issue_date).toLocaleDateString('pt-BR') : '-'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                     {doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString('pt-BR') : '-'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex flex-col">
                       <span>{doc.upload_date ? new Date(doc.upload_date).toLocaleDateString('pt-BR') : '-'}</span>
                       <span className="text-xs text-gray-400">{doc.uploaded_by_name || 'Sistema'}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center whitespace-nowrap">
                         {getStatusIcon(getComputedStatus(doc))}
@@ -443,7 +443,7 @@ export default function Documentos() {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right text-sm font-medium">
+                  <td className="px-4 py-4 text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-3 flex-wrap">
                       <button 
                         onClick={() => {
@@ -518,7 +518,7 @@ export default function Documentos() {
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div className="px-4 py-4 border-b border-gray-100 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900">{isAdmin ? 'Importar Documento' : 'Enviar Documento'}</h3>
               <button onClick={() => setShowUploadModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
@@ -612,7 +612,7 @@ export default function Documentos() {
       {showAdminModal && selectedDoc && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white z-10">
+            <div className="px-4 py-4 border-b border-gray-100 flex justify-between items-center bg-white z-10">
               <h3 className="text-lg font-bold text-gray-900">Avaliar Documento: {selectedDoc.type}</h3>
               <div className="flex items-center gap-4">
                 <div className="flex items-center bg-gray-100 rounded-lg p-1">
@@ -716,7 +716,7 @@ export default function Documentos() {
       {showViewerModal && selectedDoc && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white z-10">
+            <div className="px-4 py-4 border-b border-gray-100 flex justify-between items-center bg-white z-10">
               <h3 className="text-lg font-bold text-gray-900">{selectedDoc.type}</h3>
               <div className="flex items-center gap-4">
                 <div className="flex items-center bg-gray-100 rounded-lg p-1">

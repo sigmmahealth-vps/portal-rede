@@ -2417,11 +2417,16 @@ async function startServer() {
     }
   });
 
-  app.put('/api/documents/:id', authenticate, upload.single('file'), async (req: any, res) => {
+  app.put('/api/documents/:id', authenticate, docUpload, async (req: any, res) => {
     try {
       const { role, provider_id } = req.user;
       const { id } = req.params;
-      const { type, issue_date, expiry_date } = req.body;
+      const { type_id, issue_date, expiry_date } = req.body;
+
+      if (!type_id) return res.status(400).json({ error: 'Tipo de documento é obrigatório' });
+      const { rows: tipoRows } = await query('SELECT nome FROM document_types WHERE id = $1 AND ativo = true', [type_id]);
+      if (!tipoRows.length) return res.status(400).json({ error: 'Tipo de documento inválido ou inativo' });
+      const type = tipoRows[0].nome;
 
       const { rows: docRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
       const doc = docRows[0] as any;
@@ -2440,7 +2445,7 @@ async function startServer() {
         file_url = '/uploads/' + req.file.filename;
       }
 
-      await query('UPDATE documents SET type = $1, issue_date = $2, expiry_date = $3, file_url = $4 WHERE id = $5', [type, issue_date || null, expiry_date || null, file_url, id]);
+      await query('UPDATE documents SET type_id = $1, type = $2, issue_date = $3, expiry_date = $4, file_url = $5 WHERE id = $6', [type_id, type, issue_date || null, expiry_date || null, file_url, id]);
 
       const { rows: updatedDocRows } = await query('SELECT * FROM documents WHERE id = $1', [id]);
       await auditLog({

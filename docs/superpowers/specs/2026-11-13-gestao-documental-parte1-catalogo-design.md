@@ -58,9 +58,7 @@ por tipo, e passa a **validar formato e tamanho** no upload.
 |---|---|---|
 | `id` | bigint identity PK | |
 | `nome` | text NOT NULL UNIQUE | ex.: "Alvará Sanitário" |
-| `categoria` | text NOT NULL CHECK in (`obrigatoria`,`tecnica`,`regulatoria`,`contratual`) | os 4 baldes |
-| `exige_validade` | boolean NOT NULL DEFAULT false | se true, upload exige `expiry_date` |
-| `validade_meses` | integer NULL | sugere `expiry_date` a partir da emissão (opcional) |
+| `categoria` | text NULL CHECK in (`obrigatoria`,`tecnica`,`regulatoria`,`contratual`) | metadado p/ admin (os 4 baldes do objetivo); `NULL` para "Outros" |
 | `obrigatorio` | boolean NOT NULL DEFAULT false | **só metadado** nesta parte (bloqueio é Parte 7) |
 | `escopo` | text NOT NULL DEFAULT `prestador` CHECK in (`prestador`,`profissional`) | profissional só "liga" na Parte 5 |
 | `ativo` | boolean NOT NULL DEFAULT true | desativa sem apagar |
@@ -75,28 +73,26 @@ por tipo, e passa a **validar formato e tamanho** no upload.
 
 ## Catálogo inicial (seed)
 
-Semeado pela migration; **admin pode editar depois**. `exige_validade`/`validade_meses`
-são um ponto de partida (regras da Unimed ajustáveis na tela).
+A semente é a **lista do mockup do prestador** (tela "Enviar Documento"), semeada pela migration.
+Como o catálogo é **editável por admin**, os demais tipos do objetivo (RQE, Simples Nacional,
+ISO/ONA, POP, diplomas, contratos vigentes/aditivos) podem ser adicionados depois na tela, sem deploy.
 
-| nome | categoria | exige_validade | validade_meses | escopo |
-|---|---|---|---|---|
-| Alvará de Localização/Funcionamento | obrigatoria | sim | 12 | prestador |
-| Alvará Sanitário (Licença Sanitária) | obrigatoria | sim | 12 | prestador |
-| Alvará dos Bombeiros (AVCB) | obrigatoria | sim | 12 | prestador |
-| CNES | obrigatoria | não | — | prestador |
-| Contrato Social | regulatoria | não | — | prestador |
-| CRM do Responsável Técnico | regulatoria | não | — | profissional |
-| RQE | regulatoria | não | — | profissional |
-| ART — Anotação de Responsabilidade Técnica | regulatoria | sim | 12 | prestador |
-| Optante pelo Simples Nacional | regulatoria | não | — | prestador |
-| Certificados/diplomas | tecnica | não | — | profissional |
-| Certificado de qualidade (ISO/ONA/acreditação) | tecnica | sim | 36 | prestador |
-| POP — Procedimento Operacional Padrão | tecnica | não | — | prestador |
-| Contrato vigente | contratual | não | — | prestador |
-| Outros | tecnica | não | — | prestador |
+| nome | categoria | escopo |
+|---|---|---|
+| Alvará de Localização | obrigatoria | prestador |
+| Alvará Sanitário | obrigatoria | prestador |
+| Alvará do Corpo de Bombeiros | obrigatoria | prestador |
+| Anotação de Responsabilidade Técnica (ART) | regulatoria | prestador |
+| CNES | obrigatoria | prestador |
+| Contrato Social | regulatoria | prestador |
+| CRM do Responsável Técnico | regulatoria | profissional |
+| Declaração de Regularidade - CR | regulatoria | prestador |
+| Autorização de Funcionamento - CNEN | obrigatoria | prestador |
+| Outros | (NULL) | prestador |
 
-> A cadência de revisão de POP (alerta de desatualização) e os aditivos de contrato
-> ficam para as Partes 4 e 6; aqui entram só como tipos no catálogo.
+> `emissão` e `validade` são **opcionais** em todos os tipos (requisito do mockup). O catálogo
+> não guarda regra de validade; o alerta de vencimento (Parte 3) usa apenas a validade que o
+> prestador informar — documento sem validade não vence.
 
 ## API
 
@@ -118,21 +114,20 @@ Todas em [server.ts](../../../server.ts), seguindo o padrão existente.
 - O cliente passa a enviar `type_id` (fonte da verdade); o campo `type` texto deixa de ser enviado.
 - O servidor grava `type_id` e também `type` = nome do tipo do catálogo (mantém a coluna texto
   coerente/legível para telas e relatórios).
+- `issue_date` (emissão) e `expiry_date` (validade) continuam **opcionais**.
 - Aplica a validação (abaixo) antes de persistir.
 
 ## Frontend
 
 ### Aba de catálogo no admin
 Nova aba **"Tipos de Documento"** em [Admin.tsx](../../../src/pages/Admin.tsx) (que já é um
-conjunto de abas). Tabela com os tipos + modal de criar/editar (nome, categoria, exige_validade,
-validade_meses, obrigatorio, escopo, ativo, ordem). Segue o visual das abas existentes
-(ex.: `UsuariosTab`, `EmailsTab`).
+conjunto de abas). Tabela com os tipos + modal de criar/editar (nome, categoria, obrigatorio,
+escopo, ativo, ordem). Segue o visual das abas existentes (ex.: `UsuariosTab`, `EmailsTab`).
 
 ### Dropdown de upload
 Em [Documentos.tsx](../../../src/pages/Documentos.tsx), o `<select>` de tipo passa a ler de
-`GET /api/document-types` (agrupado por `categoria`) em vez da lista chumbada. Quando o tipo
-selecionado tem `exige_validade`, o campo de validade vira obrigatório no formulário; se tem
-`validade_meses`, sugere a data a partir da emissão.
+`GET /api/document-types` em vez da lista chumbada. Emissão e validade seguem como campos
+**opcionais** no formulário.
 
 ## Regras de validação (upload)
 
@@ -142,7 +137,8 @@ Função pura em `src/lib/documentTypeRules.ts`, consumida pela rota de upload e
 - **Tamanho:** ≤ 20 MB. Acima → 400 (reusar o padrão de mensagem de
   [server.ts](../../../server.ts), que já tem o limite de 20 MB para manuais).
 - **Tipo:** `type_id` precisa existir e estar `ativo`. Senão → 400.
-- **Validade:** se o tipo tem `exige_validade=true` e não veio `expiry_date` → 400.
+
+Emissão e validade **não são validadas** (opcionais).
 
 A aplicação no multer: o upload de documentos deixa de usar o `upload` cru (sem limite) e passa a
 usar um middleware com `limits.fileSize = 20 MB` e `fileFilter` pelos formatos aceitos.
@@ -166,8 +162,8 @@ Idempotente e segura de reexecutar, como as demais migrations
 ## Testes
 
 - `src/lib/documentTypeRules.test.ts` — cobre: formato aceito/recusado, tamanho no limite e acima,
-  tipo inativo/inexistente, validade exigida ausente/presente. Segue o padrão `node:test`
-  do repositório (incluir no script `test` do `package.json`).
+  tipo inativo/inexistente. Segue o padrão `node:test` do repositório (incluir no script `test`
+  do `package.json`).
 
 ## Convivência com a qualificação
 
@@ -175,3 +171,21 @@ A tabela `documents` continua servindo às evidências de qualificação
 (`type='qualificacao_evidencia'`, `question_id`, `reference_id`). O catálogo e a validação de
 formato/tamanho da Parte 1 **só se aplicam ao fluxo de Gestão Documental** (`POST /api/documents`
 com `type_id`). O caminho de evidência não recebe `type_id` e não é afetado.
+
+## Requisitos capturados dos mockups do prestador (Partes 2–3, fora desta parte)
+
+Registrados aqui para não se perderem; **não** são implementados na Parte 1.
+
+- **Lista do prestador (Parte 2):** na aba "Documentação", o prestador/cooperado vê todos os seus
+  documentos, em colunas Tipo · Emissão · Validade · Status · Ações.
+- **Status (Parte 2/3):**
+  - *Válido* — aprovado e dentro da validade.
+  - *Vencido* — passou da validade e nenhum documento foi enviado para substituir.
+  - *Pendente* — enviado um novo documento, mas sem análise/aprovação ainda.
+  - *Reprovado* — após análise do auditor/admin, o documento enviado não foi aprovado.
+- **Visualizar (Parte 2):** ação "Visualizar" abre janela suspensa com a imagem do documento
+  (o modal já existe em `Documentos.tsx`).
+- **Atualizar (Parte 2/4):** quando o documento está vencido, botão "Atualizar" permite enviar nova
+  versão (o upload já marca a anterior como `historico`).
+- **E-mails de vencimento (Parte 3):** 30 dias antes de vencer, dispara e-mail ao prestador/cooperado
+  avisando e pedindo novo envio; após o vencimento, repete **a cada 3 dias**.

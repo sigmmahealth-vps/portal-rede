@@ -16,7 +16,9 @@ export default function Documentos() {
   
   // Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadType, setUploadType] = useState('Alvará de Localização');
+  const [uploadTypeId, setUploadTypeId] = useState<number | ''>('');
+  const [docTypes, setDocTypes] = useState<Array<{ id: number; nome: string; categoria: string | null }>>([]);
+  useEffect(() => { fetchApi('/document-types').then(setDocTypes).catch(() => {}); }, []);
   const [issueDate, setIssueDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [selectedProviderId, setSelectedProviderId] = useState('');
@@ -99,10 +101,14 @@ export default function Documentos() {
     e.preventDefault();
     if (!file && !editingDocId) return alert('Selecione um arquivo');
 
+    if (!uploadTypeId) return alert('Selecione o tipo de documento');
+
     setUploading(true);
     const formData = new FormData();
     if (file) formData.append('file', file);
-    formData.append('type', uploadType);
+    formData.append('type_id', String(uploadTypeId));
+    // PUT (edição) ainda lê o nome em `type`
+    formData.append('type', docTypes.find((t) => t.id === uploadTypeId)?.nome ?? '');
     if (issueDate) formData.append('issue_date', issueDate);
     if (expiryDate) formData.append('expiry_date', expiryDate);
     if (isAdmin && selectedProviderId) {
@@ -149,7 +155,7 @@ export default function Documentos() {
 
   const openEditModal = (doc: any) => {
     setEditingDocId(doc.id);
-    setUploadType(doc.type);
+    setUploadTypeId(docTypes.find((t) => t.nome === doc.type)?.id ?? '');
     setIssueDate(doc.issue_date ? new Date(doc.issue_date).toISOString().split('T')[0] : '');
     setExpiryDate(doc.expiry_date ? new Date(doc.expiry_date).toISOString().split('T')[0] : '');
     setSelectedProviderId(doc.provider_id ? String(doc.provider_id) : '');
@@ -293,7 +299,7 @@ export default function Documentos() {
           <button 
             onClick={() => {
               setEditingDocId(null);
-              setUploadType('Alvará de Localização');
+              setUploadTypeId('');
               setIssueDate('');
               setExpiryDate('');
               setSelectedProviderId('');
@@ -480,7 +486,7 @@ export default function Documentos() {
                         <button 
                           onClick={() => {
                             setEditingDocId(null);
-                            setUploadType(doc.type);
+                            setUploadTypeId(docTypes.find((t) => t.nome === doc.type)?.id ?? '');
                             setIssueDate('');
                             setExpiryDate('');
                             setSelectedProviderId('');
@@ -539,21 +545,14 @@ export default function Documentos() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Documento</label>
                 <select 
                   className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-emerald-500 focus:border-emerald-500"
-                  value={uploadType}
-                  onChange={(e) => setUploadType(e.target.value)}
+                  value={uploadTypeId}
+                  onChange={(e) => setUploadTypeId(e.target.value ? Number(e.target.value) : '')}
                   required
                 >
-                  <option value="Alvará de Localização">Alvará de Localização</option>
-                  <option value="Alvará Sanitário">Alvará Sanitário</option>
-                  <option value="Alvará dos Bombeiros">Alvará dos Bombeiros</option>
-                  <option value="ART - Anotação de Responsabilidade Técnica">ART - Anotação de Responsabilidade Técnica</option>
-                  <option value="Certificados/diplomas">Certificados/diplomas</option>
-                  <option value="CNES">CNES</option>
-                  <option value="Contrato Social">Contrato Social</option>
-                  <option value="CRM do Responsável Técnico">CRM do Responsável Técnico</option>
-                  <option value="Optante pelo Simples Nacional">Optante pelo Simples Nacional</option>
-                  <option value="RQE">RQE</option>
-                  <option value="Outros">Outros</option>
+                  <option value="">Selecione o tipo</option>
+                  {docTypes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.nome}</option>
+                  ))}
                 </select>
               </div>
               {isAdmin && (

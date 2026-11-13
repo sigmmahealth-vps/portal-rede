@@ -9,6 +9,7 @@ import EliminatoriosModal from './qualificacao/EliminatoriosModal';
 import ManualRoteiroModal from './qualificacao/ManualRoteiroModal';
 import UsuariosTab from './admin/UsuariosTab';
 import EmailsTab from './admin/EmailsTab';
+import TiposDocumentoTab from './admin/TiposDocumentoTab';
 import {
   Users, FileText, FileCheck2,
   GraduationCap, 
@@ -47,6 +48,7 @@ const TABS = [
   { id: 'emails', label: 'E-mails Enviados', icon: Mail },
   { id: 'banners', label: 'Banners', icon: ImageIcon },
   { id: 'acessos', label: 'Trilha de Acesso', icon: ShieldCheck },
+  { id: 'tipos-documento', label: 'Tipos de Documento', icon: FileText },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
 
@@ -887,6 +889,7 @@ export default function Admin() {
         )}
 
         {activeTab === 'emails' && <EmailsTab />}
+        {activeTab === 'tipos-documento' && <TiposDocumentoTab />}
 
         {activeTab === 'comunicados' && (
           <div className="space-y-6">

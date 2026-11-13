@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Download, Eye } from 'lucide-react';
+import { Search, Download, Eye, FileSearch, Bell } from 'lucide-react';
 import { fetchApi } from '../../lib/api';
 import { statusDocumento, StatusDoc } from '../../lib/documentoStatus.js';
 import { providerAudience } from '../../lib/providerAudience.js';
@@ -79,28 +79,39 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr className="text-left text-xs font-medium uppercase text-gray-500">
-                <th className="px-4 py-3">Prestador</th><th className="px-4 py-3">Documento</th>
-                <th className="px-4 py-3">Data Envio</th><th className="px-4 py-3">Validade</th>
-                <th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Ação</th>
+              <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <th className="px-5 py-3.5">Prestador</th><th className="px-5 py-3.5">Documento</th>
+                <th className="px-5 py-3.5 whitespace-nowrap">Data Envio</th><th className="px-5 py-3.5">Validade</th>
+                <th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {linhas.map(({ d, st }) => (
-                <tr key={d.id}>
-                  <td className="px-4 py-3 text-sm">{d.provider_name ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm">{d.type ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{fmt(d.upload_date)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{fmt(d.expiry_date)}</td>
-                  <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COR[st]}`}>{STATUS_LABEL[st]}</span></td>
-                  <td className="px-4 py-3 text-right text-sm">
-                    {st === 'pendente' && <button onClick={() => onAnalisar(d)} className="font-medium text-emerald-700 hover:underline">Analisar</button>}
-                    {(st === 'vencido' || st === 'reprovado') && <button onClick={() => onNotificar(d)} className="font-medium text-amber-700 hover:underline">Notificar</button>}
-                    {st === 'aprovado' && <button onClick={() => onAnalisar(d)} className="inline-flex items-center gap-1 text-gray-500 hover:text-emerald-700"><Eye className="h-4 w-4" />Ver</button>}
+                <tr key={d.id} className="transition-colors hover:bg-gray-50/70">
+                  <td className="px-5 py-4 text-sm font-medium text-gray-900">{d.provider_name ?? '—'}</td>
+                  <td className="px-5 py-4 text-sm text-gray-700">{d.type ?? '—'}</td>
+                  <td className="px-5 py-4 text-sm text-gray-500 whitespace-nowrap">{fmt(d.upload_date)}</td>
+                  <td className="px-5 py-4 text-sm text-gray-500 whitespace-nowrap">{fmt(d.expiry_date)}</td>
+                  <td className="px-5 py-4"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COR[st]}`}>{STATUS_LABEL[st]}</span></td>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center justify-end gap-1">
+                      {st === 'pendente' && (
+                        <button onClick={() => onAnalisar(d)} title="Analisar" aria-label="Analisar"
+                          className="rounded-lg p-2 text-emerald-700 transition-colors hover:bg-emerald-50"><FileSearch className="h-[18px] w-[18px]" /></button>
+                      )}
+                      {(st === 'vencido' || st === 'reprovado') && (
+                        <button onClick={() => onNotificar(d)} title="Notificar prestador" aria-label="Notificar prestador"
+                          className="rounded-lg p-2 text-amber-700 transition-colors hover:bg-amber-50"><Bell className="h-[18px] w-[18px]" /></button>
+                      )}
+                      {st === 'aprovado' && (
+                        <button onClick={() => onAnalisar(d)} title="Ver documento" aria-label="Ver documento"
+                          className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-emerald-700"><Eye className="h-[18px] w-[18px]" /></button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
-              {linhas.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Nenhum documento.</td></tr>}
+              {linhas.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">Nenhum documento.</td></tr>}
             </tbody>
           </table>
         </div>

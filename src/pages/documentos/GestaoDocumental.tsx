@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import InvestigacaoLista from './InvestigacaoLista';
 
 type Aba = 'lista' | 'bi' | 'matriz';
 type Audiencia = 'medicos' | 'rede';
@@ -30,16 +31,13 @@ export default function GestaoDocumental() {
         ))}
       </div>
 
-      {aba === 'lista' && <PlaceholderLista audiencia={audiencia} />}
+      {aba === 'lista' && <InvestigacaoLista audiencia={audiencia} onAnalisar={() => {}} onNotificar={() => {}} />}
       {aba === 'bi' && <EmBreve titulo="BI Painéis" />}
       {aba === 'matriz' && <EmBreve titulo="Matriz Legal" />}
     </div>
   );
 }
 
-function PlaceholderLista({ audiencia }: { audiencia: Audiencia }) {
-  return <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">Investigação & Lista ({audiencia}) — em construção</div>;
-}
 function EmBreve({ titulo }: { titulo: string }) {
   return <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">{titulo} — em breve</div>;
 }

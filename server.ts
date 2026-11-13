@@ -2288,7 +2288,7 @@ async function startServer() {
     try {
       const { provider_id, role } = req.user;
       if (role === 'admin' || role === 'auditoria') {
-        const { rows: docs } = await query('SELECT d.*, p.name as provider_name, u.name as uploaded_by_name FROM documents d JOIN providers p ON d.provider_id = p.id LEFT JOIN users u ON d.uploaded_by = u.id ORDER BY d.id DESC');
+        const { rows: docs } = await query('SELECT d.*, p.name as provider_name, p.person_type, p.provider_group, u.name as uploaded_by_name FROM documents d JOIN providers p ON d.provider_id = p.id LEFT JOIN users u ON d.uploaded_by = u.id ORDER BY d.id DESC');
         res.json(docs);
       } else if (provider_id) {
         const { rows: docs } = await query('SELECT d.*, u.name as uploaded_by_name FROM documents d LEFT JOIN users u ON d.uploaded_by = u.id WHERE d.provider_id = $1 ORDER BY d.id DESC', [provider_id]);

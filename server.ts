@@ -33,6 +33,8 @@ import { canDownloadManual, isPdf, MANUAL_MAX_BYTES } from './db/script-manual.j
 import { PRESTADOR_ATIVO_SQL, UNIDADE_ELEGIVEL_SQL, rodarSguSync } from './db/sgu-sync.js';
 import { copiarCargaSeAtrasada } from './db/sgu-raw-copia.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
+import { statusDocumento } from './src/lib/documentoStatus.js';
+import XLSX from 'xlsx';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
 // quando é N/A aprovado pelo auditor. Todo o resto entra no denominador com seu
@@ -2522,6 +2524,71 @@ async function startServer() {
         ip: hashClientIp(req),
       });
       res.json(updatedDocRows[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/documents/:id/notificar', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const message = String(req.body?.message ?? '').trim();
+      if (!message) return res.status(400).json({ error: 'Mensagem é obrigatória' });
+
+      const { rows: docRows } = await query('SELECT id, provider_id, type FROM documents WHERE id = $1', [id]);
+      const doc = docRows[0];
+      if (!doc) return res.status(404).json({ error: 'Documento não encontrado' });
+
+      const recipients = await prestadorRecipients(Number(doc.provider_id));
+      // Sem dedupeRef: dedupe_key fica null e cada clique envia (admin pode re-notificar).
+      await notifyEvent('documento_atualizacao',
+        { message, document_id: Number(doc.id), type: doc.type, link: '/documentos' },
+        recipients,
+        { providerId: Number(doc.provider_id) });
+
+      await auditLog({
+        query, userId: req.user.id, action: 'document_notify_requested',
+        meta: { provider_id: Number(doc.provider_id), document_id: Number(doc.id) },
+        ip: hashClientIp(req),
+      });
+      res.json({ ok: true, recipients: recipients.length });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/documents/export', authenticate, requireAdmin, async (req: any, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT d.*, p.name AS provider_name
+           FROM documents d JOIN providers p ON p.id = d.provider_id
+          WHERE d.type_id IS NOT NULL AND d.status <> 'historico'
+          ORDER BY d.upload_date DESC NULLS LAST, d.id DESC`);
+      const STATUS_LABEL: Record<string, string> = {
+        pendente: 'Pendente', aprovado: 'Aprovado', vencido: 'Vencido', reprovado: 'Reprovado', historico: 'Histórico',
+      };
+      const header = ['Prestador', 'Documento', 'Data Envio', 'Validade', 'Status'];
+      const aoa: (string | null)[][] = [header];
+      for (const d of rows) {
+        const st = statusDocumento(d);
+        if (st === 'historico') continue;
+        aoa.push([
+          d.provider_name ?? '',
+          d.type ?? '',
+          d.upload_date ? new Date(d.upload_date).toLocaleDateString('pt-BR') : '',
+          d.expiry_date ?? '',
+          STATUS_LABEL[st] ?? st,
+        ]);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Documentos');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+      res.setHeader('Content-Disposition', 'attachment; filename="documentos.xlsx"');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.send(buf);
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });

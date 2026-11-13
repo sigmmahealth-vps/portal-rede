@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import InvestigacaoLista from './InvestigacaoLista';
+import AnalisarModal from './AnalisarModal';
+import NotificarModal from './NotificarModal';
+import { statusDocumento } from '../../lib/documentoStatus.js';
 
 type Aba = 'lista' | 'bi' | 'matriz';
 type Audiencia = 'medicos' | 'rede';
@@ -7,6 +10,9 @@ type Audiencia = 'medicos' | 'rede';
 export default function GestaoDocumental() {
   const [aba, setAba] = useState<Aba>('lista');
   const [audiencia, setAudiencia] = useState<Audiencia>('medicos');
+  const [analisar, setAnalisar] = useState<any | null>(null);
+  const [notificar, setNotificar] = useState<any | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   return (
     <div className="space-y-4">
@@ -31,9 +37,12 @@ export default function GestaoDocumental() {
         ))}
       </div>
 
-      {aba === 'lista' && <InvestigacaoLista audiencia={audiencia} onAnalisar={() => {}} onNotificar={() => {}} />}
+      {aba === 'lista' && <InvestigacaoLista audiencia={audiencia} onAnalisar={setAnalisar} onNotificar={setNotificar} reloadKey={reloadKey} />}
       {aba === 'bi' && <EmBreve titulo="BI Painéis" />}
       {aba === 'matriz' && <EmBreve titulo="Matriz Legal" />}
+
+      {analisar && <AnalisarModal doc={analisar} onClose={() => setAnalisar(null)} onDone={() => { setAnalisar(null); setReloadKey(k => k + 1); }} />}
+      {notificar && <NotificarModal doc={notificar} motivo={statusDocumento(notificar) === 'reprovado' ? 'reprovado' : 'vencido'} onClose={() => setNotificar(null)} onDone={() => setNotificar(null)} />}
     </div>
   );
 }

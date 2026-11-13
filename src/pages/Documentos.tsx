@@ -18,7 +18,7 @@ export default function Documentos() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadTypeId, setUploadTypeId] = useState<number | ''>('');
   const [docTypes, setDocTypes] = useState<Array<{ id: number; nome: string; categoria: string | null }>>([]);
-  useEffect(() => { fetchApi('/document-types').then(setDocTypes).catch((e: any) => setError(e?.message || 'Falha ao carregar os tipos de documento')); }, []);
+  useEffect(() => { fetchApi('/document-types').then(setDocTypes).catch((e: any) => console.error('Falha ao carregar os tipos de documento', e)); }, []);
   const [issueDate, setIssueDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [selectedProviderId, setSelectedProviderId] = useState('');

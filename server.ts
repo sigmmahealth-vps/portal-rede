@@ -35,6 +35,8 @@ import { copiarCargaSeAtrasada } from './db/sgu-raw-copia.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 import { statusDocumento } from './src/lib/documentoStatus.js';
 import { marcoVencimento, diasVencido } from './src/lib/vencimentoAlertas.js';
+import { obrigatoriosPara } from './src/lib/matrizLegal.js';
+import { statusPorTipo, faltantesPara } from './src/lib/verificar.js';
 import XLSX from 'xlsx';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
@@ -2412,6 +2414,46 @@ async function startServer() {
     } catch (err: any) {
       // FK inexistente (type_id não existe) vem como 23503.
       if (err.code === '23503') return res.status(400).json({ error: 'Tipo de documento não encontrado' });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Verificar: por prestador, documentos obrigatórios (pela função) sem doc aprovado vigente.
+  app.get('/api/admin/document-verificar', authenticate, requireAdmin, async (_req: any, res) => {
+    try {
+      const { rows: provs } = await query('SELECT id, name, person_type, provider_group FROM providers');
+      const { rows: reqs } = await query(
+        `SELECT r.type_id, r.role FROM document_type_requirements r
+           JOIN document_types t ON t.id = r.type_id AND t.ativo = true`);
+      const { rows: tipos } = await query('SELECT id, nome FROM document_types WHERE ativo = true');
+      const { rows: docs } = await query(
+        `SELECT provider_id, type_id, status, expiry_date, upload_date
+           FROM documents WHERE type_id IS NOT NULL AND status <> 'historico'`);
+
+      const nomePorTipo = new Map<number, string>(tipos.map((t: any) => [Number(t.id), t.nome]));
+      const reqsNorm = reqs.map((r: any) => ({ type_id: Number(r.type_id), role: r.role }));
+      const docsPorProv = new Map<number, any[]>();
+      for (const d of docs) {
+        const pid = Number(d.provider_id);
+        const arr = docsPorProv.get(pid) ?? [];
+        arr.push({ type_id: d.type_id == null ? null : Number(d.type_id), status: d.status, expiry_date: d.expiry_date, upload_date: d.upload_date });
+        docsPorProv.set(pid, arr);
+      }
+
+      const out: any[] = [];
+      for (const p of provs) {
+        const role = deriveProviderRole(p.person_type, p.provider_group);
+        const required = obrigatoriosPara(role, reqsNorm);
+        if (required.size === 0) continue;
+        const porTipo = statusPorTipo(docsPorProv.get(Number(p.id)) ?? []);
+        const faltantes = faltantesPara(required, porTipo)
+          .map(f => ({ ...f, nome: nomePorTipo.get(f.type_id) ?? '' }));
+        if (faltantes.length) {
+          out.push({ provider_id: Number(p.id), name: p.name, person_type: p.person_type, provider_group: p.provider_group, role, faltantes });
+        }
+      }
+      res.json(out);
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

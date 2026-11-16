@@ -2381,6 +2381,41 @@ async function startServer() {
     }
   });
 
+  // Matriz Legal: tipos obrigatórios por função de prestador (junção por presença).
+  app.get('/api/admin/document-requirements', authenticate, requireAdmin, async (_req: any, res) => {
+    try {
+      const { rows: types } = await query(
+        'SELECT id, nome, categoria, obrigatorio, escopo, ativo, ordem FROM document_types WHERE ativo = true ORDER BY ordem, nome');
+      const { rows: requirements } = await query(
+        'SELECT type_id, role FROM document_type_requirements');
+      res.json({ types, requirements });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/admin/document-requirements', authenticate, requireAdmin, async (req: any, res) => {
+    const { type_id, role, obrigatorio } = req.body;
+    if (!Number.isInteger(Number(type_id))) return res.status(400).json({ error: 'type_id inválido' });
+    if (!PROVIDER_ACCESS_ROLES.includes(String(role))) return res.status(400).json({ error: 'Função inválida' });
+    try {
+      if (obrigatorio) {
+        await query(
+          `INSERT INTO document_type_requirements (type_id, role) VALUES ($1, $2)
+           ON CONFLICT (type_id, role) DO NOTHING`,
+          [Number(type_id), String(role)]);
+      } else {
+        await query('DELETE FROM document_type_requirements WHERE type_id = $1 AND role = $2',
+          [Number(type_id), String(role)]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      // FK inexistente (type_id não existe) vem como 23503.
+      if (err.code === '23503') return res.status(400).json({ error: 'Tipo de documento não encontrado' });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/documents', authenticate, docUpload, async (req: any, res) => {
     try {
       const { provider_id, role, id: user_id } = req.user;

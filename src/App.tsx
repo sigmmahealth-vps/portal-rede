@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Layout from './components/Layout';
 import Documentos from './pages/Documentos';
 import Certificacoes from './pages/Certificacoes';
+import Escolaridade from './pages/Escolaridade';
 import Chamados from './pages/Chamados';
 import Treinamentos from './pages/Treinamentos';
 import Financeiro from './pages/Financeiro';
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="documentos" element={<Documentos />} />
           <Route path="certificacoes" element={<Certificacoes />} />
+          <Route path="escolaridade" element={<Escolaridade />} />
           <Route path="chamados" element={<Chamados />} />
           <Route path="treinamentos" element={<Treinamentos />} />
           <Route path="financeiro" element={<Financeiro />} />

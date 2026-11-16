@@ -2569,6 +2569,89 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+  // ===== Certificações (autoinformadas pelo prestador, validadas pelo admin) =====
+  app.get('/api/certifications', authenticate, async (req: any, res) => {
+    try {
+      const { role, provider_id } = req.user;
+      if (role === 'admin' || role === 'auditoria') {
+        const { rows } = await query(
+          `SELECT c.*, p.name AS provider_name, p.person_type, p.provider_group
+             FROM provider_certifications c JOIN providers p ON p.id = c.provider_id
+            ORDER BY c.id DESC`);
+        return res.json(rows);
+      }
+      if (!provider_id) return res.status(400).json({ error: 'Usuário sem prestador vinculado' });
+      const { rows } = await query(
+        'SELECT * FROM provider_certifications WHERE provider_id = $1 ORDER BY id DESC', [provider_id]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/certifications', authenticate, docUpload, async (req: any, res) => {
+    try {
+      const { role, provider_id, id: user_id } = req.user;
+      const { kind, title, issuer, level, issued_date, expiry_date } = req.body;
+      const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
+      if (!targetProviderId) return res.status(400).json({ error: 'Prestador é obrigatório' });
+      if (!title || !String(title).trim()) return res.status(400).json({ error: 'Título é obrigatório' });
+      if (!req.file) return res.status(400).json({ error: 'Arquivo é obrigatório' });
+      const hoje = new Date().toLocaleDateString('en-CA');
+      if (issued_date && issued_date > hoje) return res.status(400).json({ error: 'Data de emissão não pode ser futura' });
+
+      const file_url = '/uploads/' + req.file.filename;
+      const { rows } = await query(
+        `INSERT INTO provider_certifications
+           (provider_id, kind, title, issuer, level, issued_date, expiry_date, status, validated, file_url, uploaded_by, upload_date, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'pendente',false,$8,$9,now(),'autoinformado') RETURNING id`,
+        [targetProviderId, kind || null, String(title).trim(), issuer || null, level || null,
+         issued_date || null, expiry_date || null, file_url, user_id]);
+      const { rows: created } = await query('SELECT * FROM provider_certifications WHERE id = $1', [rows[0].id]);
+      await auditLog({ query, userId: user_id, action: 'certification_created',
+        meta: { provider_id: Number(targetProviderId), certification_id: rows[0].id, title: String(title).trim() },
+        ip: hashClientIp(req) });
+      res.json(created[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/certifications/:id/status', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') return res.status(403).json({ error: 'Unauthorized' });
+      const { status, rejection_reason } = req.body;
+      if (!['valido', 'reprovado'].includes(status)) return res.status(400).json({ error: 'Status inválido' });
+      const { rows } = await query(
+        `UPDATE provider_certifications SET status = $1, validated = ($1 = 'valido'), rejection_reason = $2
+          WHERE id = $3 RETURNING *`,
+        [status, status === 'reprovado' ? (rejection_reason || null) : null, req.params.id]);
+      if (!rows.length) return res.status(404).json({ error: 'Certificação não encontrada' });
+      await auditLog({ query, userId: req.user.id, action: 'certification_status_changed',
+        meta: { provider_id: Number(rows[0].provider_id), certification_id: Number(req.params.id), status },
+        ip: hashClientIp(req) });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/certifications/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role, provider_id } = req.user;
+      const { rows } = await query('SELECT * FROM provider_certifications WHERE id = $1', [req.params.id]);
+      const cert = rows[0] as any;
+      if (!cert) return res.status(404).json({ error: 'Certificação não encontrada' });
+      if (role === 'prestador' && cert.provider_id !== provider_id) return res.status(403).json({ error: 'Unauthorized' });
+      if (cert.status !== 'pendente') return res.status(400).json({ error: 'Só certificações pendentes podem ser excluídas' });
+      await query('DELETE FROM provider_certifications WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   app.put('/api/documents/:id/status', authenticate, async (req: any, res) => {
     try {

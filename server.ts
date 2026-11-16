@@ -2570,16 +2570,11 @@ async function startServer() {
     }
   });
   // ===== Certificações (autoinformadas pelo prestador, validadas pelo admin) =====
+  // Lista as certificações do prestador logado. O admin valida na página de detalhe do
+  // prestador (GET /api/providers/:id já traz certifications), não por aqui.
   app.get('/api/certifications', authenticate, async (req: any, res) => {
     try {
-      const { role, provider_id } = req.user;
-      if (role === 'admin' || role === 'auditoria') {
-        const { rows } = await query(
-          `SELECT c.*, p.name AS provider_name, p.person_type, p.provider_group
-             FROM provider_certifications c JOIN providers p ON p.id = c.provider_id
-            ORDER BY c.id DESC`);
-        return res.json(rows);
-      }
+      const { provider_id } = req.user;
       if (!provider_id) return res.status(400).json({ error: 'Usuário sem prestador vinculado' });
       const { rows } = await query(
         'SELECT * FROM provider_certifications WHERE provider_id = $1 ORDER BY id DESC', [provider_id]);

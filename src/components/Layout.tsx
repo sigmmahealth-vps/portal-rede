@@ -8,6 +8,7 @@ import {
   FileSignature,
   ClipboardCheck,
   Award,
+  BadgeCheck,
   LogOut,
   Menu,
   X,
@@ -28,7 +29,7 @@ import { needsPrivacyAcceptance, PRIVACY_POLICY_VERSION } from '../lib/privacyPo
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Gestão Documental', href: '/documentos', icon: FileText },
-  { name: 'Certificações', href: '/certificacoes', icon: Award },
+  { name: 'Certificações', href: '/certificacoes', icon: BadgeCheck },
   { name: 'Qualificação da Rede', href: '/qualificacao', icon: Award },
   { name: 'Equipe / Profissionais', href: '/equipe', icon: Users },
   { name: 'Credenciamento', href: '/credenciamento', icon: ClipboardCheck },
@@ -53,6 +54,7 @@ export default function Layout() {
 
   const filteredNavigation = navigation
     .filter(item => !((item.name === 'Administração' || item.name === 'Credenciamento') && !isAdmin))
+    .filter(item => !(item.name === 'Certificações' && isAdmin)) // prestador cadastra; admin valida no detalhe
     .map(item => ({ ...item, soon: !!user && !isAdmin && PROVIDER_SOON.includes(item.href) }));
   const blockedRoute = !!user && !isAdmin && PROVIDER_SOON.includes(location.pathname);
 

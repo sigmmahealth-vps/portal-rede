@@ -22,11 +22,13 @@ export default function Certificacoes() {
 
   const load = () => {
     setCarregando(true);
+    setErro('');
     fetchApi('/certifications').then(setCerts).catch(e => setErro(e.message)).finally(() => setCarregando(false));
   };
   useEffect(load, []);
 
   async function excluir(id: number) {
+    if (!window.confirm('Excluir esta certificação?')) return;
     setErro('');
     try { await fetchApi(`/certifications/${id}`, { method: 'DELETE' }); load(); }
     catch (e: any) { setErro(e.message); }
@@ -44,6 +46,7 @@ export default function Certificacoes() {
       {erro && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</div>}
 
       {carregando ? <div className="p-8 text-center text-gray-400">Carregando…</div>
+        : erro && !certs.length ? null
         : !certs.length ? <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">Nenhuma certificação cadastrada.</div>
         : (
         <div className="overflow-x-auto rounded-xl border border-gray-100 bg-white">

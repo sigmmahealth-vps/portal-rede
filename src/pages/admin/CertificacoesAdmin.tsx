@@ -23,7 +23,8 @@ export default function CertificacoesAdmin({ certifications, onChange }: { certi
     if (status === 'reprovado') {
       const m = window.prompt('Motivo da reprovação:');
       if (m === null) return;
-      rejection_reason = m;
+      if (!m.trim()) { setErro('Informe o motivo da reprovação.'); return; }
+      rejection_reason = m.trim();
     }
     setBusyId(id);
     try {

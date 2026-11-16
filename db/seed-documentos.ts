@@ -10,12 +10,15 @@ import { query, withTransaction, pool } from './db.js';
 import { pickDatabaseUrl } from './resolveDbUrl.js';
 import { assertNaoProducao } from './anonimiza-lib.js';
 
-// 4 documentos por prestador. [nome do tipo, status gravado, emissão, validade, motivo]
+// 6 documentos por prestador. [nome do tipo, status gravado, emissão, validade, motivo]
+// Datas fixas: em nov/2026 cobrem regular, vencendo (<=30d), vencido, pendente, reprovado.
 const MATRIZ: Array<[string, string, string | null, string | null, string | null]> = [
-  ['Alvará Sanitário',      'valido',    '2026-01-10', '2027-06-30', null],                 // Aprovado (validade futura)
-  ['CNES',                  'pendente',  '2026-11-01', null,          null],                 // Pendente
-  ['Alvará de Localização', 'valido',    '2024-05-01', '2025-05-01', null],                 // Vencido (validade passada)
-  ['Contrato Social',       'reprovado', '2026-10-01', null,          'Documento ilegível.'],// Reprovado
+  ['Alvará Sanitário',              'valido',    '2026-02-15', '2027-06-30', null],                  // Regular
+  ['Alvará de Localização',         'valido',    '2026-01-10', '2026-12-05', null],                  // Vencendo (≤30 dias)
+  ['Alvará do Corpo de Bombeiros',  'valido',    '2024-05-01', '2025-05-01', null],                  // Vencido (irregular)
+  ['CNES',                          'pendente',  '2026-11-01', null,          null],                 // Pendente
+  ['Contrato Social',               'reprovado', '2026-10-01', null,          'Documento ilegível.'], // Irregular (reprovado)
+  ['CRM do Responsável Técnico',    'valido',    '2015-09-30', null,          null],                 // Regular (sem validade)
 ];
 
 async function main() {

@@ -34,6 +34,7 @@ import { PRESTADOR_ATIVO_SQL, UNIDADE_ELEGIVEL_SQL, rodarSguSync } from './db/sg
 import { copiarCargaSeAtrasada } from './db/sgu-raw-copia.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 import { statusDocumento } from './src/lib/documentoStatus.js';
+import { marcoVencimento } from './src/lib/vencimentoAlertas.js';
 import XLSX from 'xlsx';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
@@ -7341,7 +7342,33 @@ async function startServer() {
           { providerId: Number(ct.provider_id), dedupeRef: `cert:${ct.id}` });
       }
 
-      // 5) Retry do outbox de e-mail (o claim em sendNotificationEmail evita corrida).
+      // 5) Documento de gestão documental a vencer / vencido — prestador.
+      //    Só o documento mais recente de cada (prestador, tipo) com validade e status
+      //    vigente; marcoVencimento decide o aviso (30 dias antes, 1x; a cada 3 dias
+      //    após vencer, teto de 10). dedupeRef garante disparo único por marco.
+      const { rows: docsVenc } = await query(`
+        SELECT DISTINCT ON (d.provider_id, d.type_id)
+               d.id, d.provider_id, d.type, d.expiry_date
+          FROM documents d
+         WHERE d.type_id IS NOT NULL
+           AND d.expiry_date IS NOT NULL
+           AND d.status IN ('valido','vencido')
+         ORDER BY d.provider_id, d.type_id, d.upload_date DESC, d.id DESC`);
+      for (const d of docsVenc) {
+        const m = marcoVencimento({ expiry_date: d.expiry_date });
+        if (!m) continue;
+        const recipients = await prestadorRecipients(Number(d.provider_id), null);
+        if (m.tipo === 'vencendo') {
+          await notifyEvent('documento_vencendo', { tipo: d.type, expiry_date: d.expiry_date },
+            recipients, { providerId: Number(d.provider_id), dedupeRef: `doc:${d.id}:${m.marco}` });
+        } else {
+          const dias = Math.round((Date.now() - new Date(d.expiry_date).getTime()) / 86400000);
+          await notifyEvent('documento_vencido', { tipo: d.type, expiry_date: d.expiry_date, dias },
+            recipients, { providerId: Number(d.provider_id), dedupeRef: `doc:${d.id}:${m.marco}` });
+        }
+      }
+
+      // 6) Retry do outbox de e-mail (o claim em sendNotificationEmail evita corrida).
       const { rows: retry } = await query(`
         SELECT n.id, n.type, n.ctx, n.email_to, n.body, n.link, ${RECIPIENT_NAME_SQL} AS user_name
           FROM notifications n LEFT JOIN users u ON u.id = n.user_id

@@ -5,6 +5,7 @@ import ProviderContactsPanel from './ProviderContactsPanel';
 import ProviderAccessTab from './ProviderAccessTab';
 import ProviderAuditTab from './ProviderAuditTab';
 import CertificacoesAdmin from './CertificacoesAdmin';
+import EducacaoAdmin from './EducacaoAdmin';
 import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw, Phone } from 'lucide-react';
 
 const TABS = [
@@ -371,6 +372,10 @@ export default function ProviderDetail() {
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-gray-700">Certificações</h3>
                 <CertificacoesAdmin certifications={provider.certifications ?? []} onChange={load} />
+              </div>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-gray-700">Escolaridade</h3>
+                <EducacaoAdmin education={provider.education ?? []} onChange={load} />
               </div>
             </div>
           )}

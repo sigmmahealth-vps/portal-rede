@@ -53,6 +53,8 @@ export default function MatrizLegal() {
   }
 
   if (carregando) return <div className="p-8 text-center text-gray-400">Carregando…</div>;
+  if (erro && !tipos.length)
+    return <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{erro}</div>;
   if (!tipos.length)
     return <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">
       Nenhum tipo de documento cadastrado. Cadastre tipos no catálogo primeiro.
@@ -78,12 +80,12 @@ export default function MatrizLegal() {
             {tipos.map(t => (
               <tr key={t.id} className="border-b border-gray-50 last:border-0">
                 <td className="px-4 py-3 text-gray-900">{t.nome}</td>
-                {ROLES.map(([role]) => (
+                {ROLES.map(([role, label]) => (
                   <td key={role} className="px-4 py-3 text-center">
                     <input
                       type="checkbox"
                       className="h-4 w-4 accent-emerald-600"
-                      aria-label={`${t.nome} obrigatório para ${role}`}
+                      aria-label={`${t.nome} obrigatório para ${label}`}
                       checked={marcados.has(chave(t.id, role))}
                       onChange={e => alternar(t.id, role, e.target.checked)}
                     />

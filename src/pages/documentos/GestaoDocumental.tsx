@@ -48,7 +48,3 @@ export default function GestaoDocumental() {
     </div>
   );
 }
-
-function EmBreve({ titulo }: { titulo: string }) {
-  return <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">{titulo} — em breve</div>;
-}

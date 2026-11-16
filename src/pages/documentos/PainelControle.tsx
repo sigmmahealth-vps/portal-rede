@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { fetchApi } from '../../lib/api';
 import { providerAudience } from '../../lib/providerAudience.js';
-import { contarSituacoes, conformidade, conformidadePorTipo } from '../../lib/painelMetrics.js';
+import { contarSituacoes, conformidade, conformidadePorTipo, baldesAlvara } from '../../lib/painelMetrics.js';
 
 const ALVARAS = ['Alvará Sanitário', 'Alvará de Localização', 'Alvará do Corpo de Bombeiros'];
 type Sub = 'overview' | 'alvaras' | 'cert' | 'escol';
@@ -11,20 +11,22 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
   const [docs, setDocs] = useState<any[]>([]);
   const [erro, setErro] = useState('');
   const [sub, setSub] = useState<Sub>('overview');
+  const [carregando, setCarregando] = useState(true);
 
-  useEffect(() => { fetchApi('/documents').then(setDocs).catch(e => setErro(e.message)); }, []);
+  useEffect(() => { fetchApi('/documents').then(setDocs).catch(e => setErro(e.message)).finally(() => setCarregando(false)); }, []);
 
-  const hoje = new Date();
+  const hoje = useMemo(() => new Date(), []);
   const base = useMemo(() => docs
     .filter(d => d.type_id != null)
     .filter(d => providerAudience(d.person_type ?? null, d.provider_group ?? null) === audiencia), [docs, audiencia]);
 
-  const c = useMemo(() => contarSituacoes(base, hoje), [base]);
+  const c = useMemo(() => contarSituacoes(base, hoje), [base, hoje]);
 
   return (
     <div className="space-y-4">
       {erro && <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</div>}
 
+      {carregando ? <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">Carregando…</div> : <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="Regulares" valor={c.regular} cor="text-emerald-700" bg="bg-emerald-50" />
         <StatCard label="Irregulares" valor={c.irregular} cor="text-red-700" bg="bg-red-50" />
@@ -42,9 +44,10 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
       </div>
 
       {sub === 'overview' && <Overview base={base} c={c} hoje={hoje} />}
-      {sub === 'alvaras' && <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">Alvarás — em construção</div>}
+      {sub === 'alvaras' && <Alvaras base={base} hoje={hoje} />}
       {sub === 'cert' && <EmBreve titulo="Certificações e Dados Técnicos" />}
       {sub === 'escol' && <EmBreve titulo="Escolaridade" />}
+      </>}
     </div>
   );
 }
@@ -73,7 +76,7 @@ function Overview({ base, c, hoje }: { base: any[]; c: ReturnType<typeof contarS
 
       <Card titulo="Conformidade por alvará" className="lg:col-span-2">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {['Alvará Sanitário', 'Alvará de Localização', 'Alvará do Corpo de Bombeiros'].map(nome => {
+          {ALVARAS.map(nome => {
             const t = conformidadePorTipo(base, nome, hoje);
             return (
               <div key={nome} className="rounded-lg border border-gray-100 p-4">
@@ -84,6 +87,36 @@ function Overview({ base, c, hoje }: { base: any[]; c: ReturnType<typeof contarS
             );
           })}
         </div>
+      </Card>
+    </div>
+  );
+}
+
+function Alvaras({ base, hoje }: { base: any[]; hoje: Date }) {
+  const somenteAlvaras = base.filter(d => ALVARAS.includes(d.type));
+  const pctGeral = conformidade(somenteAlvaras, hoje);
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {ALVARAS.map(nome => {
+        const b = baldesAlvara(base, nome, hoje);
+        const data = [
+          { nome: 'No Prazo', valor: b.noPrazo, fill: '#10b981' },
+          { nome: 'A Vencer', valor: b.aVencer, fill: '#f59e0b' },
+          { nome: 'Vencido', valor: b.vencido, fill: '#ef4444' },
+        ];
+        return (
+          <Fragment key={nome}><Card titulo={nome}>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart layout="vertical" data={data}>
+                <XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="nome" width={80} /><Tooltip />
+                <Bar dataKey="valor" radius={[0, 4, 4, 0]}>{data.map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card></Fragment>
+        );
+      })}
+      <Card titulo="Taxa de Conformidade Geral de Alvarás">
+        <Donut pct={pctGeral} />
       </Card>
     </div>
   );

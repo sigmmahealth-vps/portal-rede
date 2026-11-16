@@ -6,7 +6,8 @@ import { statusDocumento, type StatusDoc } from './documentoStatus.js';
 export type MotivoFaltante = 'ausente' | 'vencido' | 'reprovado' | 'pendente';
 export type Faltante = { type_id: number; motivo: MotivoFaltante };
 
-type DocLite = { type_id: number | null; status: string; expiry_date: string | null; upload_date?: string | null };
+// upload_date pode vir como string (ISO) ou Date (o pg devolve timestamptz como Date).
+type DocLite = { type_id: number | null; status: string; expiry_date: string | null; upload_date?: string | Date | null };
 
 // Status efetivo "melhor" por tipo: 'aprovado' vence; senão o status do doc de maior upload_date.
 export function statusPorTipo(docs: DocLite[], hoje: Date = new Date()): Map<number, StatusDoc> {
@@ -18,7 +19,8 @@ export function statusPorTipo(docs: DocLite[], hoje: Date = new Date()): Map<num
     if (statusDocumento(d, hoje) === 'aprovado') { aprovado.add(id); continue; }
     if (aprovado.has(id)) continue;
     const atual = melhor.get(id);
-    if (!atual || String(d.upload_date ?? '') > String(atual.upload_date ?? '')) melhor.set(id, d);
+    // Compara por timestamp (upload_date pode ser Date ou string ISO) — não por texto.
+    if (!atual || new Date(d.upload_date ?? 0).getTime() > new Date(atual.upload_date ?? 0).getTime()) melhor.set(id, d);
   }
   const out = new Map<number, StatusDoc>();
   for (const id of aprovado) out.set(id, 'aprovado');

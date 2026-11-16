@@ -12,9 +12,12 @@ export default function AnalisarModal({ doc, onClose, onDone }:
   const [saving, setSaving] = useState(false);
   const somenteLeitura = doc.status !== 'pendente';
   const isPdf = String(doc.file_url ?? '').toLowerCase().endsWith('.pdf');
+  const hojeISO = new Date().toLocaleDateString('en-CA');
+  const validadeVencida = !!expiry && expiry < hojeISO;
 
   const decidir = async (status: 'valido' | 'reprovado') => {
     if (status === 'reprovado' && !motivo.trim()) { setErro('Informe o motivo da reprovação.'); return; }
+    if (issue && issue > hojeISO) { setErro('A data de emissão não pode ser futura.'); return; }
     setSaving(true);
     try {
       await fetchApi(`/documents/${doc.id}/status`, {
@@ -47,8 +50,12 @@ export default function AnalisarModal({ doc, onClose, onDone }:
               </div>
             )}
             {doc.file_url && <a href={doc.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-emerald-700"><Download className="h-4 w-4" /> Baixar</a>}
-            <label className="block text-sm">Emissão<input type="date" value={issue || ''} onChange={e => setIssue(e.target.value)} disabled={somenteLeitura} className="mt-1 w-full rounded border px-2 py-1" /></label>
-            <label className="block text-sm">Validade<input type="date" value={expiry || ''} onChange={e => setExpiry(e.target.value)} disabled={somenteLeitura} className="mt-1 w-full rounded border px-2 py-1" /></label>
+            <label className="block text-sm">Emissão<input type="date" max={hojeISO} value={issue || ''} onChange={e => setIssue(e.target.value)} disabled={somenteLeitura} className="mt-1 w-full rounded border px-2 py-1" /></label>
+            <label className="block text-sm">Validade
+              <input type="date" value={expiry || ''} onChange={e => setExpiry(e.target.value)} disabled={somenteLeitura}
+                className={`mt-1 w-full rounded border px-2 py-1 ${validadeVencida ? 'border-red-400 text-red-700' : ''}`} />
+              {validadeVencida && <span className="mt-1 block text-xs text-red-600">Validade já vencida.</span>}
+            </label>
             {!somenteLeitura && (
               <label className="block text-sm">Motivo (ao reprovar)
                 <textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={3} className="mt-1 w-full rounded border px-2 py-1" />

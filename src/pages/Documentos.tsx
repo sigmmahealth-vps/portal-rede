@@ -428,7 +428,7 @@ export default function Documentos() {
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                     {doc.issue_date ? new Date(doc.issue_date).toLocaleDateString('pt-BR') : '-'}
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${doc.expiry_date && String(doc.expiry_date).slice(0, 10) < hojeISO ? 'font-medium text-red-600' : 'text-gray-500'}`}>
                     {doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString('pt-BR') : '-'}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">

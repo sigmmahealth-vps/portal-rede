@@ -50,6 +50,8 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
     .filter(d => providerAudience(d.person_type ?? null, d.provider_group ?? null) === audiencia)
     .map(d => d.provider_group).filter(Boolean))) as string[], [docs, audiencia]);
 
+  const hojeISO = new Date().toLocaleDateString('en-CA');
+  const vencida = (s?: string | null) => !!s && s < hojeISO;
   const fmt = (s?: string | null) => s ? new Date(s).toLocaleDateString('pt-BR') : '—';
 
   return (
@@ -91,7 +93,7 @@ export default function InvestigacaoLista({ audiencia, onAnalisar, onNotificar, 
                   <td className="px-5 py-4 text-sm font-medium text-gray-900">{d.provider_name ?? '—'}</td>
                   <td className="px-5 py-4 text-sm text-gray-700">{d.type ?? '—'}</td>
                   <td className="px-5 py-4 text-sm text-gray-500 whitespace-nowrap">{fmt(d.upload_date)}</td>
-                  <td className="px-5 py-4 text-sm text-gray-500 whitespace-nowrap">{fmt(d.expiry_date)}</td>
+                  <td className={`px-5 py-4 text-sm whitespace-nowrap ${vencida(d.expiry_date) ? 'font-medium text-red-600' : 'text-gray-500'}`}>{fmt(d.expiry_date)}</td>
                   <td className="px-5 py-4"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COR[st]}`}>{STATUS_LABEL[st]}</span></td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-1">

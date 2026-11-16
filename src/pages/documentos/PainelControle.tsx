@@ -2,10 +2,11 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { fetchApi } from '../../lib/api';
 import { providerAudience } from '../../lib/providerAudience.js';
+import Verificar from './Verificar';
 import { contarSituacoes, conformidade, conformidadePorTipo, baldesAlvara } from '../../lib/painelMetrics.js';
 
 const ALVARAS = ['Alvará Sanitário', 'Alvará de Localização', 'Alvará do Corpo de Bombeiros'];
-type Sub = 'overview' | 'alvaras' | 'cert' | 'escol';
+type Sub = 'overview' | 'alvaras' | 'verificar' | 'cert' | 'escol';
 
 export default function PainelControle({ audiencia }: { audiencia: 'medicos' | 'rede' }) {
   const [docs, setDocs] = useState<any[]>([]);
@@ -35,7 +36,7 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
       </div>
 
       <div className="flex gap-1 border-b border-gray-200">
-        {([['overview', 'Overview'], ['alvaras', 'Alvarás de Prestadores'], ['cert', 'Certificações e Dados Técnicos'], ['escol', 'Escolaridade']] as [Sub, string][]).map(([id, label]) => (
+        {([['overview', 'Overview'], ['alvaras', 'Alvarás de Prestadores'], ['verificar', 'Verificar'], ['cert', 'Certificações e Dados Técnicos'], ['escol', 'Escolaridade']] as [Sub, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setSub(id)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${sub === id ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {label}
@@ -45,6 +46,7 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
 
       {sub === 'overview' && <Overview base={base} c={c} hoje={hoje} />}
       {sub === 'alvaras' && <Alvaras base={base} hoje={hoje} />}
+      {sub === 'verificar' && <Verificar audiencia={audiencia} />}
       {sub === 'cert' && <EmBreve titulo="Certificações e Dados Técnicos" />}
       {sub === 'escol' && <EmBreve titulo="Escolaridade" />}
       </>}

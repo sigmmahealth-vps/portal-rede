@@ -2066,6 +2066,10 @@ async function startServer() {
         'SELECT * FROM provider_certifications WHERE provider_id = $1 ORDER BY issued_date DESC NULLS LAST, id DESC',
         [providerId]
       );
+      const { rows: education } = await query(
+        'SELECT * FROM provider_education WHERE provider_id = $1 ORDER BY conclusao_date DESC NULLS LAST, id DESC',
+        [providerId]
+      );
       const { rows: docStatusRows } = await query(
         'SELECT lower(status) AS status, COUNT(*)::int AS count FROM documents WHERE provider_id = $1 GROUP BY lower(status)',
         [providerId]
@@ -2078,6 +2082,7 @@ async function startServer() {
         ...provider,
         locations,
         certifications,
+        education,
         summary: {
           documents_pending: documentsPending,
           documents_expired: documentsExpired,
@@ -2642,6 +2647,84 @@ async function startServer() {
       if (role === 'prestador' && cert.provider_id !== provider_id) return res.status(403).json({ error: 'Unauthorized' });
       if (cert.status !== 'pendente') return res.status(400).json({ error: 'Só certificações pendentes podem ser excluídas' });
       await query('DELETE FROM provider_certifications WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ===== Escolaridade (autoinformada pelo prestador, validada pelo admin) =====
+  const NIVEIS_EDU = ['ensino_medio','tecnico','graduacao','especializacao','residencia','mestrado','doutorado','pos_doutorado'];
+
+  // Lista as formações do prestador logado. O admin valida no detalhe do prestador.
+  app.get('/api/education', authenticate, async (req: any, res) => {
+    try {
+      const { provider_id } = req.user;
+      if (!provider_id) return res.status(400).json({ error: 'Usuário sem prestador vinculado' });
+      const { rows } = await query(
+        'SELECT * FROM provider_education WHERE provider_id = $1 ORDER BY id DESC', [provider_id]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/education', authenticate, docUpload, async (req: any, res) => {
+    try {
+      const { role, provider_id, id: user_id } = req.user;
+      const { nivel, curso, instituicao, conclusao_date } = req.body;
+      const targetProviderId = role === 'prestador' ? provider_id : req.body.provider_id;
+      if (!targetProviderId) return res.status(400).json({ error: 'Prestador é obrigatório' });
+      if (!NIVEIS_EDU.includes(String(nivel))) return res.status(400).json({ error: 'Nível inválido' });
+      if (!req.file) return res.status(400).json({ error: 'Arquivo é obrigatório' });
+      const hoje = new Date().toLocaleDateString('en-CA');
+      if (conclusao_date && conclusao_date > hoje) return res.status(400).json({ error: 'A conclusão não pode ser futura' });
+
+      const file_url = '/uploads/' + req.file.filename;
+      const { rows } = await query(
+        `INSERT INTO provider_education
+           (provider_id, nivel, curso, instituicao, conclusao_date, status, file_url, uploaded_by, upload_date)
+         VALUES ($1,$2,$3,$4,$5,'pendente',$6,$7,now()) RETURNING id`,
+        [targetProviderId, String(nivel), curso || null, instituicao || null, conclusao_date || null, file_url, user_id]);
+      const { rows: created } = await query('SELECT * FROM provider_education WHERE id = $1', [rows[0].id]);
+      await auditLog({ query, userId: user_id, action: 'education_created',
+        meta: { provider_id: Number(targetProviderId), education_id: rows[0].id, nivel: String(nivel) },
+        ip: hashClientIp(req) });
+      res.json(created[0]);
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/education/:id/status', authenticate, async (req: any, res) => {
+    try {
+      const { role } = req.user;
+      if (role !== 'admin' && role !== 'auditoria') return res.status(403).json({ error: 'Unauthorized' });
+      const { status, rejection_reason } = req.body;
+      if (!['valido', 'reprovado'].includes(status)) return res.status(400).json({ error: 'Status inválido' });
+      const { rows } = await query(
+        `UPDATE provider_education SET status = $1, rejection_reason = $2 WHERE id = $3 RETURNING *`,
+        [status, status === 'reprovado' ? (rejection_reason || null) : null, req.params.id]);
+      if (!rows.length) return res.status(404).json({ error: 'Formação não encontrada' });
+      await auditLog({ query, userId: req.user.id, action: 'education_status_changed',
+        meta: { provider_id: Number(rows[0].provider_id), education_id: Number(req.params.id), status },
+        ip: hashClientIp(req) });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/education/:id', authenticate, async (req: any, res) => {
+    try {
+      const { role, provider_id } = req.user;
+      const { rows } = await query('SELECT * FROM provider_education WHERE id = $1', [req.params.id]);
+      const edu = rows[0] as any;
+      if (!edu) return res.status(404).json({ error: 'Formação não encontrada' });
+      if (role === 'prestador' && edu.provider_id !== provider_id) return res.status(403).json({ error: 'Unauthorized' });
+      if (edu.status !== 'pendente') return res.status(400).json({ error: 'Só formações pendentes podem ser excluídas' });
+      await query('DELETE FROM provider_education WHERE id = $1', [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

@@ -12,7 +12,7 @@ test('todos os tipos renderizam título, corpo e link', () => {
     });
     assert.ok(c.title.length > 0, t);
     assert.ok(c.body.length > 0, t);
-    assert.ok(c.link.startsWith(t === 'documento_atualizacao' ? '/documentos' : '/qualificacao'), t);
+    assert.ok(c.link.startsWith((['documento_atualizacao', 'documento_vencendo', 'documento_vencido'] as string[]).includes(t) ? '/documentos' : '/qualificacao'), t);
   }
 });
 

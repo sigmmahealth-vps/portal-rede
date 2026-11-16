@@ -7,6 +7,7 @@ export const NOTIFY_TYPES = [
   'plano_gerado', 'acao_aguardando_validacao',
   'acao_vencendo', 'acao_atrasada', 'roteiro_pendente', 'certificado_vencendo',
   'ciclo_encerrado_sem_avaliacao', 'senha_solicitada', 'documento_atualizacao',
+  'documento_vencendo', 'documento_vencido',
 ] as const;
 export type NotifyType = typeof NOTIFY_TYPES[number];
 
@@ -29,6 +30,8 @@ export const NOTIFY_TYPE_LABELS: Record<NotifyType, string> = {
   acao_atrasada: 'Ação atrasada',
   senha_solicitada: 'Redefinição de senha solicitada',
   documento_atualizacao: 'Atualização de documento solicitada',
+  documento_vencendo: 'Documento a vencer',
+  documento_vencido: 'Documento vencido',
 };
 
 export interface NotifyContent { title: string; body: string; link: string; }
@@ -163,6 +166,14 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
         body: String(ctx.message ?? 'Por favor, envie uma nova versão do documento solicitado.'),
         link: String(ctx.link ?? '/documentos'),
       };
+    case 'documento_vencendo':
+      return { title: 'Documento próximo do vencimento',
+               body: `Seu documento "${ctx.tipo ?? ''}" vence em ${fmtDate(ctx.expiry_date)}. Envie a versão atualizada pelo portal.`,
+               link: '/documentos' };
+    case 'documento_vencido':
+      return { title: 'Documento vencido',
+               body: `Seu documento "${ctx.tipo ?? ''}" venceu em ${fmtDate(ctx.expiry_date)}${ctx.dias ? ` (há ${ctx.dias} dias)` : ''}. Reenvie o quanto antes pelo portal.`,
+               link: '/documentos' };
     default:
       return { title: String(type), body: '', link };
   }

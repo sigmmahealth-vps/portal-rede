@@ -449,6 +449,24 @@ export function notificationBlocks(
         cta: { label: 'Acessar documentos', url: `${appUrl}${ctx.link ?? '/documentos'}` },
       };
       break;
+    case 'documento_vencendo':
+      b = {
+        banner: 'Documento próximo do vencimento',
+        paragraphs: [`Seu documento **${ctx.tipo ?? ''}** vence em **${fmtDate(ctx.expiry_date) || '—'}**. Para manter seu cadastro regular, envie a versão atualizada pelo portal.`],
+        highlight: { label: 'Vence em', value: fmtDate(ctx.expiry_date) || '—', iconImg: `${appUrl}/calendario.png` },
+        steps: 'acesse a área de documentos no portal e envie a nova versão do documento antes do vencimento.',
+        cta: { label: 'Enviar documento', url: `${appUrl}/documentos` },
+      };
+      break;
+    case 'documento_vencido':
+      b = {
+        banner: 'Documento vencido',
+        paragraphs: [`Seu documento **${ctx.tipo ?? ''}** venceu em **${fmtDate(ctx.expiry_date) || '—'}**${ctx.dias ? ` (há ${ctx.dias} dias)` : ''}. Reenvie o quanto antes para regularizar seu cadastro.`],
+        highlight: { label: 'Venceu em', value: fmtDate(ctx.expiry_date) || '—', iconImg: `${appUrl}/calendario.png` },
+        steps: 'acesse a área de documentos no portal e envie a nova versão do documento vencido.',
+        cta: { label: 'Enviar documento', url: `${appUrl}/documentos` },
+      };
+      break;
     default:
       b = { banner: String(type), paragraphs: [''], cta };
   }

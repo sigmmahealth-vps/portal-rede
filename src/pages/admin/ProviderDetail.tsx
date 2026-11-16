@@ -4,6 +4,7 @@ import { fetchApi } from '../../lib/api';
 import ProviderContactsPanel from './ProviderContactsPanel';
 import ProviderAccessTab from './ProviderAccessTab';
 import ProviderAuditTab from './ProviderAuditTab';
+import CertificacoesAdmin from './CertificacoesAdmin';
 import { ArrowLeft, Building2, Users, FileText, ClipboardCheck, KeyRound, History, MapPin, User, Layers, RefreshCw, Phone } from 'lucide-react';
 
 const TABS = [
@@ -367,17 +368,9 @@ export default function ProviderDetail() {
           {activeTab === 'documentos' && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800">Documentos e Qualificação</h2>
-              <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-20 text-center">
-                <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600">
-                  <FileText className="h-7 w-7" />
-                </div>
-                <h3 className="text-lg font-bold text-gray-800">Documentos e Qualificação</h3>
-                <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">
-                  A consolidação de documentos e do histórico de qualificação deste prestador estará disponível aqui em breve.
-                </p>
-                <span className="mt-4 inline-block rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Em breve
-                </span>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-gray-700">Certificações</h3>
+                <CertificacoesAdmin certifications={provider.certifications ?? []} onChange={load} />
               </div>
             </div>
           )}

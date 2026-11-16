@@ -2,6 +2,7 @@ import { useState } from 'react';
 import InvestigacaoLista from './InvestigacaoLista';
 import AnalisarModal from './AnalisarModal';
 import NotificarModal from './NotificarModal';
+import PainelControle from './PainelControle';
 import { statusDocumento } from '../../lib/documentoStatus.js';
 
 type Aba = 'lista' | 'bi' | 'matriz';
@@ -38,7 +39,7 @@ export default function GestaoDocumental() {
       </div>
 
       {aba === 'lista' && <InvestigacaoLista audiencia={audiencia} onAnalisar={setAnalisar} onNotificar={setNotificar} reloadKey={reloadKey} />}
-      {aba === 'bi' && <EmBreve titulo="Painel de Controle" />}
+      {aba === 'bi' && <PainelControle audiencia={audiencia} />}
       {aba === 'matriz' && <EmBreve titulo="Matriz Legal" />}
 
       {analisar && <AnalisarModal doc={analisar} onClose={() => setAnalisar(null)} onDone={() => { setAnalisar(null); setReloadKey(k => k + 1); }} />}

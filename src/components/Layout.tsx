@@ -28,6 +28,7 @@ import { needsPrivacyAcceptance, PRIVACY_POLICY_VERSION } from '../lib/privacyPo
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Gestão Documental', href: '/documentos', icon: FileText },
+  { name: 'Certificações', href: '/certificacoes', icon: Award },
   { name: 'Qualificação da Rede', href: '/qualificacao', icon: Award },
   { name: 'Equipe / Profissionais', href: '/equipe', icon: Users },
   { name: 'Credenciamento', href: '/credenciamento', icon: ClipboardCheck },

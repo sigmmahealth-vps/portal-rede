@@ -3,6 +3,7 @@ import InvestigacaoLista from './InvestigacaoLista';
 import AnalisarModal from './AnalisarModal';
 import NotificarModal from './NotificarModal';
 import PainelControle from './PainelControle';
+import MatrizLegal from './MatrizLegal';
 import { statusDocumento } from '../../lib/documentoStatus.js';
 
 type Aba = 'lista' | 'bi' | 'matriz';
@@ -40,7 +41,7 @@ export default function GestaoDocumental() {
 
       {aba === 'lista' && <InvestigacaoLista audiencia={audiencia} onAnalisar={setAnalisar} onNotificar={setNotificar} reloadKey={reloadKey} />}
       {aba === 'bi' && <PainelControle audiencia={audiencia} />}
-      {aba === 'matriz' && <EmBreve titulo="Matriz Legal" />}
+      {aba === 'matriz' && <MatrizLegal />}
 
       {analisar && <AnalisarModal doc={analisar} onClose={() => setAnalisar(null)} onDone={() => { setAnalisar(null); setReloadKey(k => k + 1); }} />}
       {notificar && <NotificarModal doc={notificar} motivo={statusDocumento(notificar) === 'reprovado' ? 'reprovado' : 'vencido'} onClose={() => setNotificar(null)} onDone={() => setNotificar(null)} />}

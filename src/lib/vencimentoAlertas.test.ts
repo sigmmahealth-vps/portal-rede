@@ -1,10 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { marcoVencimento, TETO_AVISOS_VENCIDO } from './vencimentoAlertas.js';
+import { marcoVencimento, diasVencido, TETO_AVISOS_VENCIDO } from './vencimentoAlertas.js';
 
 // hoje fixo (local): 2026-11-16
 const hoje = new Date(2026, 10, 16);
 const doc = (expiry_date: string | null) => ({ expiry_date });
+
+test('diasVencido: dias locais inteiros de atraso (e negativo se futuro)', () => {
+  assert.equal(diasVencido(doc('2026-11-15'), hoje), 1);
+  assert.equal(diasVencido(doc('2026-11-01'), hoje), 15);
+  assert.equal(diasVencido(doc('2026-11-16'), hoje), 0);
+  assert.equal(diasVencido(doc('2026-11-20'), hoje), -4); // validade futura
+});
 
 test('sem validade → null', () => {
   assert.equal(marcoVencimento(doc(null), hoje), null);

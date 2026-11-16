@@ -172,7 +172,7 @@ export function renderNotification(type: NotifyType, ctx: Record<string, any> = 
                link: '/documentos' };
     case 'documento_vencido':
       return { title: 'Documento vencido',
-               body: `Seu documento "${ctx.tipo ?? ''}" venceu em ${fmtDate(ctx.expiry_date)}${ctx.dias ? ` (há ${ctx.dias} dias)` : ''}. Reenvie o quanto antes pelo portal.`,
+               body: `Seu documento "${ctx.tipo ?? ''}" venceu em ${fmtDate(ctx.expiry_date)}${ctx.dias ? ` (há ${ctx.dias} dia${ctx.dias === 1 ? '' : 's'})` : ''}. Reenvie o quanto antes pelo portal.`,
                link: '/documentos' };
     default:
       return { title: String(type), body: '', link };

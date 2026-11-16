@@ -12,6 +12,20 @@ function ymdLocal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Dias inteiros de atraso de um documento vencido, pela diferença de datas locais
+// (meia-noite) — fonte única; o job usa o mesmo cálculo que o marco, sem drift de UTC.
+// Negativo se a validade ainda é futura.
+export function diasVencido(
+  doc: { expiry_date: string | null | undefined },
+  hoje: Date = new Date(),
+): number {
+  const exp = (doc.expiry_date ?? '').slice(0, 10);
+  const [ey, em, ed] = exp.split('-').map(Number);
+  const expMid = new Date(ey, em - 1, ed);
+  const hojeMid = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  return Math.round((hojeMid.getTime() - expMid.getTime()) / 86400000);
+}
+
 export function marcoVencimento(
   doc: { expiry_date: string | null | undefined },
   hoje: Date = new Date(),
@@ -27,12 +41,8 @@ export function marcoVencimento(
     return null;
   }
 
-  // já vencido: dias inteiros de atraso pela diferença de datas locais (meia-noite).
-  const [ey, em, ed] = exp.split('-').map(Number);
-  const expMid = new Date(ey, em - 1, ed);
-  const hojeMid = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
-  const diasVencido = Math.round((hojeMid.getTime() - expMid.getTime()) / 86400000);
-  const n = Math.floor(diasVencido / 3);
+  // já vencido: marco a cada 3 dias de atraso, até o teto.
+  const n = Math.floor(diasVencido(doc, hoje) / 3);
   if (n < TETO_AVISOS_VENCIDO) return { tipo: 'vencido', marco: `atraso:${n}` };
   return null;
 }

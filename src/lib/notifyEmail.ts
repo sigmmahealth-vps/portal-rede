@@ -461,7 +461,7 @@ export function notificationBlocks(
     case 'documento_vencido':
       b = {
         banner: 'Documento vencido',
-        paragraphs: [`Seu documento **${ctx.tipo ?? ''}** venceu em **${fmtDate(ctx.expiry_date) || '—'}**${ctx.dias ? ` (há ${ctx.dias} dias)` : ''}. Reenvie o quanto antes para regularizar seu cadastro.`],
+        paragraphs: [`Seu documento **${ctx.tipo ?? ''}** venceu em **${fmtDate(ctx.expiry_date) || '—'}**${ctx.dias ? ` (há ${ctx.dias} dia${ctx.dias === 1 ? '' : 's'})` : ''}. Reenvie o quanto antes para regularizar seu cadastro.`],
         highlight: { label: 'Venceu em', value: fmtDate(ctx.expiry_date) || '—', iconImg: `${appUrl}/calendario.png` },
         steps: 'acesse a área de documentos no portal e envie a nova versão do documento vencido.',
         cta: { label: 'Enviar documento', url: `${appUrl}/documentos` },

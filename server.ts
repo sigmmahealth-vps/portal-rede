@@ -34,7 +34,7 @@ import { PRESTADOR_ATIVO_SQL, UNIDADE_ELEGIVEL_SQL, rodarSguSync } from './db/sg
 import { copiarCargaSeAtrasada } from './db/sgu-raw-copia.js';
 import { verifyResendWebhook, resendEventToStatus, webhookOverwriteCondition } from './src/lib/resendWebhook.js';
 import { statusDocumento } from './src/lib/documentoStatus.js';
-import { marcoVencimento } from './src/lib/vencimentoAlertas.js';
+import { marcoVencimento, diasVencido } from './src/lib/vencimentoAlertas.js';
 import XLSX from 'xlsx';
 
 // Regra de N/A no cálculo da nota (spec 5.4): uma resposta só SAI do cálculo
@@ -7362,7 +7362,7 @@ async function startServer() {
           await notifyEvent('documento_vencendo', { tipo: d.type, expiry_date: d.expiry_date },
             recipients, { providerId: Number(d.provider_id), dedupeRef: `doc:${d.id}:${m.marco}` });
         } else {
-          const dias = Math.round((Date.now() - new Date(d.expiry_date).getTime()) / 86400000);
+          const dias = diasVencido({ expiry_date: d.expiry_date });
           await notifyEvent('documento_vencido', { tipo: d.type, expiry_date: d.expiry_date, dias },
             recipients, { providerId: Number(d.provider_id), dedupeRef: `doc:${d.id}:${m.marco}` });
         }

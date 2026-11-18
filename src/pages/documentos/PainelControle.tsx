@@ -4,9 +4,15 @@ import { fetchApi } from '../../lib/api';
 import { providerAudience } from '../../lib/providerAudience.js';
 import Verificar from './Verificar';
 import { contarSituacoes, conformidade, conformidadePorTipo, baldesAlvara } from '../../lib/painelMetrics.js';
+import { contarStatus, conformidadeStatus, distribuicaoPorNivel } from '../../lib/atributosMetrics.js';
 
 const ALVARAS = ['Alvará Sanitário', 'Alvará de Localização', 'Alvará do Corpo de Bombeiros'];
-type Sub = 'overview' | 'alvaras' | 'verificar' | 'cert' | 'escol';
+const NIVEL_LABEL: Record<string, string> = {
+  ensino_medio: 'Ensino Médio', tecnico: 'Técnico', graduacao: 'Graduação',
+  especializacao: 'Especialização', residencia: 'Residência', mestrado: 'Mestrado',
+  doutorado: 'Doutorado', pos_doutorado: 'Pós-Doutorado',
+};
+type Sub ='overview' | 'alvaras' | 'verificar' | 'cert' | 'escol';
 
 export default function PainelControle({ audiencia }: { audiencia: 'medicos' | 'rede' }) {
   const [docs, setDocs] = useState<any[]>([]);
@@ -22,6 +28,12 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
     .filter(d => providerAudience(d.person_type ?? null, d.provider_group ?? null) === audiencia), [docs, audiencia]);
 
   const c = useMemo(() => contarSituacoes(base, hoje), [base, hoje]);
+
+  const [atrib, setAtrib] = useState<{ certifications: any[]; education: any[] }>({ certifications: [], education: [] });
+  useEffect(() => { fetchApi('/admin/atributos-metrics').then(setAtrib).catch(() => {}); }, []);
+
+  const certs = useMemo(() => atrib.certifications.filter(x => providerAudience(x.person_type ?? null, x.provider_group ?? null) === audiencia), [atrib, audiencia]);
+  const edu = useMemo(() => atrib.education.filter(x => providerAudience(x.person_type ?? null, x.provider_group ?? null) === audiencia), [atrib, audiencia]);
 
   return (
     <div className="space-y-4">
@@ -47,8 +59,8 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
       {sub === 'overview' && <Overview base={base} c={c} hoje={hoje} />}
       {sub === 'alvaras' && <Alvaras base={base} hoje={hoje} />}
       {sub === 'verificar' && <Verificar audiencia={audiencia} />}
-      {sub === 'cert' && <EmBreve titulo="Certificações e Dados Técnicos" />}
-      {sub === 'escol' && <EmBreve titulo="Escolaridade" />}
+      {sub === 'cert' && <CertMetrics certs={certs} hoje={hoje} />}
+      {sub === 'escol' && <EscolMetrics edu={edu} />}
       </>}
     </div>
   );
@@ -163,4 +175,50 @@ function Card({ titulo, children, className = '' }: { titulo: string; children: 
 
 function EmBreve({ titulo }: { titulo: string }) {
   return <div className="rounded-xl border border-gray-100 bg-white p-8 text-center text-gray-400">{titulo} — em breve</div>;
+}
+
+function CertMetrics({ certs, hoje }: { certs: any[]; hoje: Date }) {
+  const c = contarSituacoes(certs, hoje);
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Regulares" valor={c.regular} cor="text-emerald-700" bg="bg-emerald-50" />
+        <StatCard label="Vencendo" valor={c.vencendo} cor="text-amber-700" bg="bg-amber-50" />
+        <StatCard label="Irregulares" valor={c.irregular} cor="text-red-700" bg="bg-red-50" />
+        <StatCard label="Pendentes" valor={c.pendente} cor="text-blue-700" bg="bg-blue-50" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card titulo="Taxa de Conformidade (certificações)"><Donut pct={conformidade(certs, hoje)} /></Card>
+        <EmBreve titulo="Dados Técnicos (CNES, ISS, Prontuário)" />
+      </div>
+    </div>
+  );
+}
+
+function EscolMetrics({ edu }: { edu: any[] }) {
+  const c = contarStatus(edu);
+  const dist = distribuicaoPorNivel(edu).map(d => ({ nome: NIVEL_LABEL[d.nivel] ?? d.nivel, valor: d.n }));
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="Pendentes" valor={c.pendente} cor="text-blue-700" bg="bg-blue-50" />
+        <StatCard label="Válidas" valor={c.valido} cor="text-emerald-700" bg="bg-emerald-50" />
+        <StatCard label="Reprovadas" valor={c.reprovado} cor="text-red-700" bg="bg-red-50" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card titulo="Distribuição por nível">
+          {dist.length ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={dist}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="nome" /><YAxis allowDecimals={false} /><Tooltip />
+                <Bar dataKey="valor" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="py-10 text-center text-sm text-gray-400">Sem formações cadastradas.</p>}
+        </Card>
+        <Card titulo="Taxa de Conformidade (escolaridade)"><Donut pct={conformidadeStatus(edu)} /></Card>
+      </div>
+    </div>
+  );
 }

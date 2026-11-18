@@ -12,7 +12,7 @@ const NIVEL_LABEL: Record<string, string> = {
   especializacao: 'Especialização', residencia: 'Residência', mestrado: 'Mestrado',
   doutorado: 'Doutorado', pos_doutorado: 'Pós-Doutorado',
 };
-type Sub ='overview' | 'alvaras' | 'verificar' | 'cert' | 'escol';
+type Sub = 'overview' | 'alvaras' | 'verificar' | 'cert' | 'escol';
 
 export default function PainelControle({ audiencia }: { audiencia: 'medicos' | 'rede' }) {
   const [docs, setDocs] = useState<any[]>([]);
@@ -30,7 +30,7 @@ export default function PainelControle({ audiencia }: { audiencia: 'medicos' | '
   const c = useMemo(() => contarSituacoes(base, hoje), [base, hoje]);
 
   const [atrib, setAtrib] = useState<{ certifications: any[]; education: any[] }>({ certifications: [], education: [] });
-  useEffect(() => { fetchApi('/admin/atributos-metrics').then(setAtrib).catch(() => {}); }, []);
+  useEffect(() => { fetchApi('/admin/atributos-metrics').then(setAtrib).catch(e => setErro(e.message)); }, []);
 
   const certs = useMemo(() => atrib.certifications.filter(x => providerAudience(x.person_type ?? null, x.provider_group ?? null) === audiencia), [atrib, audiencia]);
   const edu = useMemo(() => atrib.education.filter(x => providerAudience(x.person_type ?? null, x.provider_group ?? null) === audiencia), [atrib, audiencia]);

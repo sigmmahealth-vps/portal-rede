@@ -2463,6 +2463,21 @@ async function startServer() {
     }
   });
 
+  // Métricas agregadas de atributos (Certificações + Escolaridade) para o Painel de Controle.
+  app.get('/api/admin/atributos-metrics', authenticate, requireAdmin, async (_req: any, res) => {
+    try {
+      const { rows: certifications } = await query(
+        `SELECT c.status, c.expiry_date, p.person_type, p.provider_group
+           FROM provider_certifications c JOIN providers p ON p.id = c.provider_id`);
+      const { rows: education } = await query(
+        `SELECT e.status, e.nivel, p.person_type, p.provider_group
+           FROM provider_education e JOIN providers p ON p.id = e.provider_id`);
+      res.json({ certifications, education });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/documents', authenticate, docUpload, async (req: any, res) => {
     try {
       const { provider_id, role, id: user_id } = req.user;
